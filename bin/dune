@@ -1,5 +1,7 @@
 (executable
  (public_name relational_engine)
  (name main)
+ (modules main)
  (libraries relational_engine)
+ (package relational_engine)
  (modes byte exe))

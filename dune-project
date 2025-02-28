@@ -1,4 +1,5 @@
 (lang dune 3.16)
+(map_workspace_root false)
 
 (using ctypes 0.3)
 

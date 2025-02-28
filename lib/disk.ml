@@ -242,10 +242,10 @@ module Executor = struct
             Ok ((commit, locations), Some computed_hash)
         | None -> Ok ((commit, locations), None))
 
-  let read ({ files; _ } as _commit : commit) (locations : locations) ~filename
-      =
-    let history : Hashes.history = StringMap.find filename files in
-    let { values = location_hashes; _ } : Hashes.t = List.hd history in
+  let read ({ files; _ } as _commit : commit) (locations : locations) ~filename =
+    let open Extensions.Option in
+    let+ history : Hashes.history = StringMap.find_opt filename files in
+    let+ { values = location_hashes; _ } : Hashes.t = match history with [] -> None | history -> Some(List.hd history) in
     let physical_locations =
       List.map (fun hash -> StringMap.find hash locations) location_hashes
     in
@@ -259,13 +259,16 @@ module Executor = struct
         physical_locations
     in
     (*Bytes.concat Bytes.empty @@*)
-    List.rev content
+    Some (List.rev content)
 
   let read_location ~hash (locations : locations) =
-    let ({ offset; size; _ } : Location.t) = StringMap.find hash locations in
-    match FS.read FS.Storage offset size with
-    | Ok x -> x
-    | Error err -> failwith err
+    match StringMap.find_opt hash locations with
+    | Some ({ offset; size; _ } : Location.t) ->
+       begin match FS.read FS.Storage offset size with
+       | Ok x -> x
+       | Error err -> failwith err
+       end
+    | None -> failwith "Location could not be found."
 end
 
 module Startup = struct
@@ -315,7 +318,7 @@ module Command = struct
       (fun (kind, timestamp, hash, filename, entity_id, content) ->
         { kind; timestamp; hash; filename; entity_id; content })
       Data_encoding.(
-        tup6 command_kind_encoding float string string (option int64) string)
+      tup6 command_kind_encoding float string string (option int64) string)
 
   let parse_command ~data =
     let contract_encoding =
@@ -391,7 +394,14 @@ module Command = struct
         print_endline "READ";
         print_endline relation_name;
         let entities : string list Executor.IntMap.t =
-          Executor.StringMap.find relation_name commit.references
+          print_endline command.filename;
+          Executor.StringMap.find_opt command.filename commit.references
+          |> function Some entities ->
+                       print_endline "-----> A";
+                       entities
+                    | None ->
+                       print_endline "-----> B";
+                       Executor.IntMap.empty
         in
         let content =
           Executor.IntMap.fold
