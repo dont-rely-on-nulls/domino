@@ -1,12 +1,22 @@
 let write_and_retrieve () =
   let open Disk in
-  let schema = Executor.StringMap.empty |> Executor.StringMap.add "user" [("first_name", Executor.Text); ("last_name", Executor.Text)] in
+  let schema =
+    Executor.StringMap.empty
+    |> Executor.StringMap.add "user"
+         [
+           ("first_name", Executor.Text);
+           ("last_name", Executor.Text);
+           ("address", Executor.Relation "address");
+         ]
+    |> Executor.StringMap.add "address"
+         [ ("street", Executor.Text); ("number", Executor.Integer32) ]
+  in
   let commit : Executor.commit =
     {
       state = Executor._EMPTY_SHA_HASH_;
       files = Executor.StringMap.empty;
       references = Executor.StringMap.empty;
-      schema
+      schema;
     }
   in
   let locations : Executor.locations = Executor.StringMap.empty in
@@ -112,11 +122,16 @@ let write_and_retrieve () =
   let+ _, (Command.Read content as response) =
     Command.commit_and_perform commit locations command_read
   in
-  Executor.StringMap.iter (fun k v -> print_endline ("→ " ^ k ^ ": ");
-                                      Executor.IntMap.iter (fun k v ->
-                                          print_endline ("  ↳ " ^ (Int64.to_string k));
-                                          List.iter (fun v -> print_endline ("    → " ^ v)) v) v;
-                                      print_newline()) references;
+  Executor.StringMap.iter
+    (fun k v ->
+      print_endline ("→ " ^ k ^ ": ");
+      Executor.IntMap.iter
+        (fun k v ->
+          print_endline ("  ↳ " ^ Int64.to_string k);
+          List.iter (fun v -> print_endline ("    → " ^ v)) v)
+        v;
+      print_newline ())
+    references;
   print_endline (Command.show_return response);
   Ok (commit, locations)
 [@@warning "-8-27-26"]

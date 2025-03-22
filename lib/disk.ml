@@ -31,7 +31,8 @@ module FileSystem (C : Configuration) : FileSystem = struct
     | Storage -> C.storage ^ "storage.re"
     | Transaction -> C.transactions ^ "transaction.re"
 
-  (** [append target content] writes content to file in append only format, returning [content_length * offset_written] *)
+  (** [append target content] writes content to file in append only format,
+      returning [content_length * offset_written] *)
   let append target content =
     let register channel =
       let offset_written =
@@ -92,12 +93,14 @@ module Executor = struct
     type history = t list [@@deriving show]
   end
 
-  type relational_type = 
-  | Text
-  | Integer32
-  | Integer64
-  | Boolean
-  | DiscriminatedUnion of (string * relational_type option) list * string (* [("MemberA", None); ("MemberB", Some Integer32)], "NameOfDU" *)
+  type relational_type =
+    | Text
+    | Integer32
+    | Integer64
+    | Boolean
+    | DiscriminatedUnion of (string * relational_type option) list * string
+      (* [("MemberA", None); ("MemberB", Some Integer32)], "NameOfDU" *)
+    | Relation of string
 
   type schema = (string * relational_type) list StringMap.t
   type references = string list IntMap.t StringMap.t
@@ -106,7 +109,7 @@ module Executor = struct
     state : string;
     files : Hashes.history StringMap.t;
     references : references;
-    schema : schema
+    schema : schema;
   }
 
   type history = commit list
@@ -242,10 +245,13 @@ module Executor = struct
             Ok ((commit, locations), Some computed_hash)
         | None -> Ok ((commit, locations), None))
 
-  let read ({ files; _ } as _commit : commit) (locations : locations) ~filename =
+  let read ({ files; _ } as _commit : commit) (locations : locations) ~filename
+      =
     let open Extensions.Option in
     let+ history : Hashes.history = StringMap.find_opt filename files in
-    let+ { values = location_hashes; _ } : Hashes.t = match history with [] -> None | history -> Some(List.hd history) in
+    let+ { values = location_hashes; _ } : Hashes.t =
+      match history with [] -> None | history -> Some (List.hd history)
+    in
     let physical_locations =
       List.map (fun hash -> StringMap.find hash locations) location_hashes
     in
@@ -263,11 +269,10 @@ module Executor = struct
 
   let read_location ~hash (locations : locations) =
     match StringMap.find_opt hash locations with
-    | Some ({ offset; size; _ } : Location.t) ->
-       begin match FS.read FS.Storage offset size with
-       | Ok x -> x
-       | Error err -> failwith err
-       end
+    | Some ({ offset; size; _ } : Location.t) -> (
+        match FS.read FS.Storage offset size with
+        | Ok x -> x
+        | Error err -> failwith err)
     | None -> failwith "Location could not be found."
 end
 
@@ -318,7 +323,7 @@ module Command = struct
       (fun (kind, timestamp, hash, filename, entity_id, content) ->
         { kind; timestamp; hash; filename; entity_id; content })
       Data_encoding.(
-      tup6 command_kind_encoding float string string (option int64) string)
+        tup6 command_kind_encoding float string string (option int64) string)
 
   let parse_command ~data =
     let contract_encoding =
@@ -337,8 +342,9 @@ module Command = struct
     | Nothing
   [@@deriving show]
 
-  (** TODO: This does not write atomically. If the system crashes while it attempts to write, it will corrupt.
-     Solve this with a temporary file and move later. *)
+  (** TODO: This does not write atomically. If the system crashes while it
+      attempts to write, it will corrupt. Solve this with a temporary file and
+      move later. *)
   let commit_and_perform (commit : Executor.commit)
       (locations : Executor.locations) command =
     let open Extensions.Result in
@@ -396,12 +402,13 @@ module Command = struct
         let entities : string list Executor.IntMap.t =
           print_endline command.filename;
           Executor.StringMap.find_opt command.filename commit.references
-          |> function Some entities ->
-                       print_endline "-----> A";
-                       entities
-                    | None ->
-                       print_endline "-----> B";
-                       Executor.IntMap.empty
+          |> function
+          | Some entities ->
+              print_endline "-----> A";
+              entities
+          | None ->
+              print_endline "-----> B";
+              Executor.IntMap.empty
         in
         let content =
           Executor.IntMap.fold

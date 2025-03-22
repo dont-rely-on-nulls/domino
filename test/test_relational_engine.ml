@@ -6,7 +6,7 @@ let%test _ =
         state = _EMPTY_SHA_HASH_;
         files = StringMap.empty;
         references = StringMap.empty;
-        schema = StringMap.empty
+        schema = StringMap.empty;
       };
     ]
   in
@@ -29,7 +29,7 @@ let%test _ =
         state = _EMPTY_SHA_HASH_;
         files = StringMap.empty;
         references = StringMap.empty;
-        schema = StringMap.empty
+        schema = StringMap.empty;
       };
     ]
   in

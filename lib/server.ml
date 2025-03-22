@@ -46,8 +46,7 @@ let client_read sock maxlen =
           };
         ]
       in
-      return
-      @@ Xml.to_string (Protocol.facts_to_xml_light relation_result)
+      return @@ Xml.to_string (Protocol.facts_to_xml_light relation_result)
   | Error err -> return err
 [@@warning "-27"]
 
@@ -56,8 +55,7 @@ let rec socket_read sock =
   Lwt_unix.accept sock >>= fun (client, _) ->
   client_read client 512
   (* >>= fun results -> Lwt_unix.send client (Data_encoding.Binary.to_bytes_exn Data_encoding.Encoding.int32 5l) 0 1 [] *)
-  >>=
-  fun results ->
+  >>= fun results ->
   Lwt_unix.send client (Bytes.of_string results) 0 (String.length results) []
   >>= fun _ ->
   Lwt_unix.wait_write client >>= fun () ->

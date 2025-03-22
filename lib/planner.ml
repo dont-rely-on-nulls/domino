@@ -1,28 +1,33 @@
 module type Action = sig
   (* Names of the attributes & The tuples *)
   type tuples = string list * bytes list list
-  val execute: tuples -> int
+
+  val execute : tuples -> int
 end
 
 module Scan = struct
   open Disk
-  let execute commit locations (entity: string) =
-    Executor.read commit locations ~filename:("schema~" ^ entity)
-    |> function
-      | Some binary ->
-         begin
-           let relation =
-             Result.map_error (fun _ -> "Failed to deserialize relation from binary format.")
-             @@ Data_encoding.Binary.of_bytes Schema.Protocol.relation_encoding (Bytes.concat Bytes.empty binary) in
-           match relation with
-           | Ok relation ->
-              begin
-                let _attrs = List.map (fun (a: Schema.Protocol.attribute) -> relation.name ^ "/" ^ a.name) relation.attributes in
-                Executor.read commit locations ~filename:("schema~" ^ entity)
-              end
-           | Error err -> failwith err
-         end
-      | None -> failwith ""
+
+  let execute commit locations (entity : string) =
+    Executor.read commit locations ~filename:("schema~" ^ entity) |> function
+    | Some binary -> (
+        let relation =
+          Result.map_error (fun _ ->
+              "Failed to deserialize relation from binary format.")
+          @@ Data_encoding.Binary.of_bytes Schema.Protocol.relation_encoding
+               (Bytes.concat Bytes.empty binary)
+        in
+        match relation with
+        | Ok relation ->
+            let _attrs =
+              List.map
+                (fun (a : Schema.Protocol.attribute) ->
+                  relation.name ^ "/" ^ a.name)
+                relation.attributes
+            in
+            Executor.read commit locations ~filename:("schema~" ^ entity)
+        | Error err -> failwith err)
+    | None -> failwith ""
 end
 
 module Join = struct
