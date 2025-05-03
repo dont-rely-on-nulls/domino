@@ -45,10 +45,9 @@ let write_and_retrieve () =
   let command_write1 : Command.transaction =
     {
       timestamp = 10.0;
-      hash = "";
-      content = "Daisy";
+      content = Executor.LText "Daisy";
       entity_id = Some 0L;
-      filename = "user/first-name";
+      attribute = "user/first-name";
       type' = Executor.Text;
     }
   in
@@ -59,10 +58,9 @@ let write_and_retrieve () =
   let command_write2 : Command.transaction =
     {
       timestamp = 10.0;
-      hash = "";
-      content = "Blossom";
+      content = Executor.LText "Blossom";
       entity_id = Some 0L;
-      filename = "user/last-name";
+      attribute = "user/last-name";
       type' = Executor.Text;
     }
   in
@@ -73,10 +71,9 @@ let write_and_retrieve () =
   let command_write1_address : Command.transaction =
     {
       timestamp = 10.0;
-      hash = "";
-      content = "Saint James St.";
+      content = Executor.LText "Saint James St.";
       entity_id = Some 0L;
-      filename = "address/street";
+      attribute = "address/street";
       type' = Executor.Text;
     }
   in
@@ -87,10 +84,9 @@ let write_and_retrieve () =
   let command_write2_address : Command.transaction =
     {
       timestamp = 10.0;
-      hash = "";
-      content = "41";
+      content = Executor.LInteger32 41l;
       entity_id = Some 0L;
-      filename = "address/number";
+      attribute = "address/number";
       type' = Executor.Text;
     }
   in
@@ -101,10 +97,9 @@ let write_and_retrieve () =
   let command_write2_5 : Command.transaction =
     {
       timestamp = 10.0;
-      hash = "";
-      content = "0";
+      content = Executor.LRelation 0L;
       entity_id = Some 0L;
-      filename = "user/address";
+      attribute = "user/address";
       type' = Executor.Relation "address";
     }
   in

@@ -106,6 +106,8 @@ module Executor = struct
   type relational_literal =
     | LText of string
     | LInteger32 of int32
+    | LInteger64 of int64
+    | LBoolean of bool
     | LRelation of int64
   [@@deriving show]
 
@@ -279,16 +281,26 @@ module Executor = struct
   let cast_to_type (type': relational_type) (content: bytes): relational_literal =
     match type' with
     | Text -> LText (Bytes.to_string content)
-    | Integer32 -> LInteger32 (Bytes.get_int32_be content 0)
-    | Relation _ -> LRelation (Bytes.get_int64_be content 0)
+    | Integer32 -> LInteger32 (Data_encoding.Binary.of_bytes_exn Data_encoding.int32 content)
+    | Relation _ -> LRelation (Data_encoding.Binary.of_bytes_exn Data_encoding.int64 content)
     | _ -> failwith "Not implemented"
+
+  let relational_literal_to_bytes (literal: relational_literal): bytes =
+    match literal with
+    | LText x -> Bytes.of_string x
+    | LInteger32 x -> Data_encoding.Binary.to_bytes_exn Data_encoding.int32 x
+    | LInteger64 x -> Data_encoding.Binary.to_bytes_exn Data_encoding.int64 x
+    | LRelation x -> Data_encoding.Binary.to_bytes_exn Data_encoding.int64 x
+    | LBoolean x -> Data_encoding.Binary.to_bytes_exn Data_encoding.bool x
 
   let read_location ~hash (locations: locations) (cast_type: relational_type): relational_literal =
     match StringMap.find_opt hash locations with
     | Some ({ offset; size; _ } : Location.t) ->
-        begin match FS.read FS.Storage offset size with
-        | Ok x -> cast_to_type cast_type x
-        | Error err -> failwith err
+       begin
+         print_endline ("TRASH: " ^ Int.to_string size);
+         match FS.read FS.Storage offset size with
+         | Ok x -> cast_to_type cast_type x
+         | Error err -> failwith err
         end
     | None -> failwith "Location could not be found."
 end
@@ -324,11 +336,11 @@ module Command = struct
   type transaction = {
     (* kind : command_kind; *)
     timestamp : float;
-    hash : string;
-    filename : string;
+    (* hash : string; *)
+    attribute : string;
     entity_id : int64 option;
     (* branch must be added here later *)
-    content : string;
+    content : Executor.relational_literal;
     type': Executor.relational_type;
   }
 
@@ -362,22 +374,42 @@ module Command = struct
           (function Executor.Relation reference -> Some reference | _ -> None)
           (function reference -> Executor.Relation reference);
       ]
+
+  let relational_literal_encoding =
+    union
+      [
+        case ~title:"text" (Tag 0) Data_encoding.string
+          (function Executor.LText x -> Some x | _ -> None)
+          (function x -> Executor.LText x);
+        case ~title:"integer32" (Tag 1) Data_encoding.int32
+          (function Executor.LInteger32 x -> Some x | _ -> None)
+          (function x -> Executor.LInteger32 x);
+        case ~title:"integer64" (Tag 2) Data_encoding.int64
+          (function Executor.LInteger64 x -> Some x | _ -> None)
+          (function x -> Executor.LInteger64 x);
+        case ~title:"boolean" (Tag 3) Data_encoding.bool
+          (function Executor.LBoolean x -> Some x | _ -> None)
+          (function x -> Executor.LBoolean x);
+        case ~title:"relation" (Tag 4) Data_encoding.int64
+          (function Executor.LRelation reference -> Some reference | _ -> None)
+          (function reference -> Executor.LRelation reference);
+      ]
   
   let command_encoding =
     conv
-      (fun { timestamp; hash; filename; entity_id; content; type' } ->
-        (timestamp, hash, filename, entity_id, content, type'))
-      (fun (timestamp, hash, filename, entity_id, content, type') ->
-        { timestamp; hash; filename; entity_id; content; type' })
-      Data_encoding.(tup6 float string string (option int64) string relational_type_encoding)
+      (fun { timestamp; attribute; entity_id; content; type' } ->
+        (timestamp, attribute, entity_id, content, type'))
+      (fun (timestamp, attribute, entity_id, content, type') ->
+        { timestamp; attribute; entity_id; content; type' })
+      Data_encoding.(tup5 float string (option int64) relational_literal_encoding relational_type_encoding)
 
   let parse_command ~data =
     let contract_encoding =
-      Data_encoding.(tup5 string string (option int64) string relational_type_encoding)
+      Data_encoding.(tup4 string (option int64) relational_literal_encoding relational_type_encoding)
     in
     match Binary.of_bytes_opt contract_encoding data with
-    | Some (hash, filename, entity_id, content, type') ->
-        Ok { timestamp = Unix.time (); hash; filename; entity_id; content; type' }
+    | Some (attribute, entity_id, content, type') ->
+        Ok { timestamp = Unix.time (); attribute; entity_id; content; type' }
     | None -> Error "Failed to parse command"
 
   type return =
@@ -400,14 +432,14 @@ module Command = struct
     let+ _ = FS.append FS.Transaction serialized_command in
     let open Extensions.Result in
     let+ (commit, locations), computed_hash_handle =
-      Executor.write commit locations ~filename:command.filename
-      @@ Bytes.of_string command.content
+      Executor.write commit locations ~filename:command.attribute
+      @@ Executor.relational_literal_to_bytes command.content
     in
     match (computed_hash_handle, command.entity_id) with 
     | Some computed_hash_handle, Some entity_id ->
         let references: Executor.references =
           let relation_name =
-            List.hd @@ String.split_on_char '/' command.filename
+            List.hd @@ String.split_on_char '/' command.attribute
           in
           Executor.StringMap.update relation_name
             (function
