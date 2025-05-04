@@ -1,11 +1,11 @@
-let print_references (references: (string * Disk.Executor.relational_type) list Disk.Executor.IntMap.t Disk.Executor.StringMap.t) =
+let print_references (references: (string * Disk.Executor.relational_type * string) list Disk.Executor.IntMap.t Disk.Executor.StringMap.t) =
   Disk.Executor.StringMap.iter
     (fun k v ->
       print_endline ("→ " ^ k ^ ": ");
       Disk.Executor.IntMap.iter
         (fun k v ->
           print_endline ("  ↳ " ^ Int64.to_string k);
-          List.iter (fun (v, type') -> print_endline ("    → " ^ v ^ "[" ^ Disk.Executor.show_relational_type type' ^ "]")) v)
+          List.iter (fun (v, type', name) -> print_endline ("    → " ^ v ^ "[" ^ name ^ "::" ^ Disk.Executor.show_relational_type type' ^ "]")) v)
         v;
       print_newline ())
     references

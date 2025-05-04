@@ -406,7 +406,7 @@ module Command = struct
 
   type return =
     | ComputedHash of string
-    | Read of (int64 * Executor.relational_literal list) list
+    | Read of (int64 * (string*Executor.relational_literal) list) list
     | Nothing
   [@@deriving show]
 
@@ -432,7 +432,7 @@ module Command = struct
         let references: Executor.references =
           let relation_name::[attribute_name] =
             String.split_on_char '/' command.attribute
-          in
+          [@@warning "-8"] in
           Executor.StringMap.update relation_name
             (function
               | Some entity ->
@@ -468,13 +468,13 @@ module Command = struct
           | None -> Executor.IntMap.empty
         in
 
-        let content =
+        let content: (int64 * (string*Executor.relational_literal) list) list =
           Executor.IntMap.fold
             (fun key elems acc ->
               (key,
                 List.map
                   (fun (location, type', attribute_name) ->
-                    Executor.read_location ~hash:location locations type')
+                    (attribute_name, Executor.read_location ~hash:location locations type'))
                   elems)
               :: acc)
             entities []
