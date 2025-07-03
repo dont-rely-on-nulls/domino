@@ -31,9 +31,15 @@ let client_read sock maxlen =
   let command = Protocol.command_of_sexp (Sexplib.Sexp.of_string x) in
   (* let command = Protocol.command_of_xml_light_exn (Protocol_conv_xml.Xml_light.of_string x) in *)
   let Ok (commit, locations) = Relation.prepare () in
-  let Ok (_, (Disk.Command.Read response)) =
-    Planner.Executor.perform commit locations command
-  in return @@ Sexplib.Sexp.to_string (Protocol.sexp_of_facts response)
+  (* let Ok (_, (Disk.Command.Read response)) = *)
+    (* Planner.Executor.perform commit locations command *)
+  (* Ok (_, (Disk.Command.Read response)) = *)
+  match Planner.Executor.perform commit locations command with
+  | Ok (_, Disk.Command.Read response) ->
+     return @@ Sexplib.Sexp.to_string (Protocol.sexp_of_facts response)
+  | Ok (_, Disk.Command.Schema response) ->
+     return @@ Sexplib.Sexp.to_string (Protocol.sexp_of_schema response)
+  | _ -> failwith "Case not supported"
   (* in return @@ Xml.to_string (Protocol.facts_to_xml_light response) *)
   (* match *)
   (* Relation.write_and_retrieve () *)

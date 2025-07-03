@@ -20,6 +20,7 @@
 
 (setq msg "(SequentialRead (relation_name address))")
 (setq msg "(Nest (relation_name user))")
+(setq msg "State")
 
 (relational-client msg)
 

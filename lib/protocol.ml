@@ -6,6 +6,9 @@ type tuple = string list [@@deriving sexp, protocol ~driver:(module Xml_light)]
 
 type command = Disk.Command.t [@@deriving sexp, protocol ~driver:(module Xml_light)]
 
+type schema = (string * (string * Disk.Executor.relational_type) list) list
+[@@deriving sexp, protocol ~driver:(module Xml_light)]
+
 type relation = {
   attribute_name : string;
   attribute_type : string;

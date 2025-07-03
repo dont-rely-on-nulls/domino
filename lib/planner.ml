@@ -162,6 +162,8 @@ module Executor = struct
   open Disk.Executor
   let perform (commit : Executor.commit) (locations : Executor.locations) (command : Command.t) =
     match command with
+    | State ->
+       Ok ((commit, locations), Command.Schema (StringMap.to_list commit.schema))
     | Nest {relation_name;} ->
        let results = Join.nest commit locations relation_name in
        Ok ((commit, locations), Command.Read results)

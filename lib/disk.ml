@@ -452,6 +452,7 @@ module Command = struct
   open Protocol_conv_xml
 
   type t =
+    | State
     | SequentialRead of { relation_name : string }
     | SpecifyRelation of { relation_name: string;
                            attributes: (string*Executor.relational_type) list }
@@ -480,6 +481,7 @@ module Command = struct
   type return =
     | ComputedHash of string
     | Read of (int64 * (string*Executor.relational_literal) list) list
+    | Schema of (string * (string * Executor.relational_type) list) list
     | Nothing
   [@@deriving show, sexp, protocol ~driver:(module Xml_light)]
 
