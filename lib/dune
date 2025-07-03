@@ -7,7 +7,8 @@
   lwt
   lwt.unix
   lwt-exit
-  ppx_protocol_conv_xml_light)
+  ppx_protocol_conv_xml_light
+  sexplib)
  (preprocess
   (pps ppx_deriving.show ppx_sexp_conv ppx_protocol_conv))
  ;; (c_library_flags -lssl -lcrypto -L %{env:LIBRESSL_LIB_PATH=})

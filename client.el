@@ -8,7 +8,7 @@
     (message "Received: %s" response)    
     (delete-process process)))
 
-(setq relational-engine-address "/tmp/relational_engine.socket")
+(setq relational-engine-address "localhost")
 (setq relational-engine-port 7524)
 
 (defun relational-client (content)
@@ -18,7 +18,13 @@
     (set-process-filter connection 'relational-engine-handler)
     (process-send-string connection content)))
 
-(setq msg "Hello Relational Engine! :)")
+(setq msg "(SequentialRead (relation_name address))")
 
 (relational-client msg)
-(print *mailbox*)
+
+(with-current-buffer "xml"
+  (erase-buffer)
+  (goto-char (point-min))
+  (insert *mailbox*)
+  ;; (xml-format-buffer)
+  )

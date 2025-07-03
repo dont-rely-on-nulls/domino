@@ -28,34 +28,21 @@ let client_read sock maxlen =
   _read sock String.empty >>= fun x ->
   print_string "RECEIVED: ";
   print_endline x;
-  let command = Protocol.command_of_sexp (Sexplib0.Sexp_conv.sexp_of_string x) in
-  match
-    (* Relation.write_and_retrieve () *)
-    command
-  with
-  | Disk.Command.SequentialRead {relation}
-  (* | Ok (last_commit, locations) -> *)
-      (* let (first_names, last_names) = (Planner.Scan.execute last_commit locations "user/first-name", Planner.Scan.execute last_commit locations "user/last-name") in *)
-      (* let tuples = Planner.Join.execute first_names last_names locations in *)
-      let fname, lname = List.split [] in
-      (* tuples in *)
-      let relation_result : Protocol.facts =
-        [
-          {
-            attribute_name = "user/first-name";
-            attribute_type = "string";
-            tuples = List.map Bytes.to_string fname;
-          };
-          {
-            attribute_name = "user/last-name";
-            attribute_type = "string";
-            tuples = List.map Bytes.to_string lname;
-          };
-        ]
-      in
-      return @@ Xml.to_string (Protocol.facts_to_xml_light relation_result)
-  | Error err -> return err
-[@@warning "-27"]
+  let command = Protocol.command_of_sexp (Sexplib.Sexp.of_string x) in
+  (* let command = Protocol.command_of_xml_light_exn (Protocol_conv_xml.Xml_light.of_string x) in *)
+  let Ok (commit, locations) = Relation.prepare () in
+  let Ok (_, (Disk.Command.Read response)) =
+    Disk.Command.perform commit locations command
+  in return @@ Sexplib.Sexp.to_string (Protocol.sexp_of_facts response)
+  (* in return @@ Xml.to_string (Protocol.facts_to_xml_light response) *)
+  (* match *)
+  (* Relation.write_and_retrieve () *)
+  (* with *)
+  (* | Ok (Disk.Command.Read response) -> *)
+      (* return @@ Xml.to_string (Protocol.facts_to_xml_light response) *)
+      (* return @@ Sexplib0.Sexp_conv.string_of_sexp (Protocol.sexp_of_facts response) *)
+  (* | Error err -> return err *)
+[@@warning "-27-8-26"]
 
 let rec socket_read sock =
   (* (Int32.of_int (String.length results))) *)

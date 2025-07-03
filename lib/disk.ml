@@ -130,6 +130,7 @@ module Executor = struct
   end
 
   open Sexplib0.Sexp_conv
+  open Protocol_conv_xml
 
   type relational_type =
     | Text
@@ -139,7 +140,7 @@ module Executor = struct
     (* | DiscriminatedUnion of (string * relational_type option) list * string *)
       (* [("MemberA", None); ("MemberB", Some Integer32)], "NameOfDU" *)
     | Relation of string
-  [@@deriving show, sexp]
+  [@@deriving show, sexp, protocol ~driver:(module Xml_light)]
 
   type relational_literal =
     | LText of string
@@ -147,7 +148,7 @@ module Executor = struct
     | LInteger64 of int64
     | LBoolean of bool
     | LRelation of int64*string
-  [@@deriving show]
+  [@@deriving show, sexp, protocol ~driver:(module Xml_light)]
 
   type schema = (string * relational_type) list StringMap.t
   (* entity * type * attribute_name *)
@@ -446,12 +447,15 @@ module Command = struct
   }
 
   open Sexplib0.Sexp_conv
+  open Protocol_conv_xml
 
   type t =
     | SequentialRead of { relation_name : string }
     | SpecifyRelation of { relation_name: string;
                            attributes: (string*Executor.relational_type) list }
-  [@@deriving sexp]
+    | NaturalJoin of {left_relation: string;
+                      right_relation: string}
+  [@@deriving sexp, protocol ~driver:(module Xml_light)]
   
   let command_encoding =
     conv
@@ -474,7 +478,7 @@ module Command = struct
     | ComputedHash of string
     | Read of (int64 * (string*Executor.relational_literal) list) list
     | Nothing
-  [@@deriving show]
+  [@@deriving show, sexp, protocol ~driver:(module Xml_light)]
 
   (** Writes the commit and location to the disk, but cleans it before.
       Needless to say this is absolutely just a dirty trick to test persistency of the structures.
@@ -536,6 +540,8 @@ module Command = struct
   
   let perform (commit : Executor.commit) (locations : Executor.locations) (command : t) =
     match command with
+    | NaturalJoin {left_relation = _; right_relation = _} ->
+       Ok ((commit, locations), Nothing)
     | SpecifyRelation {relation_name; attributes} ->
        (* If it already exists under the relation name key, it will be replaced *)
        Ok (({ commit with
