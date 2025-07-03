@@ -32,7 +32,7 @@ let client_read sock maxlen =
   (* let command = Protocol.command_of_xml_light_exn (Protocol_conv_xml.Xml_light.of_string x) in *)
   let Ok (commit, locations) = Relation.prepare () in
   let Ok (_, (Disk.Command.Read response)) =
-    Disk.Command.perform commit locations command
+    Planner.Executor.perform commit locations command
   in return @@ Sexplib.Sexp.to_string (Protocol.sexp_of_facts response)
   (* in return @@ Xml.to_string (Protocol.facts_to_xml_light response) *)
   (* match *)

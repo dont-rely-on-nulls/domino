@@ -354,7 +354,7 @@ let write_and_retrieve () =
     |> Command.transact commit locations
   in
   let+ _, (Command.Read content as response) =
-    Command.perform commit locations (SequentialRead { relation_name = "user" })
+    Planner.Executor.perform commit locations (SequentialRead { relation_name = "user" })
   in
   print_endline (Command.show_return response);
   (* Ok (commit, locations) *)

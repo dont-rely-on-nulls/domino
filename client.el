@@ -19,6 +19,7 @@
     (process-send-string connection content)))
 
 (setq msg "(SequentialRead (relation_name address))")
+(setq msg "(Nest (relation_name user))")
 
 (relational-client msg)
 

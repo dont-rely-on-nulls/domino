@@ -148,6 +148,7 @@ module Executor = struct
     | LInteger64 of int64
     | LBoolean of bool
     | LRelation of int64*string
+    | LRelationNested of int64*string*((string*relational_literal) list)
   [@@deriving show, sexp, protocol ~driver:(module Xml_light)]
 
   type schema = (string * relational_type) list StringMap.t
@@ -413,6 +414,7 @@ module Executor = struct
                     end
        | Ok x -> x
        end
+    | LRelationNested _ -> Bytes.empty
     | LBoolean x -> Data_encoding.Binary.to_bytes_exn Data_encoding.bool x
 
   let read_location ~hash (locations: locations) (cast_type: relational_type): relational_literal =
@@ -455,6 +457,7 @@ module Command = struct
                            attributes: (string*Executor.relational_type) list }
     | NaturalJoin of {left_relation: string;
                       right_relation: string}
+    | Nest of {relation_name: string}
   [@@deriving sexp, protocol ~driver:(module Xml_light)]
   
   let command_encoding =
@@ -537,37 +540,4 @@ module Command = struct
             ComputedHash computed_hash_handle )
     | Some _, None -> Error "Cannot write an entity without its referential."
     | None, _ -> Ok ((commit, locations), Nothing)
-  
-  let perform (commit : Executor.commit) (locations : Executor.locations) (command : t) =
-    match command with
-    | NaturalJoin {left_relation = _; right_relation = _} ->
-       Ok ((commit, locations), Nothing)
-    | SpecifyRelation {relation_name; attributes} ->
-       (* If it already exists under the relation name key, it will be replaced *)
-       Ok (({ commit with
-              schema = commit.schema
-                       |> Executor.StringMap.add relation_name attributes}, locations), Nothing)
-    | SequentialRead { relation_name } ->
-        let relation_name = List.hd @@ String.split_on_char '/' relation_name in
-        let entities : (string * Executor.relational_type * string) list Executor.IntMap.t =
-          print_endline relation_name;
-          Executor.StringMap.find_opt relation_name commit.references
-          |> function
-          | Some entities -> entities
-          | None -> Executor.IntMap.empty
-        in
-
-        let content: (int64 * (string*Executor.relational_literal) list) list =
-          Executor.IntMap.fold
-            (fun key elems acc ->
-              (key,
-                List.map
-                  (fun (location, type', attribute_name) ->
-                    (attribute_name, Executor.read_location ~hash:location locations type'))
-                  elems)
-              :: acc)
-            entities []
-        in
-        
-        Ok ((commit, locations), Read content)
 end
