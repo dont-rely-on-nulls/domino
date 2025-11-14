@@ -1,8 +1,16 @@
 -module(operations).
--export([setup/0, select/2, project/2, cartesian_product/2, store/3, hash/1, 
-         create_database/1, create_relation/3, get_relations/1, get_relation_hash/2,
+-export([setup/0, 
+	 store/3, 
+	 hash/1, 
+         create_database/1, 
+	 create_relation/3, 
+	 get_relations/1, 
+	 get_relation_hash/2,
          get_tuple_hashes/1,
-	 get_tuples_iterator/1, next_tuple/1, close_iterator/1, collect_all/1]).
+	 get_tuples_iterator/1,
+	 next_tuple/1,
+	 close_iterator/1, 
+	 collect_all/1]).
 
 setup() ->
     mnesia:stop(),
@@ -34,17 +42,6 @@ setup() ->
 -record(relation, {hash, name, tree, schema}).
 -record(tuple, {hash, relation, attribute_map}).
 -record(attribute, {hash, value}).
-
-%% @doc Selection - filter tuples based on a predicate
-select(Relation, Predicate) ->
-    sets:filter(Predicate, Relation).
-
-%% @doc Projection - select specific attributes from a relation
-project(Relation, AttributeNames) when is_list(AttributeNames) ->
-    sets:map(fun (Tuple) -> maps:with(AttributeNames, Tuple) end, Relation).
-
-cartesian_product(Relation1, Relation2) ->
-    sets:from_list([maps:merge(Tuple1, Tuple2) || Tuple1 <- sets:to_list(Relation1), Tuple2 <- sets:to_list(Relation2)], [{version, 2}]).
 
 hash(Value) ->
     crypto:hash(sha256, term_to_binary(Value)).
