@@ -1,9 +1,9 @@
 -module(operations).
 -export([setup/0, 
-	 store/3, 
 	 hash/1, 
-         create_database/1, 
+         create_database/1,
 	 create_relation/3, 
+	 create_tuple/3, 
 	 get_relations/1, 
 	 get_relation_hash/2,
          get_tuple_hashes/1,
@@ -33,12 +33,12 @@ setup() ->
         {type, set}
     ]),
     mnesia:create_table(database_state, [
-        {attributes, [name, hash, tree, relations, timestamp]},
+        {attributes, [hash, name, tree, relations, timestamp]},
         {disc_copies, [node()]},
         {type, set}
     ]).
 
--record(database_state, {name, hash, tree, relations, timestamp}).
+-record(database_state, {hash, name, tree, relations, timestamp}).
 -record(relation, {hash, name, tree, schema}).
 -record(tuple, {hash, relation, attribute_map}).
 -record(attribute, {hash, value}).
@@ -51,7 +51,7 @@ hash(Value) ->
 %% Relation: relation name (atom)
 %% Tuple: (map) #{name => "John", age => 18}
 %% Returns: {UpdatedDatabase, UpdatedRelation}
-store(Database, RelationName, Tuple) when is_map(Tuple), is_record(Database, database_state) ->
+create_tuple(Database, RelationName, Tuple) when is_map(Tuple), is_record(Database, database_state) ->
     F = fun() ->
         %% Step 1: Store each attribute value and build attribute_map
         AttributeMap = maps:map(fun(_AttrName, Value) ->
@@ -71,10 +71,10 @@ store(Database, RelationName, Tuple) when is_map(Tuple), is_record(Database, dat
         [RelationRecord] = mnesia:read(relation, CurrentRelationHash),
         
         %% Step 5: Insert tuple hash into relation merkle tree
-        NewRelationTree = merklet:insert({TupleHash, TupleHash}, RelationRecord#relation.tree),
+        NewRelationTree = merklet:insert({TupleHash, <<>>}, RelationRecord#relation.tree),
         
-        %% Step 6: Compute new relation hash and store
-        NewRelationHash = hash(NewRelationTree),
+        %% Step 6: Compute new relation hash as the root of the new merkle tree and store
+        {_,NewRelationHash,_,_} = NewRelationTree,
         UpdatedRelation = #relation{
             hash = NewRelationHash, 
             name = RelationName, 
@@ -91,7 +91,7 @@ store(Database, RelationName, Tuple) when is_map(Tuple), is_record(Database, dat
         NewDatabaseTree = merklet:insert({RelationKey, NewRelationHash}, Database#database_state.tree),
         
         %% Step 9: Compute new database hash and store
-        NewDatabaseHash = hash(NewDatabaseTree),
+        {_,NewDatabaseHash,_,_} = NewDatabaseTree,
         UpdatedDatabase = #database_state{
             name = Database#database_state.name,
             hash = NewDatabaseHash,
@@ -123,8 +123,7 @@ create_relation(Database, Name, Definition) when is_record(Database, database_st
         NewRelations = maps:put(Name, RelationHash, Database#database_state.relations),
         
         %% Update database tree (for diffing)
-        RelationKey = atom_to_binary(Name, utf8),
-        NewTree = merklet:insert({RelationKey, RelationHash}, Database#database_state.tree),
+        NewTree = merklet:insert(RelationHash, Database#database_state.tree),
         NewHash = hash(NewTree),
         
         UpdatedDatabase = #database_state{
@@ -144,7 +143,7 @@ create_relation(Database, Name, Definition) when is_record(Database, database_st
 create_database(Name) ->
     Entry = #database_state{
         name = Name, 
-        hash = hash(undefined), 
+        hash = <<>>, 
         tree = undefined,
         relations = #{},
         timestamp = erlang:timestamp()
@@ -263,3 +262,4 @@ type_of(Value) when is_integer(Value) -> integer;
 type_of(Value) when is_float(Value) -> float;
 type_of(Value) when is_atom(Value) -> atom;
 type_of(_) -> term.
+
