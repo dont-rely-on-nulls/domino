@@ -1,1 +1,8 @@
-[].
+{"1.2.0",
+[{<<"merklet">>,{pkg,<<"merklet">>,<<"2.0.0">>},0}]}.
+[
+{pkg_hash,[
+ {<<"merklet">>, <<"9E53AA5F83B4CE33A8EE0BEDC798AA54A1750A8FD92D649FC04BA7F7B8E65E78">>}]},
+{pkg_hash_ext,[
+ {<<"merklet">>, <<"B5E868DA5979F9B3C3E4E8B8171AA5C167868E35495B81731C93D8382FDD3278">>}]}
+].
