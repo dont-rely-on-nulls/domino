@@ -277,8 +277,6 @@ make_decreasing_gen(Current) ->
 make_stern_brocot_generator(State, _Constraints) ->
     make_sb_gen(State).
 
-make_sb_gen({{[],[]}, _L, _R}) ->
-    fun(_) -> done end;
 make_sb_gen({Queue, {LA, LB}, {RA, RB}}) ->
     fun(next) ->
         case queue:out(Queue) of
