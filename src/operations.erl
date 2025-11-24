@@ -868,11 +868,8 @@ tuple_iterator_loop([TupleHash | Rest], RelationName, EnableProvenance) ->
         {next, Caller} ->
             %% Resolve tuple on demand
             ResolvedTuple = resolve_tuple(TupleHash),
-            %% Optionally add provenance tracking
-            FinalTuple = case EnableProvenance of
-                true -> add_base_provenance(ResolvedTuple, RelationName);
-                false -> ResolvedTuple
-            end,
+            %% Add provenance tracking (always enabled)
+            FinalTuple = add_base_provenance(ResolvedTuple, RelationName),
             Caller ! {tuple, FinalTuple},
             tuple_iterator_loop(Rest, RelationName, EnableProvenance);
         stop ->
@@ -1288,11 +1285,8 @@ generator_iterator_loop(Generator, RelationName, EnableProvenance) ->
                 done ->
                     Caller ! done;
                 {value, Tuple, NextGen} ->
-                    %% Optionally add provenance tracking
-                    FinalTuple = case EnableProvenance of
-                        true -> add_base_provenance(Tuple, RelationName);
-                        false -> Tuple
-                    end,
+                    %% Add provenance tracking (always enabled)
+                    FinalTuple = add_base_provenance(Tuple, RelationName),
                     Caller ! {tuple, FinalTuple},
                     generator_iterator_loop(NextGen, RelationName, EnableProvenance);
                 {error, Reason} ->
