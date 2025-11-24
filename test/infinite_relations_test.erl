@@ -26,6 +26,14 @@ setup() ->
 cleanup(_DB) ->
     ok.
 
+%%% Helper Functions
+
+%% Strip metadata from tuples for comparison
+strip_meta(Tuple) when is_map(Tuple) ->
+    maps:remove(meta, Tuple);
+strip_meta(Tuples) when is_list(Tuples) ->
+    [strip_meta(T) || T <- Tuples].
+
 %%% Tests
 
 test_create_naturals(DB) ->
@@ -59,13 +67,14 @@ test_naturals_with_constraints(DB) ->
     %% Query with range constraint [0, 9]
     Iterator = operations:get_tuples_iterator(DB1, naturals, #{value => {range, 0, 9}}),
     Tuples = operations:collect_all(Iterator),
+    DataOnly = strip_meta(Tuples),
 
     %% Should get exactly 10 tuples: {0, 1, 2, ..., 9}
     [
      ?_assertEqual(10, length(Tuples)),
-     ?_assert(lists:member(#{value => 0}, Tuples)),
-     ?_assert(lists:member(#{value => 5}, Tuples)),
-     ?_assert(lists:member(#{value => 9}, Tuples))
+     ?_assert(lists:member(#{value => 0}, DataOnly)),
+     ?_assert(lists:member(#{value => 5}, DataOnly)),
+     ?_assert(lists:member(#{value => 9}, DataOnly))
     ].
 
 test_integers_generator(DB) ->
@@ -80,14 +89,15 @@ test_integers_generator(DB) ->
     %% Query with range constraint [-5, 5]
     Iterator = operations:get_tuples_iterator(DB1, integers, #{value => {range, -5, 5}}),
     Tuples = operations:collect_all(Iterator),
+    DataOnly = strip_meta(Tuples),
 
     %% Should get 11 tuples: {-5, -4, ..., 0, ..., 4, 5}
     [
      ?_assertEqual(aleph_zero, Integers#relation.cardinality),
      ?_assertEqual(11, length(Tuples)),
-     ?_assert(lists:member(#{value => 0}, Tuples)),
-     ?_assert(lists:member(#{value => -5}, Tuples)),
-     ?_assert(lists:member(#{value => 5}, Tuples))
+     ?_assert(lists:member(#{value => 0}, DataOnly)),
+     ?_assert(lists:member(#{value => -5}, DataOnly)),
+     ?_assert(lists:member(#{value => 5}, DataOnly))
     ].
 
 test_rationals_generator(DB) ->

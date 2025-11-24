@@ -90,12 +90,27 @@ naturals(Constraints) ->
     case extract_bounds(Constraints, value) of
         {range, Min, Max} when Min >= 0 ->
             make_range_generator(Min, Max, fun(N) -> #{value => N} end);
+        {range, Min, Max} when Min < 0, Max >= 0 ->
+            %% Negative min for naturals: adjust to start at 0
+            make_range_generator(0, Max, fun(N) -> #{value => N} end);
+        {range, _Min, Max} when Max < 0 ->
+            %% Entire range is negative: no naturals exist
+            fun(_) -> done end;
         {gte, Min} when Min >= 0 ->
             make_unbounded_generator(Min, fun(N) -> #{value => N} end);
+        {gte, Min} when Min < 0 ->
+            %% Negative lower bound for naturals: start at 0
+            make_unbounded_generator(0, fun(N) -> #{value => N} end);
         {lte, Max} when Max >= 0 ->
             make_range_generator(0, Max, fun(N) -> #{value => N} end);
+        {lte, Max} when Max < 0 ->
+            %% Upper bound is negative: no naturals exist
+            fun(_) -> done end;
         {eq, Value} when Value >= 0 ->
             make_singleton_generator(#{value => Value});
+        {eq, _Value} ->
+            %% Negative value: not a natural
+            fun(_) -> done end;
         {in, List} ->
             make_membership_generator(List, fun(N) -> #{value => N} end);
         unbounded ->
@@ -474,14 +489,19 @@ make_plus_b_sum_gen([{B, Sum} | Rest]) ->
     end.
 
 %% Plus: only sum constrained - generate all non-negative pairs
-make_plus_sum_only_generator(SumValue) ->
+make_plus_sum_only_generator(SumValue) when SumValue >= 0 ->
     Pairs = [{A, SumValue - A} || A <- lists:seq(0, SumValue)],
-    make_plus_pairs_gen(Pairs).
+    make_plus_pairs_gen(Pairs);
+make_plus_sum_only_generator(_SumValue) ->
+    %% Negative sum: no non-negative pairs exist
+    fun(_) -> done end.
 
 %% Plus: sum range constrained
 make_plus_sum_range_generator(SMin, SMax) ->
+    %% Adjust range to non-negative values (naturals only)
+    AdjustedMin = max(0, SMin),
     Pairs = [{A, B, S} ||
-             S <- lists:seq(SMin, SMax),
+             S <- lists:seq(AdjustedMin, SMax),
              A <- lists:seq(0, S),
              B <- [S - A]],
     make_plus_triple_gen(Pairs).

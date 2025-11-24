@@ -2,10 +2,12 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("operations.hrl").
 
-%%% Provenance Tracking Test Suite
+%%% Provenance & Lineage Tracking Test Suite
 %%%
-%%% Tests for attribute-level provenance tracking in relational operations.
-%%% Provenance tracks the origin of each attribute through query pipelines.
+%%% Tests for tuple metadata tracking in relational operations.
+%%% Metadata is ALWAYS tracked and included in every tuple via the nested 'meta' field:
+%%% - Provenance: Tracks the immediate source of each attribute
+%%% - Lineage: Tracks the complete operational history of tuple creation
 %%%
 %%% NOTE ON TUPLE ORDERING:
 %%% These tests observe tuples in a specific order (e.g., Alice before Bob) because
@@ -24,7 +26,16 @@ provenance_test_() ->
       fun test_base_provenance/1,
       fun test_join_provenance/1,
       fun test_join_with_conflicts_provenance/1,
-      fun test_equijoin_preserves_both_sources/1
+      fun test_equijoin_preserves_both_sources/1,
+      fun test_base_lineage/1,
+      fun test_join_lineage/1,
+      fun test_select_lineage/1,
+      fun test_project_lineage/1,
+      fun test_sort_lineage/1,
+      fun test_take_lineage/1,
+      fun test_multi_operation_pipeline_lineage/1,
+      fun test_theta_join_lineage/1,
+      fun test_complex_nested_lineage/1
      ]}.
 
 %%% Setup and Cleanup
@@ -61,8 +72,8 @@ cleanup(_DB) ->
 %%% Base Provenance Tests
 
 test_base_provenance(DB) ->
-    % Query with provenance enabled
-    Iter = operations:get_tuples_iterator(DB, employees, #{'_provenance' => true}),
+    % Query tuples (metadata always included)
+    Iter = operations:get_tuples_iterator(DB, employees, #{}),
     Results = operations:collect_all(Iter),
 
     % All tuples should have correct provenance structure
@@ -89,9 +100,9 @@ test_base_provenance(DB) ->
 %%% Join Provenance Tests
 
 test_join_provenance(DB) ->
-    % Create iterators with provenance enabled
-    EmpIter = operations:get_tuples_iterator(DB, employees, #{'_provenance' => true}),
-    DeptIter = operations:get_tuples_iterator(DB, departments, #{'_provenance' => true}),
+    % Create iterators (metadata always included)
+    EmpIter = operations:get_tuples_iterator(DB, employees, #{}),
+    DeptIter = operations:get_tuples_iterator(DB, departments, #{}),
 
     % Join them
     JoinIter = operations:equijoin_iterator(EmpIter, DeptIter, dept_id),
@@ -129,8 +140,8 @@ test_join_with_conflicts_provenance(DB) ->
     {DB4, _} = operations:create_tuple(DB3, table_b, #{id => 1, value => 200}),
 
     % Create iterators with provenance
-    AIter = operations:get_tuples_iterator(DB4, table_a, #{'_provenance' => true}),
-    BIter = operations:get_tuples_iterator(DB4, table_b, #{'_provenance' => true}),
+    AIter = operations:get_tuples_iterator(DB4, table_a, #{}),
+    BIter = operations:get_tuples_iterator(DB4, table_b, #{}),
 
     JoinIter = operations:equijoin_iterator(AIter, BIter, id),
     Results = operations:collect_all(JoinIter),
@@ -157,8 +168,8 @@ test_join_with_conflicts_provenance(DB) ->
 test_equijoin_preserves_both_sources(DB) ->
     % Even though equijoin only keeps one dept_id value,
     % provenance should track both sources
-    EmpIter = operations:get_tuples_iterator(DB, employees, #{'_provenance' => true}),
-    DeptIter = operations:get_tuples_iterator(DB, departments, #{'_provenance' => true}),
+    EmpIter = operations:get_tuples_iterator(DB, employees, #{}),
+    DeptIter = operations:get_tuples_iterator(DB, departments, #{}),
 
     JoinIter = operations:equijoin_iterator(EmpIter, DeptIter, dept_id),
     Results = operations:collect_all(JoinIter),
@@ -179,5 +190,231 @@ test_equijoin_preserves_both_sources(DB) ->
                            Prov = maps:get(provenance, Meta),
                            maps:get(dept_id, Prov) =:= {employees, dept_id} andalso
                            maps:get(right_dept_id, Prov) =:= {departments, dept_id}
+                       end, Results))
+    ].
+
+%%% Lineage Tests
+
+test_base_lineage(DB) ->
+    % Query tuples (metadata always included)
+    Iter = operations:get_tuples_iterator(DB, employees, #{}),
+    Results = operations:collect_all(Iter),
+
+    % All tuples should have lineage showing base relation
+    [
+     ?_assertEqual(2, length(Results)),
+     ?_assert(lists:all(fun(T) ->
+                           Meta = maps:get(meta, T),
+                           Lineage = maps:get(lineage, Meta),
+                           Lineage =:= {base, employees}
+                       end, Results))
+    ].
+
+test_join_lineage(DB) ->
+    % Create iterators (metadata always included)
+    EmpIter = operations:get_tuples_iterator(DB, employees, #{}),
+    DeptIter = operations:get_tuples_iterator(DB, departments, #{}),
+
+    % Join them
+    JoinIter = operations:equijoin_iterator(EmpIter, DeptIter, dept_id),
+    Results = operations:collect_all(JoinIter),
+
+    % All results should have lineage showing join operation
+    [
+     ?_assertEqual(2, length(Results)),
+     ?_assert(lists:all(fun(T) ->
+                           Meta = maps:get(meta, T),
+                           Lineage = maps:get(lineage, Meta),
+                           % Should be a join of two base relations
+                           case Lineage of
+                               {join, dept_id, {base, employees}, {base, departments}} -> true;
+                               _ -> false
+                           end
+                       end, Results))
+    ].
+
+%%% Comprehensive Lineage Tests
+
+test_select_lineage(DB) ->
+    % Test lineage through select (filter) operation
+    Iter = operations:get_tuples_iterator(DB, employees, #{}),
+
+    Predicate = fun(T) -> maps:get(id, T, 0) =:= 1 end,
+    FilteredIter = operations:select_iterator(Iter, Predicate),
+    Results = operations:collect_all(FilteredIter),
+
+    % Should have lineage: select wrapping base
+    [
+     ?_assertEqual(1, length(Results)),
+     ?_assert(lists:all(fun(T) ->
+                           Meta = maps:get(meta, T),
+                           Lineage = maps:get(lineage, Meta),
+                           case Lineage of
+                               {select, Pred, {base, employees}} when is_function(Pred) -> true;
+                               _ -> false
+                           end
+                       end, Results))
+    ].
+
+test_project_lineage(DB) ->
+    % Test lineage through project operation
+    Iter = operations:get_tuples_iterator(DB, employees, #{}),
+    ProjectedIter = operations:project_iterator(Iter, [name, dept_id]),
+    Results = operations:collect_all(ProjectedIter),
+
+    % Should have lineage: project wrapping base
+    [
+     ?_assertEqual(2, length(Results)),
+     ?_assert(lists:all(fun(T) ->
+                           Meta = maps:get(meta, T),
+                           Lineage = maps:get(lineage, Meta),
+                           case Lineage of
+                               {project, [name, dept_id], {base, employees}} -> true;
+                               _ -> false
+                           end
+                       end, Results))
+    ].
+
+test_sort_lineage(DB) ->
+    % Test lineage through sort operation
+    Iter = operations:get_tuples_iterator(DB, employees, #{}),
+
+    CompareFun = fun(A, B) -> maps:get(id, A, 0) =< maps:get(id, B, 0) end,
+    SortedIter = operations:sort_iterator(Iter, CompareFun),
+    Results = operations:collect_all(SortedIter),
+
+    % Should have lineage: sort wrapping base
+    [
+     ?_assertEqual(2, length(Results)),
+     ?_assert(lists:all(fun(T) ->
+                           Meta = maps:get(meta, T),
+                           Lineage = maps:get(lineage, Meta),
+                           case Lineage of
+                               {sort, Cmp, {base, employees}} when is_function(Cmp) -> true;
+                               _ -> false
+                           end
+                       end, Results))
+    ].
+
+test_take_lineage(DB) ->
+    % Test lineage through take (limit) operation
+    Iter = operations:get_tuples_iterator(DB, employees, #{}),
+    TakeIter = operations:take_iterator(Iter, 1),
+    Results = operations:collect_all(TakeIter),
+
+    % Should have lineage: take wrapping base
+    [
+     ?_assertEqual(1, length(Results)),
+     ?_assert(lists:all(fun(T) ->
+                           Meta = maps:get(meta, T),
+                           Lineage = maps:get(lineage, Meta),
+                           case Lineage of
+                               {take, 1, {base, employees}} -> true;
+                               _ -> false
+                           end
+                       end, Results))
+    ].
+
+test_multi_operation_pipeline_lineage(DB) ->
+    % Test complex pipeline: employees → select(id=1) → join(departments) → project([name, dept_name])
+
+    % 1. Start with employees base relation
+    EmpIter = operations:get_tuples_iterator(DB, employees, #{}),
+
+    % 2. Filter to Alice (id=1)
+    Predicate = fun(T) -> maps:get(id, T, 0) =:= 1 end,
+    FilteredEmp = operations:select_iterator(EmpIter, Predicate),
+
+    % 3. Join with departments
+    DeptIter = operations:get_tuples_iterator(DB, departments, #{}),
+    JoinedIter = operations:equijoin_iterator(FilteredEmp, DeptIter, dept_id),
+
+    % 4. Project to [name, dept_name]
+    ProjectedIter = operations:project_iterator(JoinedIter, [name, dept_name]),
+
+    Results = operations:collect_all(ProjectedIter),
+
+    % Expected lineage:
+    % {project, [name, dept_name],
+    %   {join, dept_id,
+    %     {select, Pred, {base, employees}},
+    %     {base, departments}}}
+
+    [
+     ?_assertEqual(1, length(Results)),  % Only Alice
+     ?_assert(lists:all(fun(T) ->
+                           Meta = maps:get(meta, T),
+                           Lineage = maps:get(lineage, Meta),
+                           case Lineage of
+                               {project, [name, dept_name],
+                                {join, dept_id,
+                                 {select, Pred, {base, employees}},
+                                 {base, departments}}} when is_function(Pred) -> true;
+                               _ -> false
+                           end
+                       end, Results))
+    ].
+
+test_theta_join_lineage(DB) ->
+    % Test lineage for theta-join operation
+    EmpIter = operations:get_tuples_iterator(DB, employees, #{}),
+    DeptIter = operations:get_tuples_iterator(DB, departments, #{}),
+
+    Predicate = fun(Emp, Dept) ->
+        maps:get(dept_id, Emp) =:= maps:get(dept_id, Dept)
+    end,
+
+    JoinIter = operations:theta_join_iterator(EmpIter, DeptIter, Predicate),
+    Results = operations:collect_all(JoinIter),
+
+    % Should have theta_join lineage
+    [
+     ?_assertEqual(2, length(Results)),
+     ?_assert(lists:all(fun(T) ->
+                           Meta = maps:get(meta, T),
+                           Lineage = maps:get(lineage, Meta),
+                           case Lineage of
+                               {theta_join, Pred, {base, employees}, {base, departments}}
+                                   when is_function(Pred) -> true;
+                               _ -> false
+                           end
+                       end, Results))
+    ].
+
+test_complex_nested_lineage(DB) ->
+    % Test deeply nested lineage:
+    % employees → select(id=1) → project([name, dept_id]) → join(departments → select(budget>50000)) → take(1)
+
+    % Left side: employees → select → project
+    EmpIter = operations:get_tuples_iterator(DB, employees, #{}),
+    FilteredEmp = operations:select_iterator(EmpIter, fun(T) -> maps:get(id, T, 0) =:= 1 end),
+    ProjectedEmp = operations:project_iterator(FilteredEmp, [name, dept_id]),
+
+    % Right side: departments → select
+    DeptIter = operations:get_tuples_iterator(DB, departments, #{}),
+    FilteredDept = operations:select_iterator(DeptIter, fun(D) -> maps:get(budget, D, 0) > 50000 end),
+
+    % Join both sides
+    JoinedIter = operations:equijoin_iterator(ProjectedEmp, FilteredDept, dept_id),
+
+    % Take first result
+    TakeIter = operations:take_iterator(JoinedIter, 1),
+
+    Results = operations:collect_all(TakeIter),
+
+    % Expected lineage should be deeply nested
+    [
+     ?_assertEqual(1, length(Results)),
+     ?_assert(lists:all(fun(T) ->
+                           Meta = maps:get(meta, T),
+                           Lineage = maps:get(lineage, Meta),
+                           case Lineage of
+                               {take, 1,
+                                {join, dept_id,
+                                 {project, [name, dept_id],
+                                  {select, _, {base, employees}}},
+                                 {select, _, {base, departments}}}} -> true;
+                               _ -> false
+                           end
                        end, Results))
     ].

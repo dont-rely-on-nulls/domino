@@ -87,6 +87,14 @@ setup() ->
 cleanup(_DB) ->
     ok.
 
+%%% Helper Functions
+
+%% Strip metadata from tuples for comparison
+strip_meta(Tuple) when is_map(Tuple) ->
+    maps:remove(meta, Tuple);
+strip_meta(Tuples) when is_list(Tuples) ->
+    [strip_meta(T) || T <- Tuples].
+
 %%% Plus Relation Tests
 
 test_plus_both_operands_constrained(DB) ->
@@ -98,17 +106,18 @@ test_plus_both_operands_constrained(DB) ->
         b => {range, 2, 4}
     }),
     Results = operations:collect_all(Iterator),
+    DataOnly = strip_meta(Results),
 
     % should get 9 tuples total (3 × 3 = 9)
     % like (1,2,3), (1,3,4), (1,4,5), (2,2,4), ..., (3,4,7)
     [
      ?_assertEqual(9, length(Results)),
-     ?_assert(lists:member(#{a => 1, b => 2, sum => 3}, Results)),
-     ?_assert(lists:member(#{a => 2, b => 3, sum => 5}, Results)),
-     ?_assert(lists:member(#{a => 3, b => 4, sum => 7}, Results)),
+     ?_assert(lists:member(#{a => 1, b => 2, sum => 3}, DataOnly)),
+     ?_assert(lists:member(#{a => 2, b => 3, sum => 5}, DataOnly)),
+     ?_assert(lists:member(#{a => 3, b => 4, sum => 7}, DataOnly)),
      ?_assert(lists:all(fun(#{a := A, b := B, sum := S}) ->
                            S =:= A + B
-                       end, Results))
+                       end, DataOnly))
     ].
 
 test_plus_a_and_sum_constrained(DB) ->
@@ -120,6 +129,7 @@ test_plus_a_and_sum_constrained(DB) ->
         sum => {range, 5, 7}
     }),
     Results = operations:collect_all(Iterator),
+    DataOnly = strip_meta(Results),
 
     % Expected tuples: (1,4,5), (1,5,6), (1,6,7), (2,3,5), (2,4,6), (2,5,7), (3,2,5), (3,3,6), (3,4,7)
     % (filtered to only keep where b >= 0)
@@ -127,9 +137,9 @@ test_plus_a_and_sum_constrained(DB) ->
      ?_assert(length(Results) > 0),
      ?_assert(lists:all(fun(#{a := A, b := B, sum := S}) ->
                            S =:= A + B andalso B >= 0
-                       end, Results)),
-     ?_assert(lists:member(#{a => 1, b => 4, sum => 5}, Results)),
-     ?_assert(lists:member(#{a => 3, b => 4, sum => 7}, Results))
+                       end, DataOnly)),
+     ?_assert(lists:member(#{a => 1, b => 4, sum => 5}, DataOnly)),
+     ?_assert(lists:member(#{a => 3, b => 4, sum => 7}, DataOnly))
     ].
 
 test_plus_b_and_sum_constrained(DB) ->
@@ -141,14 +151,15 @@ test_plus_b_and_sum_constrained(DB) ->
         sum => {range, 5, 6}
     }),
     Results = operations:collect_all(Iterator),
+    DataOnly = strip_meta(Results),
 
     [
      ?_assert(length(Results) > 0),
      ?_assert(lists:all(fun(#{a := A, b := B, sum := S}) ->
                            S =:= A + B andalso A >= 0
-                       end, Results)),
-     ?_assert(lists:member(#{a => 3, b => 2, sum => 5}, Results)),
-     ?_assert(lists:member(#{a => 2, b => 4, sum => 6}, Results))
+                       end, DataOnly)),
+     ?_assert(lists:member(#{a => 3, b => 2, sum => 5}, DataOnly)),
+     ?_assert(lists:member(#{a => 2, b => 4, sum => 6}, DataOnly))
     ].
 
 test_plus_only_sum_constrained(DB) ->
@@ -158,15 +169,16 @@ test_plus_only_sum_constrained(DB) ->
         sum => {eq, 5}
     }),
     Results = operations:collect_all(Iterator),
+    DataOnly = strip_meta(Results),
 
     [
      ?_assertEqual(6, length(Results)),
-     ?_assert(lists:member(#{a => 0, b => 5, sum => 5}, Results)),
-     ?_assert(lists:member(#{a => 2, b => 3, sum => 5}, Results)),
-     ?_assert(lists:member(#{a => 5, b => 0, sum => 5}, Results)),
+     ?_assert(lists:member(#{a => 0, b => 5, sum => 5}, DataOnly)),
+     ?_assert(lists:member(#{a => 2, b => 3, sum => 5}, DataOnly)),
+     ?_assert(lists:member(#{a => 5, b => 0, sum => 5}, DataOnly)),
      ?_assert(lists:all(fun(#{a := A, b := B, sum := S}) ->
                            S =:= A + B andalso S =:= 5
-                       end, Results))
+                       end, DataOnly))
     ].
 
 test_plus_sum_range_constrained(DB) ->
@@ -175,15 +187,16 @@ test_plus_sum_range_constrained(DB) ->
         sum => {range, 2, 3}
     }),
     Results = operations:collect_all(Iterator),
+    DataOnly = strip_meta(Results),
 
     % For sum=2: (0,2), (1,1), (2,0) → 3 pairs
     % For sum=3: (0,3), (1,2), (2,1), (3,0) → 4 pairs
     % Total = 7
     [
      ?_assertEqual(7, length(Results)),
-     ?_assert(lists:all(fun(#{sum := S}) -> S >= 2 andalso S =< 3 end, Results)),
-     ?_assert(lists:member(#{a => 0, b => 2, sum => 2}, Results)),
-     ?_assert(lists:member(#{a => 3, b => 0, sum => 3}, Results))
+     ?_assert(lists:all(fun(#{sum := S}) -> S >= 2 andalso S =< 3 end, DataOnly)),
+     ?_assert(lists:member(#{a => 0, b => 2, sum => 2}, DataOnly)),
+     ?_assert(lists:member(#{a => 3, b => 0, sum => 3}, DataOnly))
     ].
 
 test_plus_insufficient_constraints(DB) ->
@@ -204,16 +217,17 @@ test_times_both_operands_constrained(DB) ->
         b => {range, 3, 5}
     }),
     Results = operations:collect_all(Iterator),
+    DataOnly = strip_meta(Results),
 
     % 3×3 = 9 tuples
     [
      ?_assertEqual(9, length(Results)),
-     ?_assert(lists:member(#{a => 2, b => 3, product => 6}, Results)),
-     ?_assert(lists:member(#{a => 3, b => 4, product => 12}, Results)),
-     ?_assert(lists:member(#{a => 4, b => 5, product => 20}, Results)),
+     ?_assert(lists:member(#{a => 2, b => 3, product => 6}, DataOnly)),
+     ?_assert(lists:member(#{a => 3, b => 4, product => 12}, DataOnly)),
+     ?_assert(lists:member(#{a => 4, b => 5, product => 20}, DataOnly)),
      ?_assert(lists:all(fun(#{a := A, b := B, product := P}) ->
                            P =:= A * B
-                       end, Results))
+                       end, DataOnly))
     ].
 
 test_times_insufficient_constraints(DB) ->
@@ -235,15 +249,16 @@ test_minus_both_operands_constrained(DB) ->
         b => {range, 2, 3}
     }),
     Results = operations:collect_all(Iterator),
+    DataOnly = strip_meta(Results),
 
     % 3 × 2 = 6 tuples
     [
      ?_assertEqual(6, length(Results)),
-     ?_assert(lists:member(#{a => 5, b => 2, difference => 3}, Results)),
-     ?_assert(lists:member(#{a => 7, b => 3, difference => 4}, Results)),
+     ?_assert(lists:member(#{a => 5, b => 2, difference => 3}, DataOnly)),
+     ?_assert(lists:member(#{a => 7, b => 3, difference => 4}, DataOnly)),
      ?_assert(lists:all(fun(#{a := A, b := B, difference := D}) ->
                            D =:= A - B
-                       end, Results))
+                       end, DataOnly))
     ].
 
 %%% Divide (integer division) Tests
@@ -255,15 +270,16 @@ test_divide_both_operands_constrained(DB) ->
         b => {range, 3, 4}
     }),
     Results = operations:collect_all(Iterator),
+    DataOnly = strip_meta(Results),
 
     % 3 × 2 = 6 tuples
     [
      ?_assertEqual(6, length(Results)),
-     ?_assert(lists:member(#{a => 10, b => 3, quotient => 3, remainder => 1}, Results)),
-     ?_assert(lists:member(#{a => 12, b => 4, quotient => 3, remainder => 0}, Results)),
+     ?_assert(lists:member(#{a => 10, b => 3, quotient => 3, remainder => 1}, DataOnly)),
+     ?_assert(lists:member(#{a => 12, b => 4, quotient => 3, remainder => 0}, DataOnly)),
      ?_assert(lists:all(fun(#{a := A, b := B, quotient := Q, remainder := R}) ->
                            A =:= B * Q + R andalso R >= 0 andalso R < abs(B)
-                       end, Results))
+                       end, DataOnly))
     ].
 
 test_divide_avoids_zero(DB) ->

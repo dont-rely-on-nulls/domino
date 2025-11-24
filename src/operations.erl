@@ -693,6 +693,24 @@ take(Database, RelationName, N) when is_record(Database, database_state), is_int
 %% Extended version of get_tuples_iterator/2 that accepts boundedness constraints.
 %% For infinite relations, constraints are mandatory to ensure termination.
 %%
+%% <b>All tuples include metadata tracking</b> with a nested `meta' field containing:
+%% <ul>
+%%   <li>`provenance' - Tracks immediate source of each attribute</li>
+%%   <li>`lineage' - Tracks complete operational history</li>
+%% </ul>
+%%
+%% == Options Format ==
+%%
+%% Nested format (preferred):
+%% ```
+%% #{constraints => #{age => {gt, 30}}}
+%% '''
+%%
+%% Flat format (backward compatible):
+%% ```
+%% #{age => {gt, 30}}
+%% '''
+%%
 %% == Constraints ==
 %%
 %% Constraints bound the iteration over infinite relations:
@@ -706,39 +724,49 @@ take(Database, RelationName, N) when is_record(Database, database_state), is_int
 %%
 %% == Example ==
 %% ```
-%% %% Iterate naturals in range [0, 100]
-%% Iterator = operations:get_tuples_iterator(DB, naturals,
-%%     #{value => {range, 0, 100}}).
+%% %% Iterate employees with age > 30 (metadata always included)
+%% Iterator = operations:get_tuples_iterator(DB, employees,
+%%     #{constraints => #{age => {gt, 30}}}).
+%%
+%% %% Results will have:
+%% %% #{id => 1, name => "Alice", age => 35,
+%% %%   meta => #{
+%% %%     provenance => #{id => {employees, id}, ...},
+%% %%     lineage => {select, Fun, {base, employees}}
+%% %%   }}
 %% '''
 %%
 %% @param Database `#database_state{}' record
 %% @param RelationName Atom naming the relation to iterate
-%% @param Constraints Map of attribute constraints
+%% @param Options Map of constraints (nested or flat format)
 %% @returns Pid of iterator process
 %%
 %% @see get_tuples_iterator/2
 %% @see take/3
-get_tuples_iterator(Database, RelationName, Constraints) when is_record(Database, database_state) ->
+get_tuples_iterator(Database, RelationName, Options) when is_record(Database, database_state) ->
     case maps:get(RelationName, Database#database_state.relations, error) of
         error ->
             erlang:error({error_tuple_iterator_init, RelationName});
         RelationHash ->
             [Relation] = mnesia:dirty_read(relation, RelationHash),
 
-            %% Check if provenance tracking is enabled
-            EnableProvenance = maps:get('_provenance', Constraints, false),
-            CleanConstraints = maps:remove('_provenance', Constraints),
+            %% Extract constraints from options (support both nested and flat format)
+            Constraints = case maps:is_key(constraints, Options) of
+                true -> maps:get(constraints, Options);
+                false -> Options  %% Flat format: entire map is constraints
+            end,
 
+            %% Metadata tracking is ALWAYS enabled
             case Relation#relation.cardinality of
                 {finite, _} ->
                     %% Finite relation: use tuple hashes
                     TupleHashes = hashes_from_tuple(RelationHash),
-                    spawn(fun() -> tuple_iterator_loop(TupleHashes, RelationName, EnableProvenance) end);
+                    spawn(fun() -> tuple_iterator_loop(TupleHashes, RelationName, true) end);
 
                 _ ->
                     %% Infinite relation: use generator
-                    Generator = instantiate_generator(Relation#relation.generator, CleanConstraints),
-                    spawn(fun() -> generator_iterator_loop(Generator, RelationName, EnableProvenance) end)
+                    Generator = instantiate_generator(Relation#relation.generator, Constraints),
+                    spawn(fun() -> generator_iterator_loop(Generator, RelationName, true) end)
             end
     end.
 
@@ -915,7 +943,9 @@ select_loop(ChildPid, Predicate) ->
                 {ok, Tuple} ->
                     case Predicate(Tuple) of
                         true ->
-                            Caller ! {tuple, Tuple},
+                            %% Wrap lineage with select operation
+                            TupleWithLineage = wrap_lineage(Tuple, {select, Predicate}),
+                            Caller ! {tuple, TupleWithLineage},
                             select_loop(ChildPid, Predicate);
                         false ->
                             %% Skip this tuple, get next
@@ -954,8 +984,30 @@ project_loop(ChildPid, Attributes) ->
         {next, Caller} ->
             case next_tuple(ChildPid) of
                 {ok, Tuple} ->
+                    % Project data attributes
                     ProjectedTuple = maps:with(Attributes, Tuple),
-                    Caller ! {tuple, ProjectedTuple},
+
+                    % Preserve and update metadata
+                    case maps:get(meta, Tuple, undefined) of
+                        undefined ->
+                            % No metadata, just return projected tuple
+                            Caller ! {tuple, ProjectedTuple};
+                        Meta ->
+                            % Filter provenance to only projected attributes
+                            OldProv = maps:get(provenance, Meta, #{}),
+                            NewProv = maps:with(Attributes, OldProv),
+
+                            % Build new metadata
+                            UpdatedMeta = case NewProv of
+                                Empty when map_size(Empty) =:= 0 -> maps:remove(provenance, Meta);
+                                _ -> maps:put(provenance, NewProv, Meta)
+                            end,
+
+                            % Add metadata back and wrap lineage
+                            TupleWithMeta = maps:put(meta, UpdatedMeta, ProjectedTuple),
+                            TupleWithLineage = wrap_lineage(TupleWithMeta, {project, Attributes}),
+                            Caller ! {tuple, TupleWithLineage}
+                    end,
                     project_loop(ChildPid, Attributes);
                 done ->
                     close_iterator(ChildPid),
@@ -994,8 +1046,11 @@ sort_iterator(ChildIterator, CompareFun) when is_function(CompareFun, 2) ->
         %% Phase 2: Sort in memory
         SortedTuples = lists:sort(CompareFun, AllTuples),
 
-        %% Phase 3: Emit sorted tuples on demand
-        sorted_emit_loop(SortedTuples)
+        %% Phase 3: Wrap lineage for all tuples
+        TuplesWithLineage = [wrap_lineage(T, {sort, CompareFun}) || T <- SortedTuples],
+
+        %% Phase 4: Emit sorted tuples on demand
+        sorted_emit_loop(TuplesWithLineage)
     end).
 
 sorted_emit_loop([]) ->
@@ -1027,15 +1082,17 @@ sorted_emit_loop([Tuple | Rest]) ->
 %% @param N Maximum number of tuples to emit
 %% @returns Iterator process (Pid)
 take_iterator(ChildIterator, N) when is_integer(N), N > 0 ->
-    spawn(fun() -> take_iter_loop(ChildIterator, N, 0) end).
+    spawn(fun() -> take_iter_loop(ChildIterator, N, 0, N) end).
 
-take_iter_loop(ChildPid, Limit, Count) when Count < Limit ->
+take_iter_loop(ChildPid, Limit, Count, OriginalN) when Count < Limit ->
     receive
         {next, Caller} ->
             case next_tuple(ChildPid) of
                 {ok, Tuple} ->
-                    Caller ! {tuple, Tuple},
-                    take_iter_loop(ChildPid, Limit, Count + 1);
+                    %% Wrap lineage with take operation
+                    TupleWithLineage = wrap_lineage(Tuple, {take, OriginalN}),
+                    Caller ! {tuple, TupleWithLineage},
+                    take_iter_loop(ChildPid, Limit, Count + 1, OriginalN);
                 done ->
                     close_iterator(ChildPid),
                     Caller ! done
@@ -1044,7 +1101,7 @@ take_iter_loop(ChildPid, Limit, Count) when Count < Limit ->
             close_iterator(ChildPid),
             ok
     end;
-take_iter_loop(ChildPid, _Limit, _Count) ->
+take_iter_loop(ChildPid, _Limit, _Count, _OriginalN) ->
     %% Reached limit - close child and signal done
     close_iterator(ChildPid),
     receive
@@ -1277,7 +1334,7 @@ equijoin_emit_loop(LeftIter, RightTuples, JoinAttr) ->
                             equijoin_emit_loop(LeftIter, RightTuples, JoinAttr);
                         LeftValue ->
                             % Find matching right tuples
-                            Matches = [merge_tuples(LeftTuple, RightTuple)
+                            Matches = [merge_tuples(LeftTuple, RightTuple, {equijoin, JoinAttr})
                                       || RightTuple <- RightTuples,
                                          maps:get(JoinAttr, RightTuple, undefined) =:= LeftValue],
                             case Matches of
@@ -1332,7 +1389,7 @@ theta_join_emit_loop(LeftIter, RightTuples, Pred) ->
                     Caller ! done;
                 {ok, LeftTuple} ->
                     % Find all right tuples that satisfy predicate
-                    Matches = [merge_tuples(LeftTuple, RightTuple)
+                    Matches = [merge_tuples(LeftTuple, RightTuple, {theta_join, Pred})
                               || RightTuple <- RightTuples,
                                  Pred(LeftTuple, RightTuple)],
                     case Matches of
@@ -1365,11 +1422,43 @@ theta_join_emit_buffered(LeftIter, RightTuples, Pred, []) ->
     theta_join_emit_loop(LeftIter, RightTuples, Pred).
 
 %% @private
-%% @doc Add base provenance to a tuple from a relation.
+%% @doc Wrap existing lineage with a new operation.
 %%
-%% Creates a nested meta.provenance field mapping each attribute to its source relation.
+%% Takes a tuple with optional lineage and wraps it with a new operation node.
+%% If the tuple has no lineage, does nothing.
+%%
+%% @param Tuple Tuple potentially with meta.lineage
+%% @param OpInfo Operation info: {select, Pred} | {project, Attrs} | {sort, Cmp} | {take, N}
+wrap_lineage(Tuple, OpInfo) ->
+    case maps:get(meta, Tuple, undefined) of
+        undefined ->
+            % No metadata, return as-is
+            Tuple;
+        Meta ->
+            case maps:get(lineage, Meta, undefined) of
+                undefined ->
+                    % No lineage, return as-is
+                    Tuple;
+                ChildLineage ->
+                    % Wrap existing lineage with new operation
+                    NewLineage = case OpInfo of
+                        {select, Pred} -> {select, Pred, ChildLineage};
+                        {project, Attrs} -> {project, Attrs, ChildLineage};
+                        {sort, CmpFun} -> {sort, CmpFun, ChildLineage};
+                        {take, N} -> {take, N, ChildLineage}
+                    end,
+                    maps:put(meta, maps:put(lineage, NewLineage, Meta), Tuple)
+            end
+    end.
+
+%% @private
+%% @doc Add base provenance and lineage to a tuple from a relation.
+%%
+%% Creates nested meta fields with both provenance and lineage.
 %% Example: add_base_provenance(#{id => 1, name => "Alice"}, employees)
-%%   => #{id => 1, name => "Alice", meta => #{provenance => #{id => {employees, id}, name => {employees, name}}}}
+%%   => #{id => 1, name => "Alice",
+%%        meta => #{provenance => #{id => {employees, id}, name => {employees, name}},
+%%                  lineage => {base, employees}}}
 add_base_provenance(Tuple, RelationName) ->
     % Build provenance map for all attributes (excluding existing meta)
     DataAttrs = maps:remove(meta, Tuple),
@@ -1380,22 +1469,31 @@ add_base_provenance(Tuple, RelationName) ->
         #{},
         DataAttrs
     ),
-    % Add metadata with provenance
-    maps:put(meta, #{provenance => Provenance}, Tuple).
+    % Add metadata with provenance and lineage
+    maps:put(meta, #{
+        provenance => Provenance,
+        lineage => {base, RelationName}
+    }, Tuple).
 
 %% @private
 %% @doc Merge two tuples for join result, including metadata.
 %%
 %% If attribute names conflict, right side attributes are prefixed with "right_".
-%% Metadata (including provenance) is also merged, tracking the source of each attribute.
-merge_tuples(LeftTuple, RightTuple) ->
+%% Metadata (including provenance and lineage) is also merged.
+%%
+%% @param LeftTuple Left side tuple
+%% @param RightTuple Right side tuple
+%% @param JoinInfo Join information: {equijoin, Attr} | {theta_join, Predicate}
+merge_tuples(LeftTuple, RightTuple, JoinInfo) ->
     % Extract metadata from both sides (if present)
     LeftMeta = maps:get(meta, LeftTuple, #{}),
     RightMeta = maps:get(meta, RightTuple, #{}),
 
-    % Extract provenance from metadata
+    % Extract provenance and lineage from metadata
     LeftProv = maps:get(provenance, LeftMeta, #{}),
     RightProv = maps:get(provenance, RightMeta, #{}),
+    LeftLineage = maps:get(lineage, LeftMeta, undefined),
+    RightLineage = maps:get(lineage, RightMeta, undefined),
 
     % Remove metadata from tuples for data merging
     LeftData = maps:remove(meta, LeftTuple),
@@ -1433,10 +1531,28 @@ merge_tuples(LeftTuple, RightTuple) ->
         RightProv
     ),
 
-    % Add merged metadata to result (only if provenance non-empty)
-    case maps:size(MergedProv) of
+    % Build merged lineage if both sides have lineage
+    MergedLineage = case {LeftLineage, RightLineage, JoinInfo} of
+        {undefined, undefined, _} -> undefined;
+        {L, R, {equijoin, Attr}} when L =/= undefined, R =/= undefined ->
+            {join, Attr, L, R};
+        {L, R, {theta_join, Pred}} when L =/= undefined, R =/= undefined ->
+            {theta_join, Pred, L, R};
+        _ -> undefined
+    end,
+
+    % Build merged metadata
+    MergedMeta = case {maps:size(MergedProv), MergedLineage} of
+        {0, undefined} -> #{};
+        {0, Lineage} -> #{lineage => Lineage};
+        {_, undefined} -> #{provenance => MergedProv};
+        {_, Lineage} -> #{provenance => MergedProv, lineage => Lineage}
+    end,
+
+    % Add merged metadata to result (only if non-empty)
+    case maps:size(MergedMeta) of
         0 -> MergedData;
-        _ -> maps:put(meta, #{provenance => MergedProv}, MergedData)
+        _ -> maps:put(meta, MergedMeta, MergedData)
     end.
 
 %% @private

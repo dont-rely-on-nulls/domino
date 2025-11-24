@@ -77,11 +77,28 @@
 %% Maps attribute name to its source (relation, original_attribute_name)
 -type attribute_provenance() :: #{atom() => {atom(), atom()}}.
 
-%% Tuple metadata (contains provenance and other system-managed fields)
+%% Tuple-level lineage (tracks complete operational history)
+%% Operation tree showing how the tuple was derived
+-type lineage_op() ::
+    {base, atom()}                                      % Base relation
+  | {select, fun(), lineage_op()}                       % Filter operation
+  | {project, [atom()], lineage_op()}                   % Projection
+  | {join, atom(), lineage_op(), lineage_op()}          % Join on attribute
+  | {theta_join, fun(), lineage_op(), lineage_op()}     % Join with predicate
+  | {sort, fun(), lineage_op()}                         % Sort operation
+  | {take, pos_integer(), lineage_op()}                 % Limit operation
+  | {aggregate, atom(), atom(), lineage_op()}.          % Aggregation (future)
+
+%% Tuple metadata (contains provenance, lineage, and other system-managed fields)
 -type tuple_metadata() :: #{
-    provenance => attribute_provenance()
+    provenance => attribute_provenance(),
+    lineage => lineage_op()
     % Future: timestamp, version, etc.
 }.
 
 %% Tuples with metadata use a nested 'meta' field:
-%% #{id => 1, name => "Alice", meta => #{provenance => #{id => {employees, id}, name => {employees, name}}}}
+%% #{id => 1, name => "Alice",
+%%   meta => #{
+%%     provenance => #{id => {employees, id}, name => {employees, name}},
+%%     lineage => {select, fun(T) -> maps:get(age, T) > 30 end, {base, employees}}
+%%   }}
