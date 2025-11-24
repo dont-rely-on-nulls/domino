@@ -65,11 +65,11 @@
     CLOSED: [2025-01-22]
     - [X] Nested metadata structure (meta.provenance)
     - [X] Track immediate source of each attribute
-    - [X] Opt-in via '_provenance' flag in iterators
+    - [X] Always enabled - every tuple includes metadata
     - [X] Automatic provenance merging in joins
     - [X] Conflict resolution for duplicate attributes
-    - [X] Backward compatible (no overhead when disabled)
-    - [X] Foundation for tuple-level lineage tracking (planned)
+    - [X] Clean separation of data attributes and metadata
+    - [X] Foundation for tuple-level lineage tracking (implemented)
 
 ** Planned RM/T Extensions
 
@@ -198,10 +198,30 @@
 
 ** Advanced Features
 
-*** TODO Tuple-Level Lineage Tracking
+*** DONE Tuple-Level Lineage Tracking
+    CLOSED: [2025-01-23]
     Track complete operational history of each tuple through query pipelines.
 
-**** Status: DESIGNED, NOT YET IMPLEMENTED
+**** Status: IMPLEMENTED
+
+**** API Usage
+
+    Metadata tracking is ALWAYS enabled. All tuples include the 'meta' field:
+    #+BEGIN_SRC erlang
+    %% Simple query (metadata automatically included)
+    Iter = operations:get_tuples_iterator(DB, employees, #{}).
+
+    %% With constraints (metadata still included)
+    Iter = operations:get_tuples_iterator(DB, employees,
+        #{constraints => #{age => {gt, 30}}}).
+
+    %% Results always have:
+    %% #{id => 1, name => "Alice",
+    %%   meta => #{
+    %%     provenance => #{id => {employees, id}, name => {employees, name}},
+    %%     lineage => {base, employees}
+    %%   }}
+    #+END_SRC
 
 **** Provenance vs. Lineage
 
@@ -215,7 +235,7 @@
       }
       #+END_SRC
 
-    - *Lineage* (PLANNED): Tracks complete operation tree that created the tuple
+    - *Lineage* (IMPLEMENTED): Tracks complete operation tree that created the tuple
       #+BEGIN_SRC erlang
       meta => #{
         provenance => #{...},  % Attribute sources
@@ -260,18 +280,18 @@
 
 **** Implementation Plan
 
-    1. [ ] Extend =tuple_metadata()= type with lineage field
-    2. [ ] Add lineage construction to each iterator operator
-       - [ ] select_iterator: ={select, Predicate, ChildLineage}=
-       - [ ] project_iterator: ={project, Attributes, ChildLineage}=
-       - [ ] equijoin_iterator: ={join, Attr, LeftLineage, RightLineage}=
-       - [ ] theta_join_iterator: ={theta_join, Pred, LeftLineage, RightLineage}=
-       - [ ] sort_iterator: ={sort, CompareFun, ChildLineage}=
-       - [ ] take_iterator: ={take, N, ChildLineage}=
-    3. [ ] Implement lineage merging in joins (combine operation trees)
-    4. [ ] Add lineage querying API for provenance analysis
-    5. [ ] Use lineage for updatable view update propagation
-    6. [ ] Add comprehensive lineage tests
+    1. [X] Extend =tuple_metadata()= type with lineage field
+    2. [X] Add lineage construction to each iterator operator
+       - [X] select_iterator: ={select, Predicate, ChildLineage}=
+       - [X] project_iterator: ={project, Attributes, ChildLineage}=
+       - [X] equijoin_iterator: ={join, Attr, LeftLineage, RightLineage}=
+       - [X] theta_join_iterator: ={theta_join, Pred, LeftLineage, RightLineage}=
+       - [X] sort_iterator: ={sort, CompareFun, ChildLineage}=
+       - [X] take_iterator: ={take, N, ChildLineage}=
+    3. [X] Implement lineage merging in joins (combine operation trees)
+    4. [ ] Add lineage querying API for provenance analysis (future)
+    5. [ ] Use lineage for updatable view update propagation (future)
+    6. [X] Add comprehensive lineage tests
 
 **** Relation to Existing Code
 
