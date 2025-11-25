@@ -183,14 +183,14 @@ validate_plan({project, SubPlan, Attrs}) when is_list(Attrs) ->
 validate_plan({join, Left, Right, Attr}) when is_atom(Attr) ->
     case {validate_plan(Left), validate_plan(Right)} of
         {ok, ok} -> ok;
-        {Error, _} -> Error;
-        {_, Error} -> Error
+        {{error, _} = Error, _} -> Error;
+        {_, {error, _} = Error} -> Error
     end;
 validate_plan({theta_join, Left, Right, Pred}) when is_function(Pred, 2) ->
     case {validate_plan(Left), validate_plan(Right)} of
         {ok, ok} -> ok;
-        {Error, _} -> Error;
-        {_, Error} -> Error
+        {{error, _} = Error, _} -> Error;
+        {_, {error, _} = Error} -> Error
     end;
 validate_plan({sort, SubPlan, Comp}) when is_function(Comp, 2) ->
     validate_plan(SubPlan);
