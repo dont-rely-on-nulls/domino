@@ -1,0 +1,61 @@
+@startuml temporal-queries
+!theme plain
+title Temporal Queries with Immutable Database States
+
+database "DB @ t0" as DB0
+note bottom of DB0
+  hash = abc123...
+  timestamp = 2024-01-01 10:00
+
+  relations:
+    employee => hash_e0
+end note
+
+database "DB @ t1" as DB1
+note bottom of DB1
+  hash = def456...
+  timestamp = 2024-01-01 11:00
+
+  relations:
+    employee => hash_e1
+end note
+
+database "DB @ t2" as DB2
+note bottom of DB2
+  hash = ghi789...
+  timestamp = 2024-01-01 12:00
+
+  relations:
+    employee => hash_e2
+end note
+
+database "Current DB" as DB3
+note bottom of DB3
+  hash = jkl012...
+  timestamp = 2024-01-01 13:00
+
+  relations:
+    employee => hash_e3
+end note
+
+DB0 -right-> DB1: insert tuple
+DB1 -right-> DB2: update salary
+DB2 -right-> DB3: delete tuple
+
+note top of DB0
+  **Time Travel Queries:**
+
+  query_at_time(2024-01-01 10:00)
+    → returns DB0
+
+  query_at_time(2024-01-01 12:00)
+    → returns DB2
+
+  diff(DB0, DB3)
+    → (inserted: [...], deleted: [...], modified: [...])
+
+  history(employee, id: 1)
+    → [(t0, state0), (t1, state1), (t2, state2)]
+end note
+
+@enduml

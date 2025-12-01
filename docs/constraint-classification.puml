@@ -1,0 +1,82 @@
+@startuml constraint-classification
+!theme plain
+title Constraint Classification (McGoveran Framework)
+
+package "Database Constraints" {
+  class RelationConstraints {
+    Which relations must/can exist
+    Example: referential integrity
+  }
+
+  class CardinalityConstraints {
+    Relation size limits
+    Examples:
+    - exactly N tuples
+    - at most M tuples
+  }
+}
+
+package "Relation Constraints" {
+  package "Tuple Constraints" {
+    class AttributeConstraints {
+      Domain constraints per attribute
+      Examples:
+      - age >= 18
+      - salary > 0
+      - name ≠ ""
+    }
+
+    class TupleLevelConstraints {
+      Cross-attribute rules
+      Example:
+      if salary > 200k then age >= 30
+    }
+  }
+
+  package "Relation-Level Constraints" {
+    class KeyConstraints {
+      Uniqueness + not null
+      - Primary keys
+      - Candidate keys
+      - Composite keys
+    }
+
+    class FunctionalDependencies {
+      A → B
+      Example: ZIP → {city, state}
+    }
+
+    class ForeignKeys {
+      Inclusion dependencies
+      Example: employee.dept_id ⊆ department.id
+    }
+  }
+}
+
+package "Transition Constraints" {
+  class StateTransitionRules {
+    Before → After constraints
+    Examples:
+    - salary (monotonic increasing)
+    - created_at (immutable)
+  }
+
+  class TemporalConstraints {
+    Time-based rules
+    Example: end_date >= start_date
+  }
+}
+
+package "Multi-Relation Constraints" {
+  class AggregateConstraints {
+    Cross-relation aggregates
+    Example: sum(dept_salaries) <= dept_budget
+  }
+
+  class MutualExclusion {
+    Disjoint sets
+    Example: managers ∩ ICs = ∅
+  }
+}
+
+@enduml

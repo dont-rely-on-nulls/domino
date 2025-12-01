@@ -1,0 +1,72 @@
+@startuml roadmap
+!theme plain
+title Suggested Implementation Roadmap
+
+package "Phase 1: Stable Interface (MVP)" {
+  [domino.erl wrapper] as P1_1
+  [Command interface] as P1_2
+  [Basic constraint validation] as P1_3
+  [Karuta FFI bindings] as P1_4
+}
+
+package "Phase 2: Type System" {
+  [Fake-relations primitives] as P2_1
+  [Constraint-based refinement] as P2_2
+  [Subtype checking] as P2_3
+  [Type inference] as P2_4
+}
+
+package "Phase 3: Advanced Constraints" {
+  [Foreign keys] as P3_1
+  [Functional dependencies] as P3_2
+  [Tuple/relation-level constraints] as P3_3
+  [Transition constraints] as P3_4
+}
+
+package "Phase 4: Query Features" {
+  [Updatable views] as P4_1
+  [Materialized views] as P4_2
+  [Query optimization] as P4_3
+  [Explain plans] as P4_4
+}
+
+package "Phase 5: Distribution" {
+  [Merkle sync] as P5_1
+  [Multi-node replication] as P5_2
+  [Partition strategies] as P5_3
+  [Consistency protocols] as P5_4
+}
+
+package "Phase 6: Advanced Features" {
+  [Temporal queries] as P6_1
+  [Reactive queries] as P6_2
+  [Constraint solving] as P6_3
+  [Datalog engine] as P6_4
+}
+
+P1_1 -down-> P2_1
+P1_2 -down-> P2_2
+P1_3 -down-> P3_1
+P1_4 -down-> P2_1
+
+P2_1 -down-> P3_1
+P2_2 -down-> P3_2
+P2_3 -down-> P3_3
+P2_4 -down-> P4_1
+
+P3_1 -down-> P4_1
+P3_2 -down-> P4_2
+P3_3 -down-> P4_3
+P3_4 -down-> P4_4
+
+P4_1 -down-> P5_1
+P4_2 -down-> P5_2
+P4_3 -down-> P5_3
+P4_4 -down-> P6_1
+
+P5_1 -down-> P6_1
+P5_2 -down-> P6_2
+P5_3 -down-> P6_3
+P5_4 -down-> P6_4
+
+@enduml

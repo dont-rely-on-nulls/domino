@@ -1,0 +1,69 @@
+@startuml provenance-lineage
+!theme plain
+title Provenance and Lineage Tracking
+
+component "Base Tuple\n(employee)" as T1
+
+note right of T1
+  **Data:**
+  id = 1
+  name = "Alice"
+  age = 30
+  salary = 100000
+
+  **Meta:**
+  provenance:
+    id: (employee, id)
+    name: (employee, name)
+    age: (employee, age)
+    salary: (employee, salary)
+  lineage: (base, employee)
+end note
+
+component "After Select\n(age > 25)" as T2
+
+note right of T2
+  **Data:**
+  id = 1
+  name = "Alice"
+  age = 30
+  salary = 100000
+
+  **Meta:**
+  provenance: (same as above)
+  lineage:
+    select
+    fun(T) -> age > 25 end
+    (base, employee)
+end note
+
+component "After Project\n[name, age]" as T3
+
+note right of T3
+  **Data:**
+  name = "Alice"
+  age = 30
+
+  **Meta:**
+  provenance:
+    name: (employee, name)
+    age: (employee, age)
+  lineage:
+    project
+    [name, age]
+    (select, _, (base, employee))
+end note
+
+T1 -down-> T2: select operation\nadds to lineage
+T2 -down-> T3: project operation\nfilters provenance
+
+note bottom of T3
+  **Benefits:**
+  - Data source tracking
+  - Query result explanation
+  - Reproducibility
+  - Debugging support
+  - Foundation for updatable views
+end note
+
+@enduml

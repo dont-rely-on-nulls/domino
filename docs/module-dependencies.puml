@@ -1,0 +1,39 @@
+@startuml module-dependencies
+!theme plain
+title Module Dependencies
+
+package "Entry Points" {
+  [main.erl] as Main
+  [repl.erl] as REPL
+}
+
+package "Server Layer" {
+  [xml_server_app.erl] as XMLApp
+  [xml_server.erl] as XMLServer
+}
+
+package "Query Layer" {
+  [query_planner.erl] as Planner
+}
+
+package "Core Layer" {
+  [operations.erl] as Ops
+}
+
+package "Support Modules" {
+  [relation.erl] as Relation
+  [generators.erl] as Generators
+  [visualizer.erl] as Visualizer
+}
+
+Main --> XMLApp
+XMLApp --> XMLServer
+XMLServer --> Planner
+REPL --> Ops
+
+Planner --> Ops
+Ops --> Relation
+Ops --> Generators
+Ops --> Visualizer
+
+@enduml

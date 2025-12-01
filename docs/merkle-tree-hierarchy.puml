@@ -1,0 +1,50 @@
+@startuml merkle-tree-hierarchy
+!theme plain
+title Merkle Tree Hierarchy
+
+package "Database Level" {
+  [Database Hash] as DBHash
+  database "Merkle Tree of Relations" as DBTree
+}
+
+package "Relation Level" {
+  [Relation Hash 1] as R1Hash
+  [Relation Hash 2] as R2Hash
+  [Relation Hash N] as RNHash
+
+  database "Merkle Tree of Tuples (R1)" as R1Tree
+  database "Merkle Tree of Tuples (R2)" as R2Tree
+}
+
+package "Tuple Level" {
+  [Tuple Hash 1.1] as T11
+  [Tuple Hash 1.2] as T12
+  [Tuple Hash 2.1] as T21
+  [Tuple Hash 2.2] as T22
+}
+
+DBHash --> DBTree
+DBTree --> R1Hash
+DBTree --> R2Hash
+DBTree --> RNHash
+
+R1Hash --> R1Tree
+R2Hash --> R2Tree
+
+R1Tree --> T11
+R1Tree --> T12
+R2Tree --> T21
+R2Tree --> T22
+
+note bottom of DBHash
+  Single hash represents
+  entire database state
+
+  Benefits:
+  - Version control
+  - Efficient diffing
+  - Distributed sync
+  - Integrity verification
+end note
+
+@enduml

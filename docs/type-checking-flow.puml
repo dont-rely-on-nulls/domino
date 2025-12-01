@@ -1,0 +1,108 @@
+@startuml type-checking-flow
+!theme plain
+title Type Checking as Relation Membership Checking
+
+participant "Karuta Program" as K
+participant "Type Checker" as TC
+participant "Domino" as D
+database "Type Relations\n(Infinite Relations)" as TR
+
+note over K,TR
+  **Type Checking:** Check if value is member of type relation
+  **Type Relations:** Primitives stored as infinite relations
+  **Membership:** Erlang type check + constraint satisfaction
+end note
+
+K -> TC: insert(employee, {age: 25, name: "Alice"})
+activate TC
+
+TC -> D: check: natural[25]?
+activate D
+D -> TR: membership query: natural[25]
+activate TR
+TR -> TR: 1. Erlang type check:\n   is_integer(25) → true
+TR -> TR: 2. Constraint check:\n   25 >= 0 → true
+TR --> D: true (25 ∈ natural)
+deactivate TR
+D --> TC: member ✓
+deactivate D
+
+TC -> D: check: non_empty_string["Alice"]?
+activate D
+D -> TR: membership query: non_empty_string["Alice"]
+activate TR
+TR -> TR: 1. Check string["Alice"]:\n   is_list("Alice") ∧ all_chars → true
+TR -> TR: 2. Constraint check:\n   length("Alice") > 0 → true
+TR --> D: true ("Alice" ∈ non_empty_string)
+deactivate TR
+D --> TC: member ✓
+deactivate D
+
+TC --> K: type_check passed ✓\n{age: 25, name: "Alice"} ∈ employee
+deactivate TC
+
+== Type Check Failure Example ==
+
+K -> TC: insert(employee, {age: -5, name: ""})
+activate TC
+
+TC -> D: check: natural[-5]?
+activate D
+D -> TR: membership query: natural[-5]
+activate TR
+TR -> TR: 1. Erlang type check:\n   is_integer(-5) → true
+TR -> TR: 2. Constraint check:\n   -5 >= 0 → false ✗
+TR --> D: false (-5 ∉ natural)
+deactivate TR
+D --> TC: not_member ✗
+deactivate D
+
+TC --> K: type_error: -5 ∉ natural\nExpected: natural[Age]\nGot: Age = -5
+deactivate TC
+
+== Composite Type Example ==
+
+K -> TC: check: complex[(3.14, 2.71)]?
+activate TC
+
+TC -> D: check: complex[(3.14, 2.71)]?
+activate D
+note over D
+  complex[X] :-
+    X is (A, B),
+    real[A], real[B].
+end note
+
+D -> TR: membership query: real[3.14]
+activate TR
+TR -> TR: is_float(3.14) → true
+TR --> D: true (3.14 ∈ real)
+deactivate TR
+
+D -> TR: membership query: real[2.71]
+activate TR
+TR -> TR: is_float(2.71) → true
+TR --> D: true (2.71 ∈ real)
+deactivate TR
+
+D --> TC: member ✓\n(3.14, 2.71) ∈ complex
+deactivate D
+
+TC --> K: type_check passed ✓
+deactivate TC
+
+note right of TR
+  **Type Relation Storage:**
+  - Primitives: infinite relations
+  - Membership: predicate evaluation
+  - No materialization needed
+  - Lazy constraint checking
+
+  **Example:**
+  natural[X] is stored as:
+  - erlang_type: integer()
+  - constraint: X >= 0
+  - generator: unfold(0, +1)
+end note
+
+@enduml

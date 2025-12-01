@@ -1,0 +1,54 @@
+@startuml query-execution-flow
+!theme plain
+title Query Execution Flow
+
+actor Client
+participant "Query Planner" as Planner
+participant "Scan Iterator" as Scan
+participant "Select Iterator" as Select
+participant "Project Iterator" as Project
+participant "Operations API" as Ops
+database "Mnesia" as DB
+
+Client -> Planner: query({project,\n  {select, {scan, employee}, Pred},\n  [name, age]})
+activate Planner
+Planner -> Planner: parse & validate
+Planner -> Scan: spawn_iterator(employee)
+activate Scan
+Planner -> Select: spawn_iterator(Scan, Pred)
+activate Select
+Planner -> Project: spawn_iterator(Select, [name, age])
+activate Project
+Planner --> Client: {ok, Iterator}
+deactivate Planner
+
+Client -> Project: next_tuple()
+Project -> Select: next_tuple()
+Select -> Scan: next_tuple()
+Scan -> Ops: get_tuples_iterator(employee)
+Ops -> DB: transaction(read tuple)
+DB --> Ops: {ok, Tuple}
+Ops --> Scan: {ok, Tuple}
+Scan --> Select: {ok, Tuple}
+Select -> Select: apply Predicate
+Select --> Project: {ok, Tuple}
+Project -> Project: filter attributes
+Project --> Client: {ok, #{name => "Alice", age => 30}}
+
+Client -> Project: next_tuple()
+Project -> Select: next_tuple()
+Select -> Scan: next_tuple()
+Scan -> Ops: get_tuples_iterator(employee)
+Ops -> DB: transaction(read tuple)
+DB --> Ops: done
+Ops --> Scan: done
+Scan --> Select: done
+Select --> Project: done
+Project --> Client: done
+
+Client -> Project: close_iterator()
+deactivate Project
+deactivate Select
+deactivate Scan
+
+@enduml

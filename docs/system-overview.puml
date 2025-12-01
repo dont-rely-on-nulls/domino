@@ -1,0 +1,81 @@
+@startuml system-overview
+!theme plain
+title Domino System Overview
+
+package "Client Interfaces" {
+  [XML Server\n(TCP/IP Port 8080)] as XML
+  [REPL\n(Interactive Shell)] as REPL
+  [Direct API\n(Erlang Apps)] as API
+}
+
+package "Query Processing Layer" {
+  package "Query Planner" {
+    [DSL Parser] as Parser
+    [Plan Validation\n& Compilation] as Validator
+  }
+
+  package "Volcano Iterator Model" {
+    [Scan Iterator] as Scan
+    [Select Iterator] as Select
+    [Project Iterator] as Project
+    [Sort Iterator] as Sort
+    [Take Iterator] as Take
+    [Join Iterators] as Join
+  }
+}
+
+package "Operations Layer (API)" {
+  [Database Management] as DBMgmt
+  [Relation Operations] as RelOps
+  [Tuple Operations] as TupleOps
+  [Iterator Management] as IterMgmt
+}
+
+package "Data Model Layer" {
+  [Core Abstractions\nattribute, tuple,\nrelation, database_state] as CoreAbs
+  [Finite Relations\n(Merkle Trees)] as Finite
+  [Infinite Relations\n(Generators)] as Infinite
+}
+
+package "Content-Addressed Storage" {
+  database "Mnesia" {
+    [attribute table] as AttrTable
+    [tuple table] as TupleTable
+    [relation table] as RelTable
+    [database_state table] as DBTable
+  }
+}
+
+XML --> Parser
+REPL --> Parser
+API --> Parser
+
+Parser --> Validator
+Validator --> Scan
+
+Scan --> Select
+Select --> Project
+Project --> Sort
+Sort --> Take
+Join --> Take
+
+Scan --> TupleOps
+Select --> IterMgmt
+Project --> IterMgmt
+
+DBMgmt --> CoreAbs
+RelOps --> CoreAbs
+TupleOps --> CoreAbs
+IterMgmt --> CoreAbs
+
+CoreAbs --> Finite
+CoreAbs --> Infinite
+
+Finite --> AttrTable
+Finite --> TupleTable
+Finite --> RelTable
+Finite --> DBTable
+
+Infinite --> AttrTable
+
+@enduml

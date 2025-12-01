@@ -1,0 +1,58 @@
+@startuml command-interface
+!theme plain
+title Command-Based Interface Flow
+
+participant "Karuta" as K
+participant "domino:execute/2" as API
+participant "Command Validator" as V
+participant "operations.erl" as Ops
+database "Mnesia" as DB
+
+K -> API: execute(DB0, {create, relation, employee, Schema})
+activate API
+API -> V: validate({create, relation, ...})
+activate V
+V -> V: check schema format
+V -> V: verify types
+V --> API: ok
+deactivate V
+
+API -> Ops: create_relation(DB0, employee, Schema)
+activate Ops
+Ops -> DB: transaction(fn -> ... end)
+activate DB
+DB -> DB: insert relation record
+DB -> DB: update database tree
+DB --> Ops: {atomic, {NewDB, Hash}}
+deactivate DB
+Ops --> API: {NewDB, Hash}
+deactivate Ops
+
+API --> K: {ok, DB1, {relation_created, employee, Hash}}
+deactivate API
+
+K -> API: execute(DB1, {insert, tuple, employee, Data})
+activate API
+API -> V: validate({insert, tuple, ...})
+activate V
+V -> V: check schema compliance
+V -> V: verify constraints
+V --> API: ok
+deactivate V
+
+API -> Ops: create_tuple(DB1, employee, Data)
+activate Ops
+Ops -> DB: transaction(fn -> ... end)
+activate DB
+DB -> DB: store attribute values
+DB -> DB: create tuple record
+DB -> DB: update merkle tree
+DB --> Ops: {atomic, {NewDB2, TupleHash}}
+deactivate DB
+Ops --> API: {NewDB2, TupleHash}
+deactivate Ops
+
+API --> K: {ok, DB2, {tuple_inserted, TupleHash}}
+deactivate API
+
+@enduml

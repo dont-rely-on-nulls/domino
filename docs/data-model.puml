@@ -1,0 +1,101 @@
+@startuml data-model
+!theme plain
+title Data Model Core Abstractions
+
+class attribute {
+  + hash: SHA256
+  + value: term()
+}
+
+class tuple {
+  + hash: SHA256
+  + relation: atom()
+  + attribute_map: #{name => hash}
+}
+
+class relation {
+  + hash: SHA256
+  + name: atom()
+  + tree: merkle_tree()
+  + schema: #{attr => type_relation}
+  + constraints: constraints()
+  + cardinality: {finite, N} | aleph_zero | continuum
+  + generator: function() | undefined
+  + provenance: provenance()
+}
+
+class type_relation {
+  + name: atom()
+  + erlang_type: type()
+  + membership_predicate: function()
+  + unfold_generator: function()
+  + cardinality: aleph_zero | continuum
+}
+
+class database_state {
+  + hash: SHA256
+  + name: atom()
+  + tree: merkle_tree()
+  + relations: #{name => hash}
+  + type_relations: #{name => type_relation}
+  + timestamp: integer()
+}
+
+database_state "1" *-- "many" relation : contains
+database_state "1" *-- "many" type_relation : defines types
+relation "1" *-- "many" tuple : contains
+tuple "1" *-- "many" attribute : references
+relation --> type_relation : schema references
+
+note right of attribute
+  Content-Addressed Storage:
+  - SHA-256 hash of value
+  - Automatic deduplication
+  - Immutable once stored
+
+  Value Validation:
+  Value must be member of
+  type relation specified in schema
+end note
+
+note right of relation
+  Storage Strategy:
+  - Finite: Merkle tree (materialized)
+  - Infinite: Generator (lazy)
+
+  Type Relations:
+  - Primitives: natural, integer, real, string
+  - Composite: views over other relations
+end note
+
+note left of type_relation
+  **Schema Philosophy:**
+  Attributes are typed by type relations (not primitives).
+  Types are relations (stored as infinite relations).
+  Schema validation = membership checking.
+
+  **Type Relations are Relations:**
+  They define domains via:
+  1. Erlang type constraint
+  2. Additional predicates
+  3. Unfold generator for enumeration
+
+  Examples:
+  - natural[X] :- integer[X], X >= 0
+  - complex[X] :- X is (A,B), real[A], real[B]
+end note
+
+note bottom of database_state
+  **Schema Example:**
+  employee relation schema:
+  #{
+    name => non_empty_string,  % type relation
+    age => natural,             % type relation
+    salary => positive_integer  % type relation
+  }
+
+  Each schema value is a reference to a type relation,
+  NOT a primitive type string like "integer"
+end note
+
+@enduml

@@ -1,0 +1,51 @@
+@startuml reactive-queries
+!theme plain
+title Reactive Queries (Live Subscriptions)
+
+participant "Client" as C
+participant "Subscription Manager" as SM
+participant "Domino" as D
+database "employee relation" as E
+
+C -> SM: subscribe(query: "age > 30")
+activate SM
+SM -> D: register_subscription(employee, predicate)
+activate D
+D -> E: initial query
+E --> D: [{name: "Alice", age: 35}]
+D --> SM: initial results
+SM --> C: [{name: "Alice", age: 35}]
+deactivate D
+deactivate SM
+
+... time passes ...
+
+C -> D: insert(employee, {name: "Bob", age: 32})
+activate D
+D -> D: check affected subscriptions
+D -> D: evaluate predicate on new tuple\n(32 > 30? yes)
+D -> SM: notify(subscription_id, {inserted: "Bob"})
+activate SM
+SM -> C: delta: {inserted: {name: "Bob", age: 32}}
+deactivate SM
+deactivate D
+
+C -> D: insert(employee, {name: "Charlie", age: 25})
+activate D
+D -> D: evaluate predicate\n(25 > 30? no)
+D -> D: no notification needed
+deactivate D
+
+note right of SM
+  Subscription tracks:
+  - Relation(s) to watch
+  - Filter predicate
+  - Client callback
+
+  On mutation:
+  1. Check which subscriptions affected
+  2. Evaluate predicate on changed tuples
+  3. Send delta (not full re-query)
+end note
+
+@enduml

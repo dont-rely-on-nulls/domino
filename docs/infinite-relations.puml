@@ -1,0 +1,177 @@
+@startuml infinite-relations
+!theme plain
+title Infinite Type Relations: Unfold Pattern & Membership
+
+abstract class InfiniteTypeRelation {
+  + name: atom()
+  + cardinality: aleph_zero | continuum
+  + erlang_type: type()
+  + membership_predicate: function()
+  + unfold_generator: function()
+  + constraints: constraints()
+}
+
+class Naturals {
+  Erlang Type: integer()
+  Membership: natural[X] :-
+    erlang:is_integer(X),
+    X >= 0.
+
+  Unfold Generator:
+  unfold(0, fun(N) -> N + 1 end)
+  → 0, 1, 2, 3, ...
+
+  Cardinality: aleph_zero
+}
+
+class Integers {
+  Erlang Type: integer()
+  Membership: integer[X] :-
+    erlang:is_integer(X).
+
+  Unfold Generator:
+  unfold({0, 1}, fun({N, S}) ->
+    case S of
+      1 -> {N, -1};
+      -1 -> {N+1, 1}
+    end
+  end)
+  → 0, 1, -1, 2, -2, ...
+
+  Cardinality: aleph_zero
+}
+
+class Rationals {
+  Erlang Type: {integer(), integer()}
+  Membership: rational[X] :-
+    X is (P, Q),
+    integer[P], integer[Q],
+    Q ≠ 0.
+
+  Unfold Generator:
+  Stern-Brocot tree unfold
+  → (0,1), (1,1), (1,2), ...
+
+  Cardinality: aleph_zero
+}
+
+class Reals {
+  Erlang Type: float()
+  Membership: real[X] :-
+    erlang:is_float(X).
+
+  Unfold Generator:
+  IEEE 754 float enumeration
+  (impractical, continuum)
+
+  Cardinality: continuum
+}
+
+class Strings {
+  Erlang Type: string()
+  Membership: string[X] :-
+    erlang:is_list(X),
+    all_chars(X).
+
+  Unfold Generator:
+  Length-ordered, lexicographic
+  → "", "a", "b", ..., "aa", ...
+
+  Cardinality: aleph_zero
+}
+
+class Plus {
+  Erlang Type: {integer(), integer(), integer()}
+  Membership: plus[A, B, Sum] :-
+    integer[A], integer[B],
+    Sum is A + B.
+
+  Unfold Generator:
+  Diagonalization of ℤ × ℤ
+  → (0,0,0), (0,1,1), (1,0,1), ...
+
+  Cardinality: continuum (ℤ × ℤ)
+}
+
+package "Constraint Application" {
+  class ConstrainedGenerator {
+    Pattern: Apply constraints during unfold
+    base_generator: unfold()
+    constraints: [constraint()]
+    ..
+    filter_unfold(Gen, Constraints) ->
+      filter(Gen, satisfies_all(Constraints))
+  }
+
+  note bottom of ConstrainedGenerator
+    **Example 1: Bounded Naturals**
+    natural[X], X >= 0, X =< 100
+    → Generates: 0, 1, 2, ..., 100 (finite!)
+
+    **Example 2: Constrained Plus**
+    plus[5, B, 12]
+    → Solves: B = 7
+    → Generates: single tuple (5, 7, 12)
+
+    **Example 3: Range Query**
+    integer[X], X >= -10, X =< 10
+    → Generates: 0, 1, -1, 2, -2, ..., 10, -10
+  end note
+}
+
+package "Composite Type Relations (Views)" {
+  class Complex {
+    Type Definition (Karuta):
+    complex[X] :-
+      X is (A, B),
+      real[A], real[B].
+
+    Implementation:
+    Unfold real × real with
+    product enumeration
+
+    Not primitive: Defined as view
+    over primitive real relation
+  }
+}
+
+InfiniteTypeRelation <|-- Naturals
+InfiniteTypeRelation <|-- Integers
+InfiniteTypeRelation <|-- Rationals
+InfiniteTypeRelation <|-- Reals
+InfiniteTypeRelation <|-- Strings
+InfiniteTypeRelation <|-- Plus
+
+Naturals --> ConstrainedGenerator: apply\nconstraints
+Integers --> ConstrainedGenerator
+Rationals --> ConstrainedGenerator
+Plus --> ConstrainedGenerator
+
+Reals --> Complex: used in\nproduct
+Complex : (view relation)
+
+note right of Naturals
+  **Core Pattern:** Infinite relations use unfold
+  to generate members. Primitive types are
+  infinite relations.
+
+  **Membership:** Erlang type + constraints
+
+  **Unfold Pattern:**
+  unfold(Seed, Step) generates infinite sequence:
+  Seed, Step(Seed), Step(Step(Seed)), ...
+
+  This enables lazy evaluation and
+  constraint-based pruning.
+end note
+
+note left of Plus
+  **Function Relations:**
+  Mathematical functions like plus, multiply, etc.
+  are relations with continuum cardinality.
+
+  Membership = evaluation
+  Generation = enumeration
+end note
+
+@enduml

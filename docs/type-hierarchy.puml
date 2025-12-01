@@ -1,0 +1,289 @@
+@startuml type-hierarchy
+!theme plain
+title Type System: Stratified Universes & Types as Relations
+
+package "Universe Stratification" {
+  class "Universe₀" as U0 {
+    Base values
+    Examples: 3, -5, 3.14, true, "hello"
+    The set of all runtime values
+  }
+
+  class "Universe₁" as U1 {
+    Type relations (classify values)
+    Examples: natural, integer, real, boolean
+    Each type is a relation over Universe₀
+    Type relations are infinite relations
+  }
+
+  class "Universe₂" as U2 {
+    Type of type relations
+    The classifier of type relations
+    Prevents self-reference paradoxes
+  }
+
+  class "Universe₃" as U3 {
+    Meta-type level
+    Type : Universe₂ : Universe₃
+  }
+
+  U0 : Universe₁
+  U1 : Universe₂
+  U2 : Universe₃
+  U3 : Universe₄
+
+  note right of U1
+    **Stratification prevents Russell's Paradox**
+    Type relations live in Universe₁
+    and classify values in Universe₀.
+    A type cannot contain itself.
+
+    natural : Universe₁
+    3 ∈ natural (3 ∈ Universe₀)
+    But: natural ∉ natural ✗ (universe mismatch)
+  end note
+}
+
+package "Supertypes (Universe₁)" {
+  class Number {
+    Membership: number[X] where X : Universe₀
+    Definition: Union of all numeric types
+    number[X] :- natural[X]; integer[X];
+                 rational[X]; real[X].
+    Allows polymorphism over numeric types
+    Universe level: Universe₁
+  }
+
+  class Scalar {
+    Membership: scalar[X] where X : Universe₀
+    Definition: Atomic (non-composite) values
+    scalar[X] :- number[X]; boolean[X]; string[X].
+    Universe level: Universe₁
+  }
+}
+
+package "Numeric Type Relations (Universe₁)" {
+  class Naturals {
+    Membership: natural[X] where X : Universe₀
+    Criteria:
+    - X is erlang:integer()
+    - X >= 0
+    Cardinality: aleph_zero
+    Generator: 0, 1, 2, 3, ...
+    Universe level: Universe₁
+  }
+
+  class Integers {
+    Membership: integer[X] where X : Universe₀
+    Criteria:
+    - X is erlang:integer()
+    Cardinality: aleph_zero
+    Generator: 0, 1, -1, 2, -2, ...
+    Universe level: Universe₁
+  }
+
+  class Rationals {
+    Membership: rational[X] where X : Universe₀
+    Criteria:
+    - X is (P, Q)
+    - integer[P], integer[Q]
+    - Q ≠ 0
+    Cardinality: aleph_zero
+    Generator: Stern-Brocot tree
+    Universe level: Universe₁
+  }
+
+  class Reals {
+    Membership: real[X] where X : Universe₀
+    Criteria:
+    - X is erlang:float()
+    Cardinality: continuum
+    Generator: IEEE 754 floats
+    Universe level: Universe₁
+  }
+}
+
+package "Other Primitive Types (Universe₁)" {
+  class Strings {
+    Membership: string[X] where X : Universe₀
+    Criteria:
+    - X is erlang:string()
+    Cardinality: aleph_zero
+    Ordering: by length, then lexicographic
+    Universe level: Universe₁
+  }
+
+  class Booleans {
+    Membership: boolean[X] where X : Universe₀
+    Criteria:
+    - X is erlang:boolean()
+    - X ∈ {true, false}
+    Cardinality: 2
+    Universe level: Universe₁
+  }
+}
+
+package "Constrained Type Relations (Universe₁)" {
+  class PositiveIntegers {
+    Definition: positive_int[X] where X : Universe₀
+    Criteria:
+    - integer[X]
+    - X > 0
+    Relation: positive_int ⊆ integer
+    Universe level: Universe₁
+  }
+
+  class BoundedInt {
+    Definition: bounded_int[X, Min, Max]
+    where X : Universe₀
+    Criteria:
+    - integer[X]
+    - Min ≤ X ≤ Max
+    Relation: bounded_int ⊆ integer
+    Universe level: Universe₁
+  }
+
+  class NonEmptyStrings {
+    Definition: non_empty_string[X]
+    where X : Universe₀
+    Criteria:
+    - string[X]
+    - length(X) > 0
+    Relation: non_empty_string ⊆ string
+    Universe level: Universe₁
+  }
+}
+
+package "Composite Type Relations (Universe₁)" {
+  class Complex {
+    Definition (Karuta-style):
+    complex[X] where X : Universe₀
+    complex[X] :-
+      X is (A, B),
+      real[A], real[B].
+
+    Interpretation:
+    - (A, B) where A is real part
+    - B is imaginary part
+    Relation: complex ⊆ real × real
+    Universe level: Universe₁
+  }
+
+  class Employee {
+    Definition:
+    employee[X] where X : Universe₀
+    employee[X] :-
+      X is (Name, Age, Salary),
+      non_empty_string[Name],
+      positive_int[Age],
+      positive_int[Salary].
+
+    Relation: employee ⊆ string × ℕ⁺ × ℕ⁺
+    Universe level: Universe₁
+  }
+}
+
+' Universe stratification relationships
+U1 --> U0 : classifies values in
+U2 --> U1 : types type relations
+U3 --> U2 : meta-level
+
+' All type relations live in Universe₁
+U1 ..> Number : contains
+U1 ..> Naturals : contains
+U1 ..> Integers : contains
+U1 ..> Rationals : contains
+U1 ..> Reals : contains
+U1 ..> Booleans : contains
+U1 ..> Strings : contains
+U1 ..> Scalar : contains
+
+' Type relation hierarchy (within Universe₁)
+Number <|-- Naturals : ⊇
+Number <|-- Integers : ⊇
+Number <|-- Rationals : ⊇
+Number <|-- Reals : ⊇
+
+Number <|-- Scalar : ⊇
+Booleans <|-- Scalar : ⊇
+Strings <|-- Scalar : ⊇
+
+' Subset relations among numeric types
+Naturals .up.|> Integers : ⊆
+Integers .up.|> Rationals : ⊆
+Rationals .up.|> Reals : ⊆
+
+' Constrained types
+Integers .down.|> PositiveIntegers : ⊇
+Integers .down.|> BoundedInt : ⊇
+Strings .down.|> NonEmptyStrings : ⊇
+
+' Composite types (also in Universe₁)
+Number .down.|> Complex : number × number
+Complex : (view: pair of numbers)
+
+Scalar .down.|> Employee : scalar × scalar × scalar
+Employee : (view: string × nat × nat)
+
+note right of Complex
+  **Views as Type Relations:**
+  Types can be defined as relational views
+  over other type relations.
+
+  Example using supertype:
+  complex[C] :- C is (R, I),
+                number[R], number[I].
+
+  Or more specifically:
+  complex[C] :- C is (R, I),
+                real[R], real[I].
+
+  Views can use supertypes for flexibility!
+  All views live in Universe₁.
+end note
+
+note left of Number
+  **Core Principle:** Every type is a relation
+  Type checking = membership checking in relations
+  T1 <: T2 iff T1 ⊆ T2 (subset relation)
+
+  **Supertypes enable polymorphism:**
+  A function can accept number[X] and work
+  with naturals, integers, rationals, or reals.
+
+  **Universe Levels:**
+  All type relations: Universe₁
+  All values: Universe₀
+  Type of types: Universe₂
+
+  **Erlang Type Mapping:**
+  natural → integer() + (≥ 0)
+  integer → integer()
+  rational → {integer(), integer()}
+  real → float()
+  string → string()
+  boolean → boolean()
+end note
+
+note bottom of U0
+  **Avoiding Russell's Paradox:**
+
+  Like F*, Domino uses predicative universe
+  stratification. The key invariant:
+
+  Type u#i : Type u#(i+1)
+
+  In Domino:
+  - Values (3, "hello", true) : Universe₀
+  - Type relations (natural, string) : Universe₁
+  - Type : Universe₂
+
+  This prevents:
+  natural ∈ natural (universe mismatch!)
+
+  A type relation cannot be a member of itself.
+  All type relations classify values in Universe₀
+  but exist at Universe₁.
+end note
+
+@enduml

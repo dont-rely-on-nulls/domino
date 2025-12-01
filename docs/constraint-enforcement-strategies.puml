@@ -1,0 +1,42 @@
+@startuml constraint-enforcement-strategies
+!theme plain
+title Constraint Enforcement Strategies
+
+state "Operation Request" as Request
+state "Immediate Validation" as Immediate
+state "Deferred Validation" as Deferred
+state "Execute Operation" as Execute
+state "Transaction Commit" as Commit
+state "Rollback" as Rollback
+state "Success" as Success
+
+Request --> Immediate: Strategy 1:\nEager
+Request --> Execute: Strategy 2:\nDeferred
+
+Immediate --> Execute: Valid
+Immediate --> Rollback: Invalid
+
+Execute --> Deferred: At commit
+Deferred --> Commit: Valid
+Deferred --> Rollback: Invalid
+
+Commit --> Success
+Rollback --> Request: Retry
+
+note right of Immediate
+  Immediate Checking:
+  - Validate before execute
+  - Simple reasoning
+  - May reject valid intermediate states
+  - Lower performance
+end note
+
+note right of Deferred
+  Deferred Checking:
+  - Validate at transaction end
+  - Allows intermediate invalid states
+  - Better performance
+  - Complex error handling
+end note
+
+@enduml

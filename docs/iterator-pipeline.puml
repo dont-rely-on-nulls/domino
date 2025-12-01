@@ -1,0 +1,45 @@
+@startuml iterator-pipeline
+!theme plain
+title Volcano Iterator Model - Process Pipeline
+
+component "Scan Iterator\n(Process)" as P1 {
+  [Read from Relation] as S1
+}
+
+component "Select Iterator\n(Process)" as P2 {
+  [Apply Predicate] as S2
+}
+
+component "Project Iterator\n(Process)" as P3 {
+  [Filter Attributes] as S3
+}
+
+component "Sort Iterator\n(Process)" as P4 {
+  [Sort All Tuples] as S4
+}
+
+component "Take Iterator\n(Process)" as P5 {
+  [Limit N Tuples] as S5
+}
+
+P1 -right-> P2: {next, Pid}\n{tuple, T} | done
+P2 -right-> P3: {next, Pid}\n{tuple, T} | done
+P3 -right-> P4: {next, Pid}\n{tuple, T} | done
+P4 -right-> P5: {next, Pid}\n{tuple, T} | done
+
+note bottom of P1
+  Each iterator is an
+  independent Erlang process
+
+  Message passing protocol:
+  - Request: {next, CallerPid}
+  - Response: {tuple, Data} | done
+
+  Benefits:
+  - Lazy evaluation
+  - Memory-bounded
+  - Composable
+  - Concurrent
+end note
+
+@enduml

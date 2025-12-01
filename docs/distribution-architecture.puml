@@ -1,0 +1,63 @@
+@startuml distribution-architecture
+!theme plain
+title Future Distribution Architecture (Proposed)
+
+node "Node 1" {
+  component "Domino Instance 1" as D1
+  database "Mnesia Replica 1" as M1
+  component "Merkle Tree 1" as MT1
+}
+
+node "Node 2" {
+  component "Domino Instance 2" as D2
+  database "Mnesia Replica 2" as M2
+  component "Merkle Tree 2" as MT2
+}
+
+node "Node 3" {
+  component "Domino Instance 3" as D3
+  database "Mnesia Replica 3" as M3
+  component "Merkle Tree 3" as MT3
+}
+
+cloud "Sync Protocol" {
+  [Hash Comparison] as HC
+  [Delta Transfer] as DT
+  [Conflict Resolution] as CR
+}
+
+D1 --> MT1
+D2 --> MT2
+D3 --> MT3
+
+MT1 --> M1
+MT2 --> M2
+MT3 --> M3
+
+MT1 <--> HC: compare hashes
+MT2 <--> HC
+MT3 <--> HC
+
+HC --> DT: if different
+DT --> CR: if conflict
+CR --> M1: apply changes
+CR --> M2
+CR --> M3
+
+note right of HC
+  Merkle tree enables efficient sync:
+  1. Compare root hashes
+  2. If different, compare subtrees
+  3. Transfer only changed branches
+  4. O(log n) comparison complexity
+end note
+
+note bottom of CR
+  Conflict Resolution Strategies:
+  - Last-write-wins (timestamp)
+  - CRDTs (commutative operations)
+  - Consensus (Raft/Paxos)
+  - Application-defined merge
+end note
+
+@enduml

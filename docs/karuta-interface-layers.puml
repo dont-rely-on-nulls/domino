@@ -1,0 +1,65 @@
+@startuml karuta-interface-layers
+!theme plain
+title Karuta Interface Architecture Layers
+
+actor "Karuta Program" as Karuta
+
+package "Language Bindings" {
+  [Karuta FFI] as FFI
+  [Erlang Ports] as Ports
+  [NIF (Native)] as NIF
+}
+
+package "Stable Contract Layer" {
+  component "domino.erl" as DominoAPI {
+    [create_database/1]
+    [execute/2]
+    [query/2]
+    [transaction/2]
+  }
+}
+
+package "Command Processor" {
+  [Command Parser] as CmdParser
+  [Validator] as Validator
+  [Executor] as Executor
+}
+
+package "Implementation Layer" {
+  component "operations.erl" as Ops {
+    [create_relation/3]
+    [create_tuple/3]
+    [get_tuples_iterator/2]
+    [etc...]
+  }
+}
+
+database "Mnesia Storage" as Storage
+
+Karuta --> FFI
+Karuta --> Ports
+Karuta --> NIF
+
+FFI --> DominoAPI
+Ports --> DominoAPI
+NIF --> DominoAPI
+
+DominoAPI --> CmdParser
+CmdParser --> Validator
+Validator --> Executor
+
+Executor --> Ops
+Ops --> Storage
+
+note right of DominoAPI
+  Stable, versioned interface
+  Command format:
+  {Verb, Entity, Name, Parameters}
+
+  Examples:
+  {create, relation, employee, Schema}
+  {insert, tuple, employee, Data}
+  {query, relation, employee, Constraints}
+end note
+
+@enduml
