@@ -16,6 +16,8 @@
 -record(tuple, {hash, relation, attribute_map}).
 -record(attribute, {hash, value}).
 
+-record(infinite_relation, {name, schema, generator, membership_criteria, cardinality}).
+
 %%% Cardinality Types
 
 -type cardinality() :: {finite, non_neg_integer()}  % Finite set with N elements
@@ -33,7 +35,10 @@
   | {gte, number()}                       % Greater than or equal: attr ≥ value
   | {in, [term()]}                        % Membership: attr ∈ list
   | {range, number(), number()}           % Range: attr ∈ [min, max]
-  | {member_of, atom()}.                  % Type constraint: attr ∈ Relation
+  | {member_of, atom()}                   % Type constraint: attr ∈ Relation
+  | {'and', [term()]}
+  | is_integer
+  | is_float.
 
 -type constraints() :: #{atom() => constraint_spec()}.
 

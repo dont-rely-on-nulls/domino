@@ -466,17 +466,51 @@ create_relation(Database, Name, Definition) when is_record(Database, database_st
 %% @see setup/0
 %% @see create_relation/3
 create_database(Name) ->
-    Entry = #database_state{
+    DB = #database_state{
         name = Name,
         hash = <<>>,
         tree = undefined,
         relations = #{},
         timestamp = erlang:timestamp()
     },
+    StandardTypeRelations = [
+        #infinite_relation{
+	   name = naturals,
+	   schema = #{value => naturals},
+	   generator = {generators, naturals},
+	   membership_criteria = #{value => {'and', {gte, 0}, is_integer}},
+	   cardinality = aleph_zero
+	},
+	#infinite_relation{
+	    name = integers,
+	    schema = #{value => integers},
+	    generator = {generators, integers},
+	    membership_criteria = #{value => is_integer}
+        },
+        #infinite_relation{
+	    name = rationals,
+	    schema = #{numerator => integers, denominator => integers},
+	    generator = {generators, rationals},
+	    membership_criteria = #{denominator => {neq, 0}},
+	    cardinality = aleph_zero
+	}
+	%% , #infinite_relation{
+	%%    name = reals,
+	%%    schema = #{value => reals},
+	%%    generator = {primitive, reals},
+	%%    membership_criteria = #{value => {is_float}},
+	%%    cardinality = continuum
+	%% }
+    ],
+    Folder = fun (Elem, AccDB) -> 
+		     {NextDB, _} = operations:create_infinite_relation(AccDB, Elem), 
+		     NextDB
+	     end,
+    StandardDB = lists:foldl(Folder, DB, StandardTypeRelations),
     {atomic, ok} = mnesia:transaction(fun () ->
-        mnesia:write(database_state, Entry, write)
-    end),
-    Entry.
+					      mnesia:write(database_state, StandardDB, write)
+				      end),
+    StandardDB.
 
 %% @doc Create an infinite relation with a generator.
 %%
@@ -495,12 +529,11 @@ create_database(Name) ->
 %% == Example ==
 %% <pre>
 %% %% Create infinite relation of natural numbers
-%% {DB1, Naturals} = operations:create_infinite_relation(DB, #{
-%%     name => naturals,
-%%     schema => #{value => natural},
-%%     cardinality => aleph_zero,
-%%     generator => {primitive, naturals},
-%%     constraints => #{value => {gte, 0}}
+%% {DB1, Naturals} = operations:create_infinite_relation(DB, #infinite_relation{
+%%     name = naturals,
+%%     schema = #{value => natural},
+%%     generator = {primitive, naturals},
+%%     membership_criteria = #{value => {gte, 0}}
 %% }).
 %%
 %% %% Query with bounds
@@ -514,16 +547,17 @@ create_database(Name) ->
 %%
 %% @see create_relation/3
 %% @see get_tuples_iterator/3
-create_infinite_relation(Database, Spec) when is_record(Database, database_state) ->
-    Name = maps:get(name, Spec),
-    Schema = maps:get(schema, Spec),
-    Cardinality = maps:get(cardinality, Spec, aleph_zero),
-    GeneratorSpec = maps:get(generator, Spec),
-    Constraints = maps:get(constraints, Spec, #{}),
+create_infinite_relation(Database, Specification) 
+  when is_record(Database, database_state)
+       andalso is_record(Specification, infinite_relation) ->
+    Name = Specification#infinite_relation.name,
+    Schema = Specification#infinite_relation.schema,
+    Generator = Specification#infinite_relation.generator,
+    Constraints = Specification#infinite_relation.membership_criteria,
+    Cardinality = Specification#infinite_relation.cardinality,
 
     F = fun() ->
-        %% Hash is based on generator specification
-        RelationHash = hash({Name, Schema, GeneratorSpec, Cardinality}),
+        RelationHash = hash({Name, Schema, undefined}),
 
         NewRelation = #relation{
             hash = RelationHash,
@@ -532,7 +566,7 @@ create_infinite_relation(Database, Spec) when is_record(Database, database_state
             schema = Schema,
             constraints = Constraints,
             cardinality = Cardinality,
-            generator = GeneratorSpec,
+            generator = Generator,
             provenance = {base, Name}
         },
         mnesia:write(relation, NewRelation, write),
@@ -765,7 +799,8 @@ get_tuples_iterator(Database, RelationName, Options) when is_record(Database, da
 
                 _ ->
                     %% Infinite relation: use generator
-                    Generator = instantiate_generator(Relation#relation.generator, Constraints),
+                    {GeneratorModule, GeneratorFunction} = Relation#relation.generator,
+		    Generator = erlang:apply(GeneratorModule, GeneratorFunction, [Constraints]),
                     spawn(fun() -> generator_iterator_loop(Generator, RelationName, true) end)
             end
     end.
@@ -1257,28 +1292,28 @@ insert_all_tuples(DB, RelationName, Tuples) ->
 %% @param GeneratorSpec Generator specification
 %% @param Constraints Boundedness constraints
 %% @returns Generator function
-instantiate_generator({primitive, naturals}, Constraints) ->
-    generators:naturals(Constraints);
-instantiate_generator({primitive, integers}, Constraints) ->
-    generators:integers(Constraints);
-instantiate_generator({primitive, rationals}, Constraints) ->
-    generators:rationals(Constraints);
-instantiate_generator({primitive, plus}, Constraints) ->
-    generators:plus(Constraints);
-instantiate_generator({primitive, times}, Constraints) ->
-    generators:times(Constraints);
-instantiate_generator({primitive, minus}, Constraints) ->
-    generators:minus(Constraints);
-instantiate_generator({primitive, divide}, Constraints) ->
-    generators:divide(Constraints);
-instantiate_generator({custom, GeneratorFun}, Constraints) ->
-    GeneratorFun(Constraints);
-instantiate_generator({take, RelationName, N}, Constraints) ->
-    %% Take generator: wrap another generator with limit
-    %% This is a simplified version - full implementation would look up the base relation
-    make_take_generator(RelationName, N, Constraints);
-instantiate_generator(Other, _) ->
-    erlang:error({unknown_generator, Other}).
+%% instantiate_generator({primitive, naturals}, Constraints) ->
+%%     generators:naturals(Constraints);
+%% instantiate_generator({primitive, integers}, Constraints) ->
+%%     generators:integers(Constraints);
+%% instantiate_generator({primitive, rationals}, Constraints) ->
+%%     generators:rationals(Constraints);
+%% instantiate_generator({primitive, plus}, Constraints) ->
+%%     generators:plus(Constraints);
+%% instantiate_generator({primitive, times}, Constraints) ->
+%%     generators:times(Constraints);
+%% instantiate_generator({primitive, minus}, Constraints) ->
+%%     generators:minus(Constraints);
+%% instantiate_generator({primitive, divide}, Constraints) ->
+%%     generators:divide(Constraints);
+%% instantiate_generator({custom, GeneratorFun}, Constraints) ->
+%%     GeneratorFun(Constraints);
+%% instantiate_generator({take, RelationName, N}, Constraints) ->
+%%     %% Take generator: wrap another generator with limit
+%%     %% This is a simplified version - full implementation would look up the base relation
+%%     make_take_generator(RelationName, N, Constraints);
+%% instantiate_generator(Other, _) ->
+%%     erlang:error({unknown_generator, Other}).
 
 %% @private
 %% @doc Generator iterator loop for infinite relations.
