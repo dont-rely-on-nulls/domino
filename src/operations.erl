@@ -485,7 +485,8 @@ create_database(Name) ->
 	    name = integers,
 	    schema = #{value => integers},
 	    generator = {generators, integers},
-	    membership_criteria = #{value => is_integer}
+	    membership_criteria = #{value => is_integer},
+	    cardinality = aleph_zero
         },
         #infinite_relation{
 	    name = rationals,

@@ -20,7 +20,7 @@
 
 %%% Cardinality Types
 
--type cardinality() :: {finite, non_neg_integer()}  % Finite set with N elements
+-type cardinality() :: {finite, non_neg_integer()}   % Finite set with N elements
                      | aleph_zero                    % Countably infinite (ℵ₀)
                      | continuum.                    % Uncountably infinite (2^ℵ₀)
 

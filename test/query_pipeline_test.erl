@@ -139,18 +139,11 @@ test_materialize_finite(DB) ->
     ].
 
 test_materialize_infinite(DB) ->
-    %% Create infinite naturals
-    {DB1, _} = operations:create_infinite_relation(DB, #{
-        name => naturals,
-        schema => #{},
-        cardinality => aleph_zero,
-        generator => {primitive, naturals},
-        constraints => #{value => {gte, 0}}
-    }),
+    %% Naturals are built-in, no need to create them
 
     %% Take 100 and materialize
-    Pipeline = operations:get_tuples_iterator(DB1, naturals, #{value => {range, 0, 99}}),
-    {_DB2, Naturals100} = operations:materialize(DB1, Pipeline, naturals_100),
+    Pipeline = operations:get_tuples_iterator(DB, naturals, #{value => {range, 0, 99}}),
+    {_DB2, Naturals100} = operations:materialize(DB, Pipeline, naturals_100),
 
     [
      ?_assertEqual({finite, 100}, Naturals100#relation.cardinality),
