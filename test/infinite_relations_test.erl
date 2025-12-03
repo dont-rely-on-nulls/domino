@@ -39,14 +39,14 @@ strip_meta(Tuples) when is_list(Tuples) ->
 test_create_naturals(DB) ->
     %% Naturals are now built-in to every database
     %% Just retrieve the relation to verify it exists
-    {ok, NaturalsHash} = operations:get_relation_hash(DB, naturals),
+    {ok, NaturalsHash} = operations:get_relation_hash(DB, natural),
     [NaturalsRel] = mnesia:dirty_read(relation, NaturalsHash),
 
     [
      ?_assert(is_record(NaturalsRel, relation)),
-     ?_assertEqual(naturals, NaturalsRel#relation.name),
+     ?_assertEqual(natural, NaturalsRel#relation.name),
      ?_assertEqual(aleph_zero, NaturalsRel#relation.cardinality),
-     ?_assertEqual({generators, naturals}, NaturalsRel#relation.generator)
+     ?_assertEqual({generators, natural}, NaturalsRel#relation.generator)
     ].
 
 test_naturals_with_constraints(DB) ->
@@ -66,7 +66,7 @@ test_naturals_with_constraints(DB) ->
 
 test_integers_generator(DB) ->
     %% Integers are built-in
-    {ok, IntegersHash} = operations:get_relation_hash(DB, integers),
+    {ok, IntegersHash} = operations:get_relation_hash(DB, integer),
     [Integers] = mnesia:dirty_read(relation, IntegersHash),
 
     %% Query with range constraint [-5, 5]
@@ -85,7 +85,7 @@ test_integers_generator(DB) ->
 
 test_rationals_generator(DB) ->
     %% Rationals are built-in
-    {ok, RationalsHash} = operations:get_relation_hash(DB, rationals),
+    {ok, RationalsHash} = operations:get_relation_hash(DB, rational),
     [Rationals] = mnesia:dirty_read(relation, RationalsHash),
 
     %% Take first 10 rationals using constraints
@@ -112,7 +112,7 @@ test_take_operator(DB) ->
     %% Verify result is finite
     [
      ?_assertEqual({finite, 100}, Naturals100#relation.cardinality),
-     ?_assertEqual({take, naturals, 100}, Naturals100#relation.generator)
+     ?_assertEqual({take, natural, 100}, Naturals100#relation.generator)
     ].
 
 test_finite_relation_cardinality(DB) ->

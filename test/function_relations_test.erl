@@ -44,7 +44,7 @@ setup() ->
     % Create function relations - note how their schemas reference the domain relations
     {DB1, _Plus} = operations:create_immutable_relation(DB, #immutable_relation_spec{
         name = plus,
-        schema = #{a => integers, b => integers, sum => integers},
+        schema = #{a => integer, b => integer, sum => integer},
         generator = {generators, plus},
         membership_criteria = #{},
         cardinality = aleph_zero
@@ -52,7 +52,7 @@ setup() ->
 
     {DB2, _Times} = operations:create_immutable_relation(DB1, #immutable_relation_spec{
         name = times,
-        schema = #{a => integers, b => integers, product => integers},
+        schema = #{a => integer, b => integer, product => integer},
         generator = {generators, times},
         membership_criteria = #{},
         cardinality = aleph_zero
@@ -60,7 +60,7 @@ setup() ->
 
     {DB3, _Minus} = operations:create_immutable_relation(DB2, #immutable_relation_spec{
         name = minus,
-        schema = #{a => integers, b => integers, difference => integers},
+        schema = #{a => integer, b => integer, difference => integer},
         generator = {generators, minus},
         membership_criteria = #{},
         cardinality = aleph_zero
@@ -68,7 +68,7 @@ setup() ->
 
     {DB4, _Divide} = operations:create_immutable_relation(DB3, #immutable_relation_spec{
         name = divide,
-        schema = #{a => integers, b => integers, quotient => integers, remainder => naturals},
+        schema = #{a => integer, b => integer, quotient => integer, remainder => natural},
         generator = {generators, divide},
         membership_criteria = #{},
         cardinality = aleph_zero

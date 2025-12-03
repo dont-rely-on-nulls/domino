@@ -63,12 +63,12 @@
 
 -export([
     boolean/1,
-    naturals/1,
-    integers/1,
-    rationals/1,
+    natural/1,
+    integer/1,
+    rational/1,
     make_range_generator/3,
-    constrained_naturals/2,
-    constrained_integers/2,
+    constrained_natural/2,
+    constrained_integer/2,
     %% Function relations
     plus/1,
     times/1,
@@ -109,7 +109,7 @@ boolean(Constraints) ->
 %%
 %% @param Constraints Map of attribute constraints
 %% @returns Generator function producing naturals
-naturals(Constraints) ->
+natural(Constraints) ->
     case extract_bounds(Constraints, value) of
         {range, Min, Max} when Min >= 0 ->
             make_range_generator(Min, Max, fun(N) -> #{value => N} end);
@@ -153,7 +153,7 @@ naturals(Constraints) ->
 %%
 %% @param Constraints Map of attribute constraints
 %% @returns Generator function producing integers
-integers(Constraints) ->
+integer(Constraints) ->
     case extract_bounds(Constraints, value) of
         {range, Min, Max} ->
             make_integer_range_generator(Min, Max);
@@ -181,7 +181,7 @@ integers(Constraints) ->
 %%
 %% @param Constraints Map of attribute constraints
 %% @returns Generator function producing rationals
-rationals(Constraints) ->
+rational(Constraints) ->
     %% Stern-Brocot tree enumeration
     %% Start with mediant tree: 0/1, 1/1, then generate mediants
     InitialState = {queue:from_list([{0, 1}, {1, 1}]), {0, 1}, {1, 0}},
@@ -343,15 +343,15 @@ make_sb_gen({Queue, {LA, LB}, {RA, RB}}) ->
 %%% Constrained Generators (Public API)
 %%% ============================================================================
 
-%% @doc Create a constrained naturals generator.
--spec constrained_naturals(non_neg_integer(), non_neg_integer()) -> generator_fun().
-constrained_naturals(Min, Max) ->
-    naturals(#{value => {range, Min, Max}}).
+%% @doc Create a constrained natural generator.
+-spec constrained_natural(non_neg_integer(), non_neg_integer()) -> generator_fun().
+constrained_natural(Min, Max) ->
+    natural(#{value => {range, Min, Max}}).
 
-%% @doc Create a constrained integers generator.
--spec constrained_integers(integer(), integer()) -> generator_fun().
-constrained_integers(Min, Max) ->
-    integers(#{value => {range, Min, Max}}).
+%% @doc Create a constrained integer generator.
+-spec constrained_integer(integer(), integer()) -> generator_fun().
+constrained_integer(Min, Max) ->
+    integer(#{value => {range, Min, Max}}).
 
 %%% ============================================================================
 %%% Function Relations

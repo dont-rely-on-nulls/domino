@@ -40,9 +40,9 @@ database_creation_test_() ->
                  ?assertEqual(my_db, DB#database_state.name),
                  % Database now comes with built-in infinite relations
                  Relations = operations:get_relations(DB),
-                 ?assert(lists:member(naturals, Relations)),
-                 ?assert(lists:member(integers, Relations)),
-                 ?assert(lists:member(rationals, Relations)),
+                 ?assert(lists:member(natural, Relations)),
+                 ?assert(lists:member(integer, Relations)),
+                 ?assert(lists:member(rational, Relations)),
                  ?assertNotEqual(undefined, DB#database_state.timestamp)
              end)]}.
 
@@ -66,9 +66,9 @@ relation_creation_test_() ->
                  % Verify database was updated (includes built-in relations)
                  Relations = operations:get_relations(DB1),
                  ?assert(lists:member(users, Relations)),
-                 ?assert(lists:member(naturals, Relations)),
-                 ?assert(lists:member(integers, Relations)),
-                 ?assert(lists:member(rationals, Relations)),
+                 ?assert(lists:member(natural, Relations)),
+                 ?assert(lists:member(integer, Relations)),
+                 ?assert(lists:member(rational, Relations)),
                  {ok, RelationHash} = operations:get_relation_hash(DB1, users),
                  ?assertEqual(Relation#relation.hash, RelationHash)
              end)]}.
@@ -256,9 +256,9 @@ retract_relation_test_() ->
                  % Verify users relation was removed (built-in relations remain)
                  Relations1 = operations:get_relations(DB1),
                  ?assertNot(lists:member(users, Relations1)),
-                 ?assert(lists:member(naturals, Relations1)),
-                 ?assert(lists:member(integers, Relations1)),
-                 ?assert(lists:member(rationals, Relations1)),
+                 ?assert(lists:member(natural, Relations1)),
+                 ?assert(lists:member(integer, Relations1)),
+                 ?assert(lists:member(rational, Relations1)),
                  ?assertEqual({error, not_found}, operations:get_relation_hash(DB1, users)),
 
                  % Verify database hash changed

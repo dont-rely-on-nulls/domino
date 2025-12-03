@@ -120,12 +120,12 @@ example_db() ->
     {DB9, _} = operations:create_tuple(DB8, departments, #{dept_id => 20, dept_name => "Sales", budget => 80000}),
     {DB10, _} = operations:create_tuple(DB9, departments, #{dept_id => 30, dept_name => "Marketing", budget => 90000}),
 
-    %% Note: naturals, integers, rationals, and boolean are now built-in to every database
+    %% Note: natural, integer, rational, and boolean are now built-in to every database
 
     io:format("Example database created with:~n"),
     io:format("  - employees (5 tuples)~n"),
     io:format("  - departments (3 tuples)~n"),
-    io:format("  - Built-in immutable relations: boolean, naturals, integers, rationals~n~n"),
+    io:format("  - Built-in immutable relations: boolean, natural, integer, rational~n~n"),
 
     DB10.
 

@@ -503,25 +503,25 @@ create_database(Name) ->
         },
         %% Natural numbers - infinite, immutable
         #immutable_relation_spec{
-            name = naturals,
-            schema = #{value => naturals},
-            generator = {generators, naturals},
+            name = natural,
+            schema = #{value => natural},
+            generator = {generators, natural},
             membership_criteria = #{value => {'and', {gte, 0}, is_integer}},
             cardinality = aleph_zero
         },
         %% Integers - infinite, immutable
         #immutable_relation_spec{
-            name = integers,
-            schema = #{value => integers},
-            generator = {generators, integers},
+            name = integer,
+            schema = #{value => integer},
+            generator = {generators, integer},
             membership_criteria = #{value => is_integer},
             cardinality = aleph_zero
         },
         %% Rationals - infinite, immutable
         #immutable_relation_spec{
-            name = rationals,
-            schema = #{numerator => integers, denominator => integers},
-            generator = {generators, rationals},
+            name = rational,
+            schema = #{numerator => integer, denominator => integer},
+            generator = {generators, rational},
             membership_criteria = #{denominator => {neq, 0}},
             cardinality = aleph_zero
         }
