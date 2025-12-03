@@ -752,20 +752,31 @@ take(Database, RelationName, N) when is_record(Database, database_state), is_int
             %% Create take relation
             TakeName = list_to_atom(atom_to_list(RelationName) ++ "_take_" ++ integer_to_list(N)),
 
+            TakeHash = hash({take, RelationName, N}),
+
             TakeRelation = #relation{
-                hash = hash({take, RelationName, N}),
+                hash = TakeHash,
                 name = TakeName,
                 tree = undefined,  % Generated on-demand
                 schema = SourceRelation#relation.schema,
                 constraints = SourceRelation#relation.constraints,
                 cardinality = ResultCardinality,
                 generator = {take, RelationName, N},
+                membership_criteria = #{},
+                mutability = immutable,  % Take relations are read-only
                 provenance = {take, SourceRelation#relation.provenance, N}
             },
 
-            %% Note: We don't persist take relations to Mnesia for now
-            %% They are ephemeral views
-            {Database, TakeRelation}
+            %% Register the take relation (ephemeral - not persisted to Mnesia disk)
+            %% This allows get_tuples_iterator to find it
+            UpdatedDatabase = Database#database_state{
+                relations = maps:put(TakeName, TakeHash, Database#database_state.relations)
+            },
+
+            %% Store in Mnesia (in-memory transaction)
+            mnesia:dirty_write(relation, TakeRelation),
+
+            {UpdatedDatabase, TakeRelation}
     end.
 
 %% @doc Create an iterator for streaming tuples from a relation with constraints.
@@ -838,16 +849,28 @@ get_tuples_iterator(Database, RelationName, Options) when is_record(Database, da
 
             %% Metadata tracking is ALWAYS enabled
             case Relation#relation.cardinality of
-                {finite, _} ->
-                    %% Finite relation: use tuple hashes
+                {finite, _} when Relation#relation.tree =/= undefined ->
+                    %% Finite relation with materialized tuples: use tuple hashes
                     TupleHashes = hashes_from_tuple(RelationHash),
                     spawn(fun() -> tuple_iterator_loop(TupleHashes, RelationName, true) end);
 
                 _ ->
-                    %% Infinite relation: use generator
-                    {GeneratorModule, GeneratorFunction} = Relation#relation.generator,
-		    Generator = erlang:apply(GeneratorModule, GeneratorFunction, [Constraints]),
-                    spawn(fun() -> generator_iterator_loop(Generator, RelationName, true) end)
+                    %% Relation with generator (infinite or take) or empty finite relation
+                    case Relation#relation.generator of
+                        undefined ->
+                            %% Empty finite relation without materialized tuples
+                            spawn(fun() -> tuple_iterator_loop([], RelationName, true) end);
+
+                        {take, SourceRelName, N} ->
+                            %% Take relation: get source iterator and limit to N tuples
+                            SourceIter = get_tuples_iterator(Database, SourceRelName, Constraints),
+                            spawn(fun() -> take_iter_loop(SourceIter, N, 0, N) end);
+
+                        {GeneratorModule, GeneratorFunction} ->
+                            %% Normal generator (naturals, integers, etc.)
+                            Generator = erlang:apply(GeneratorModule, GeneratorFunction, [Constraints]),
+                            spawn(fun() -> generator_iterator_loop(Generator, RelationName, true) end)
+                    end
             end
     end.
 
@@ -1640,19 +1663,4 @@ merge_tuples(LeftTuple, RightTuple, JoinInfo) ->
         0 -> MergedData;
         _ -> maps:put(meta, MergedMeta, MergedData)
     end.
-
-%% @private
-%% @doc Create a take generator that limits another generator.
-make_take_generator(_RelationName, N, _Constraints) ->
-    %% Simplified version: just count to N
-    make_take_gen(0, N).
-
-make_take_gen(Current, Max) when Current < Max ->
-    fun(next) ->
-        Tuple = #{value => Current},
-        NextGen = make_take_gen(Current + 1, Max),
-        {value, Tuple, NextGen}
-    end;
-make_take_gen(_, _) ->
-    fun(_) -> done end.
 

@@ -234,8 +234,18 @@ compile_to_iterator(DB, {sort, SubPlan, Comparator}) ->
     operations:sort_iterator(SubIter, Comparator);
 
 compile_to_iterator(DB, {take, SubPlan, N}) ->
-    SubIter = compile_to_iterator(DB, SubPlan),
-    operations:take_iterator(SubIter, N);
+    %% Use relational take operator when possible (for scans)
+    case SubPlan of
+        {scan, RelationName} ->
+            %% Direct scan: use relational take operator
+            {DB2, TakeRelation} = operations:take(DB, RelationName, N),
+            %% Get iterator from the take relation (now properly registered)
+            operations:get_tuples_iterator(DB2, TakeRelation#relation.name, #{});
+        _ ->
+            %% Complex plan: fall back to iterator-based take for composition
+            SubIter = compile_to_iterator(DB, SubPlan),
+            operations:take_iterator(SubIter, N)
+    end;
 
 compile_to_iterator(DB, {rename, OldAttr, NewAttr, SubPlan}) ->
     SubIter = compile_to_iterator(DB, SubPlan),
