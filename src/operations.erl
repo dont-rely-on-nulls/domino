@@ -575,22 +575,11 @@ create_database(Name) ->
 %% </pre>
 %%
 %% @param Database `#database_state{}' record
-%% @param Spec Map with keys: name, schema, cardinality, generator, constraints
-%% @returns `{UpdatedDatabase, NewRelation}' tuple
+%% @param Specification `#immutable_relation_spec{}' record
+%% @returns `{UpdatedDatabase, NewRelation}'
 %%
 %% @see create_relation/3
 %% @see get_tuples_iterator/3
-%% @doc Create an immutable relation (with optional generator for infinite extent).
-%%
-%% Creates a relation that cannot be modified via insert/delete operations.
-%% Used for:
-%% - Infinite domains (Naturals, Integers, Rationals)
-%% - Infinite-extent relations (Plus, Times, LessThan)
-%% - Protected finite relations (Boolean)
-%%
-%% @param Database `#database_state{}' record
-%% @param Specification `#immutable_relation_spec{}' record
-%% @returns `{UpdatedDatabase, NewRelation}'
 create_immutable_relation(Database, Specification)
   when is_record(Database, database_state)
        andalso is_record(Specification, immutable_relation_spec) ->
@@ -946,8 +935,7 @@ close_iterator(IteratorPid) ->
     ok.
 
 %% @private
-%% @doc Iterator loop implementation (internal).
-%%
+%% Iterator loop implementation (internal).
 %% This is the process loop for the Volcano Iterator Model. It maintains a list
 %% of tuple hashes and resolves them lazily when requested.
 %%
@@ -1323,12 +1311,12 @@ materialize(Database, SourceIterator, ResultName) when is_record(Database, datab
     end.
 
 %% @private
-%% @doc Infer schema from a tuple.
+%% Infer schema from a tuple.
 infer_schema_from_tuple(Tuple) when is_map(Tuple) ->
     maps:map(fun(_AttrName, Value) -> infer_type(Value) end, Tuple).
 
 %% @private
-%% @doc Infer type from value.
+%% Infer type from value.
 infer_type(Value) when is_integer(Value) -> integer;
 infer_type(Value) when is_float(Value) -> float;
 infer_type(Value) when is_binary(Value) -> binary;
@@ -1338,7 +1326,7 @@ infer_type(Value) when is_boolean(Value) -> boolean;
 infer_type(_) -> term.
 
 %% @private
-%% @doc Insert multiple tuples into a relation.
+%% Insert multiple tuples into a relation.
 insert_all_tuples(DB, RelationName, Tuples) ->
     lists:foldl(
         fun(Tuple, {DBacc, _RelAcc}) ->
@@ -1352,9 +1340,7 @@ insert_all_tuples(DB, RelationName, Tuples) ->
 %%% Generator Support Functions
 %%% ============================================================================
 
-%% @private
-%% @doc Instantiate a generator from a generator specification.
-%%
+%% Instantiate a generator from a generator specification (commented out).
 %% Converts a generator spec (stored in relation record) into an actual
 %% generator function that can produce tuples.
 %%
@@ -1385,12 +1371,9 @@ insert_all_tuples(DB, RelationName, Tuples) ->
 %%     erlang:error({unknown_generator, Other}).
 
 %% @private
-%% @doc Generator iterator loop for infinite relations.
-%%
+%% Generator iterator loop for infinite relations.
 %% Similar to tuple_iterator_loop but works with generator functions instead
 %% of tuple hashes.
-%%
-%% @param Generator Generator function
 generator_iterator_loop(Generator, RelationName, EnableProvenance) ->
     receive
         {next, Caller} ->
@@ -1410,8 +1393,7 @@ generator_iterator_loop(Generator, RelationName, EnableProvenance) ->
     end.
 
 %% @private
-%% @doc Equijoin loop: nested loop join on attribute equality.
-%%
+%% Equijoin loop: nested loop join on attribute equality.
 %% Strategy:
 %% 1. Collect all tuples from right iterator into memory
 %% 2. For each left tuple, scan right tuples for matches
@@ -1479,8 +1461,7 @@ equijoin_emit_buffered(LeftIter, RightTuples, JoinAttr, []) ->
     equijoin_emit_loop(LeftIter, RightTuples, JoinAttr).
 
 %% @private
-%% @doc Theta-join loop: nested loop join with predicate.
-%%
+%% Theta-join loop: nested loop join with predicate.
 %% @param LeftIter Left iterator process
 %% @param RightIter Right iterator process
 %% @param Pred Predicate function fun(LeftTuple, RightTuple) -> boolean()
@@ -1531,8 +1512,7 @@ theta_join_emit_buffered(LeftIter, RightTuples, Pred, []) ->
     theta_join_emit_loop(LeftIter, RightTuples, Pred).
 
 %% @private
-%% @doc Wrap existing lineage with a new operation.
-%%
+%% Wrap existing lineage with a new operation.
 %% Takes a tuple with optional lineage and wraps it with a new operation node.
 %% If the tuple has no lineage, does nothing.
 %%
@@ -1561,8 +1541,7 @@ wrap_lineage(Tuple, OpInfo) ->
     end.
 
 %% @private
-%% @doc Add base provenance and lineage to a tuple from a relation.
-%%
+%% Add base provenance and lineage to a tuple from a relation.
 %% Creates nested meta fields with both provenance and lineage.
 %% Example: add_base_provenance(#{id => 1, name => "Alice"}, employees)
 %%   => #{id => 1, name => "Alice",
@@ -1585,8 +1564,7 @@ add_base_provenance(Tuple, RelationName) ->
     }, Tuple).
 
 %% @private
-%% @doc Merge two tuples for join result, including metadata.
-%%
+%% Merge two tuples for join result, including metadata.
 %% If attribute names conflict, right side attributes are prefixed with "right_".
 %% Metadata (including provenance and lineage) is also merged.
 %%
