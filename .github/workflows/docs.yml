@@ -20,41 +20,47 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Setup Erlang/OTP
-      uses: erlef/setup-beam@v1
-      with:
-        otp-version: '27'
-        rebar3-version: '3.23'
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27"
+          rebar3-version: "3.23"
 
-    - name: Restore dependencies cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          _build
-          rebar.lock
-        key: ${{ runner.os }}-rebar3-${{ hashFiles('rebar.config') }}
-        restore-keys: |
-          ${{ runner.os }}-rebar3-
+      - name: Restore dependencies cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            _build
+            rebar.lock
+          key: ${{ runner.os }}-rebar3-${{ hashFiles('rebar.config') }}
+          restore-keys: |
+            ${{ runner.os }}-rebar3-
 
-    - name: Compile
-      run: rebar3 compile
+      - name: Compile
+        run: rebar3 compile
 
-    - name: Generate EDoc
-      run: rebar3 edoc
+      - name: Generate EDoc
+        run: rebar3 edoc
 
-    - name: Fix index.html for GitHub Pages
-      run: cp doc/overview-summary.html doc/index.html
+      - name: Fix index.html for GitHub Pages
+        run: |
+          if [ ! -f doc/index.html ]; then
+            cp doc/overview-summary.html doc/index.html
+            echo "Copied overview-summary.html to index.html"
+          else
+            echo "index.html already exists, skipping"
+          fi
 
-    - name: Setup Pages
-      uses: actions/configure-pages@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
 
-    - name: Upload artifact
-      uses: actions/upload-pages-artifact@v3
-      with:
-        path: 'doc'
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "doc"
 
   deploy:
     name: Deploy to GitHub Pages
@@ -65,6 +71,6 @@ jobs:
     needs: build
 
     steps:
-    - name: Deploy to GitHub Pages
-      id: deployment
-      uses: actions/deploy-pages@v4
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
