@@ -77,8 +77,8 @@
 %%% Types
 
 -type query_plan() ::
-    {scan, atom()}                                          % Scan relation
-  | {relation, atom()}                                      % Reference relation
+    {scan, atom()}                                         % Scan relation
+  | {relation, atom()}                                     % Reference relation
   | {select, query_plan(), fun((map()) -> boolean())}      % Filter
   | {project, query_plan(), [atom()]}                      % Projection
   | {join, query_plan(), query_plan(), atom()}             % Equijoin
@@ -111,21 +111,22 @@ prepare(Plan) ->
 
 %% @doc Execute a prepared query plan against a database.
 %%
-%% Compiles the query plan into an iterator pipeline and returns
-%% the iterator handle. The caller must consume the iterator using
-%% operations:next_tuple/1 and close it with operations:close_iterator/1.
+%% Returns an ephemeral relation for top-level operations that can spawn
+%% multiple independent iterators. The relation's generator creates fresh
+%% iterator pipelines on demand, allowing reproducible results.
 %%
 %% @param DB The database state
 %% @param Plan The prepared query plan
-%% @returns Iterator process PID
--spec execute(term(), query_plan()) -> pid().
+%% @returns Ephemeral relation record
+-spec execute(term(), query_plan()) -> #relation{}.
 execute(DB, Plan) ->
-    compile_to_iterator(DB, Plan).
+    create_ephemeral_relation(DB, Plan).
 
 %% @doc Execute a query plan and collect all results.
 %%
 %% Convenience function that executes the plan and collects all
-%% tuples into a list. Automatically closes the iterator.
+%% tuples into a list. Uses the ephemeral relation to create an
+%% iterator and automatically closes it.
 %%
 %% If the iterator times out (e.g., when sorting an infinite relation),
 %% returns partial results with a warning.
@@ -135,7 +136,9 @@ execute(DB, Plan) ->
 %% @returns List of result tuples, or partial results on timeout
 -spec collect(term(), query_plan()) -> [map()].
 collect(DB, Plan) ->
-    Iter = execute(DB, Plan),
+    EphemeralRelation = execute(DB, Plan),
+    % Create iterator from the ephemeral relation's generator
+    Iter = (EphemeralRelation#relation.generator)(#{}),
     Results = operations:collect_all(Iter),
     operations:close_iterator(Iter),
     case Results of
@@ -164,6 +167,229 @@ explain(Plan) ->
     explain_plan(Plan, 0).
 
 %%% Internal Functions
+
+%% @doc Create an ephemeral relation for the top-level query plan.
+%%
+%% Creates an ephemeral relation with a generator closure that can spawn
+%% fresh iterators for the query plan. This allows the relation to be
+%% consumed multiple times with reproducible results.
+%%
+%% @param DB The database state
+%% @param Plan The query plan
+%% @returns Ephemeral relation record
+-spec create_ephemeral_relation(term(), query_plan()) -> #relation{}.
+create_ephemeral_relation(DB, Plan) ->
+    % Create a generator closure that captures DB and Plan
+    GeneratorFun = fun(_Constraints) ->
+        compile_to_iterator(DB, Plan)
+    end,
+    
+    % Compute schema from the plan (simplified for now)
+    Schema = compute_schema(DB, Plan),
+    
+    % Generate a unique name for the ephemeral relation
+    EphemeralName = list_to_atom("ephemeral_" ++ integer_to_list(erlang:unique_integer([positive]))),
+    
+    % Compute provenance from the plan
+    Provenance = compute_provenance(Plan),
+    
+    % Create the ephemeral relation record
+    #relation{
+        hash = crypto:hash(sha256, term_to_binary({ephemeral, Plan})),
+        name = EphemeralName,
+        tree = undefined,  % No tree for ephemeral relations
+        schema = Schema,
+        constraints = #{},  % No constraints for now
+        cardinality = unknown,  % Cardinality would need to be computed
+        generator = GeneratorFun,
+        membership_criteria = #{},
+        mutability = immutable,
+        provenance = Provenance
+    }.
+
+%% @doc Compute the schema for a query plan.
+%%
+%% Recursively analyzes the query plan structure to determine the output schema.
+%% The schema maps attribute names to their domain/type information.
+%%
+%% @param DB The database state
+%% @param Plan The query plan
+%% @returns Schema map
+-spec compute_schema(term(), query_plan()) -> map().
+compute_schema(DB, {scan, RelationName}) ->
+    case maps:get(RelationName, DB#database_state.relations, undefined) of
+        undefined ->
+            % Relation not found, return empty schema
+            #{};
+        RelationHash ->
+            [Relation] = mnesia:dirty_read(relation, RelationHash),
+            Relation#relation.schema
+    end;
+
+compute_schema(DB, {relation, RelationName}) ->
+    % Same as scan
+    compute_schema(DB, {scan, RelationName});
+
+compute_schema(DB, {select, SubPlan, _Predicate}) ->
+    % Select doesn't change schema, just filters tuples
+    compute_schema(DB, SubPlan);
+
+compute_schema(DB, {project, SubPlan, Attributes}) ->
+    % Project filters the schema to only include selected attributes
+    SubSchema = compute_schema(DB, SubPlan),
+    maps:with(Attributes, SubSchema);
+
+compute_schema(DB, {join, LeftPlan, RightPlan, _Attribute}) ->
+    % Join combines schemas from both sides, handling attribute conflicts
+    LeftSchema = compute_schema(DB, LeftPlan),
+    RightSchema = compute_schema(DB, RightPlan),
+    merge_join_schemas(LeftSchema, RightSchema);
+
+compute_schema(DB, {theta_join, LeftPlan, RightPlan, _Predicate}) ->
+    % Theta join also combines schemas from both sides, handling attribute conflicts
+    LeftSchema = compute_schema(DB, LeftPlan),
+    RightSchema = compute_schema(DB, RightPlan),
+    merge_join_schemas(LeftSchema, RightSchema);
+
+compute_schema(DB, {sort, SubPlan, _Comparator}) ->
+    % Sort doesn't change schema
+    compute_schema(DB, SubPlan);
+
+compute_schema(DB, {take, SubPlan, _N}) ->
+    % Take doesn't change schema, just limits tuples
+    compute_schema(DB, SubPlan);
+
+compute_schema(DB, {rename, OldAttr, NewAttr, SubPlan}) ->
+    % Rename changes one attribute name in the schema
+    SubSchema = compute_schema(DB, SubPlan),
+    case maps:is_key(OldAttr, SubSchema) of
+        true ->
+            AttrType = maps:get(OldAttr, SubSchema),
+            SubSchema1 = maps:remove(OldAttr, SubSchema),
+            maps:put(NewAttr, AttrType, SubSchema1);
+        false ->
+            % Attribute doesn't exist, return unchanged schema
+            SubSchema
+    end;
+
+compute_schema(DB, {materialize, SubPlan}) ->
+    % Materialize doesn't change schema
+    compute_schema(DB, SubPlan);
+
+compute_schema(DB, {materialize, SubPlan, _N}) ->
+    % Materialize with limit doesn't change schema
+    compute_schema(DB, SubPlan);
+
+compute_schema(_DB, _UnknownPlan) ->
+    % Unknown plan type, return empty schema
+    #{}.
+
+%% @doc Merge schemas for join operations, handling attribute conflicts elegantly.
+%%
+%% Instead of prefixing conflicting attribute names, this approach maintains
+%% both provenances in the schema value. For attributes that exist in both
+%% relations, the schema value becomes a list of the original values.
+%% This is especially important for natural joins where the join attribute
+%% logically represents the same entity from both sides.
+%%
+%% @param LeftSchema Schema from left relation
+%% @param RightSchema Schema from right relation  
+%% @returns Merged schema map with provenance lists for conflicts
+-spec merge_join_schemas(map(), map()) -> map().
+merge_join_schemas(LeftSchema, RightSchema) ->
+    maps:fold(
+        fun(Key, RightValue, Acc) ->
+            case maps:get(Key, Acc, undefined) of
+                undefined ->
+                    % No conflict, add the right attribute
+                    maps:put(Key, RightValue, Acc);
+                LeftValue when LeftValue =:= RightValue ->
+                    % Same type/domain, keep single value (common in natural joins)
+                    maps:put(Key, LeftValue, Acc);
+                LeftValue when is_list(LeftValue) ->
+                    % Left value is already a list, append if not already present
+                    case lists:member(RightValue, LeftValue) of
+                        true -> maps:put(Key, LeftValue, Acc);
+                        false -> maps:put(Key, LeftValue ++ [RightValue], Acc)
+                    end;
+                LeftValue ->
+                    % Conflict with different types - create provenance list
+                    maps:put(Key, [LeftValue, RightValue], Acc)
+            end
+        end,
+        LeftSchema,
+        RightSchema
+    ).
+
+%% @doc Compute provenance for a query plan.
+%%
+%% Recursively analyzes the query plan structure to determine the provenance,
+%% following the provenance types defined in operations.hrl.
+%%
+%% @param Plan The query plan
+%% @returns Provenance term
+-spec compute_provenance(query_plan()) -> term().
+compute_provenance({scan, RelationName}) ->
+    {base, RelationName};
+
+compute_provenance({relation, RelationName}) ->
+    {base, RelationName};
+
+compute_provenance({select, SubPlan, _Predicate}) ->
+    % For select, we'd need to represent the predicate constraints
+    % For now, simplified without constraint details
+    SubProvenance = compute_provenance(SubPlan),
+    {select, SubProvenance, #{}};
+
+compute_provenance({project, SubPlan, Attributes}) ->
+    SubProvenance = compute_provenance(SubPlan),
+    {project, SubProvenance, Attributes};
+
+compute_provenance({join, LeftPlan, RightPlan, _Attribute}) ->
+    LeftProvenance = compute_provenance(LeftPlan),
+    RightProvenance = compute_provenance(RightPlan),
+    {join, LeftProvenance, RightProvenance};
+
+compute_provenance({theta_join, LeftPlan, RightPlan, _Predicate}) ->
+    LeftProvenance = compute_provenance(LeftPlan),
+    RightProvenance = compute_provenance(RightPlan),
+    {join, LeftProvenance, RightProvenance};
+
+compute_provenance({sort, SubPlan, _Comparator}) ->
+    % Sort doesn't change provenance
+    compute_provenance(SubPlan);
+
+compute_provenance({take, SubPlan, N}) ->
+    SubProvenance = compute_provenance(SubPlan),
+    {take, SubProvenance, N};
+
+compute_provenance({rename, _OldAttr, _NewAttr, SubPlan}) ->
+    % Rename preserves underlying provenance
+    compute_provenance(SubPlan);
+
+compute_provenance({materialize, SubPlan}) ->
+    % Materialize doesn't change provenance
+    compute_provenance(SubPlan);
+
+compute_provenance({materialize, SubPlan, _N}) ->
+    % Materialize with limit doesn't change provenance
+    compute_provenance(SubPlan);
+
+compute_provenance(_UnknownPlan) ->
+    % Unknown plan type
+    undefined.
+
+%% @doc Legacy function: Execute a query plan and return an iterator.
+%%
+%% This is kept for backward compatibility and internal use by the
+%% ephemeral relation generator.
+%%
+%% @param DB The database state
+%% @param Plan The query plan
+%% @returns Iterator process PID
+-spec execute_to_iterator(term(), query_plan()) -> pid().
+execute_to_iterator(DB, Plan) ->
+    compile_to_iterator(DB, Plan).
 
 %% Validate query plan structure
 -spec validate_plan(query_plan()) -> ok | {error, term()}.

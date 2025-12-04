@@ -1586,32 +1586,45 @@ merge_tuples(LeftTuple, RightTuple, JoinInfo) ->
     LeftData = maps:remove(meta, LeftTuple),
     RightData = maps:remove(meta, RightTuple),
 
-    % Merge data attributes
-    MergedData = maps:fold(
-        fun(Key, Value, Acc) ->
-            case maps:is_key(Key, Acc) of
-                true ->
-                    % Conflict - prefix right attribute
+    % Merge data attributes - merge equal values, prefix different ones
+    {MergedData, ConflictInfo} = maps:fold(
+        fun(Key, RightValue, {AccData, AccConflicts}) ->
+            case maps:get(Key, AccData, undefined) of
+                undefined ->
+                    % No conflict - add right attribute
+                    {maps:put(Key, RightValue, AccData), AccConflicts};
+                LeftValue when LeftValue =:= RightValue ->
+                    % Equal values - keep single value (merged attribute)
+                    {AccData, maps:put(Key, merged, AccConflicts)};
+                _LeftValue ->
+                    % Different values - prefix right attribute
                     RightKey = list_to_atom("right_" ++ atom_to_list(Key)),
-                    maps:put(RightKey, Value, Acc);
-                false ->
-                    maps:put(Key, Value, Acc)
+                    {maps:put(RightKey, RightValue, AccData), maps:put(Key, prefixed, AccConflicts)}
             end
         end,
-        LeftData,
+        {LeftData, #{}},
         RightData
     ),
 
-    % Merge provenance (same conflict resolution)
+    % Merge provenance - start with left provenance, then merge right based on conflict resolution  
     MergedProv = maps:fold(
-        fun(Key, Source, Acc) ->
-            case maps:is_key(Key, Acc) of
-                true ->
-                    % Conflict - prefix right attribute provenance
+        fun(Key, RightSource, Acc) ->
+            case maps:get(Key, ConflictInfo, undefined) of
+                merged ->
+                    % Equal values - combine provenance into list
+                    LeftSource = maps:get(Key, LeftProv, undefined),
+                    CombinedSource = case LeftSource of
+                        undefined -> [RightSource];
+                        _ -> [LeftSource, RightSource]
+                    end,
+                    maps:put(Key, CombinedSource, Acc);
+                prefixed ->
+                    % Different values - prefix right attribute provenance  
                     RightKey = list_to_atom("right_" ++ atom_to_list(Key)),
-                    maps:put(RightKey, Source, Acc);
-                false ->
-                    maps:put(Key, Source, Acc)
+                    maps:put(RightKey, RightSource, Acc);
+                undefined ->
+                    % No conflict - add right attribute provenance
+                    maps:put(Key, RightSource, Acc)
             end
         end,
         LeftProv,
