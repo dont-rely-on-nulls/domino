@@ -38,7 +38,11 @@ database_creation_test_() ->
      [?_test(begin
                  DB = operations:create_database(my_db),
                  ?assertEqual(my_db, DB#database_state.name),
-                 ?assertEqual(#{}, DB#database_state.relations),
+                 % Database now comes with built-in infinite relations
+                 Relations = operations:get_relations(DB),
+                 ?assert(lists:member(natural, Relations)),
+                 ?assert(lists:member(integer, Relations)),
+                 ?assert(lists:member(rational, Relations)),
                  ?assertNotEqual(undefined, DB#database_state.timestamp)
              end)]}.
 
@@ -59,8 +63,12 @@ relation_creation_test_() ->
                  ?assertEqual(users, Relation#relation.name),
                  ?assertEqual(Schema, Relation#relation.schema),
 
-                 % Verify database was updated
-                 ?assertEqual([users], operations:get_relations(DB1)),
+                 % Verify database was updated (includes built-in relations)
+                 Relations = operations:get_relations(DB1),
+                 ?assert(lists:member(users, Relations)),
+                 ?assert(lists:member(natural, Relations)),
+                 ?assert(lists:member(integer, Relations)),
+                 ?assert(lists:member(rational, Relations)),
                  {ok, RelationHash} = operations:get_relation_hash(DB1, users),
                  ?assertEqual(Relation#relation.hash, RelationHash)
              end)]}.
@@ -238,14 +246,19 @@ retract_relation_test_() ->
      [?_test(begin
                  DB = sample_database_with_tuples(),
 
-                 % Verify relation exists
-                 ?assertEqual([users], operations:get_relations(DB)),
+                 % Verify relation exists (along with built-in relations)
+                 Relations = operations:get_relations(DB),
+                 ?assert(lists:member(users, Relations)),
 
                  % Retract relation
                  {atomic, DB1} = operations:retract_relation(DB, users),
 
-                 % Verify relation was removed
-                 ?assertEqual([], operations:get_relations(DB1)),
+                 % Verify users relation was removed (built-in relations remain)
+                 Relations1 = operations:get_relations(DB1),
+                 ?assertNot(lists:member(users, Relations1)),
+                 ?assert(lists:member(natural, Relations1)),
+                 ?assert(lists:member(integer, Relations1)),
+                 ?assert(lists:member(rational, Relations1)),
                  ?assertEqual({error, not_found}, operations:get_relation_hash(DB1, users)),
 
                  % Verify database hash changed

@@ -3,24 +3,40 @@
 -record(database_state, {hash, name, tree, relations, timestamp}).
 
 -record(relation, {
-    hash,           % Content hash (finite) or generator hash (infinite)
-    name,           % Relation name (atom)
-    tree,           % Merkle tree (finite only), undefined for infinite
-    schema,         % #{attribute_name => type}
-    constraints,    % #{attribute_name => constraint_spec()} - integrity constraints
-    cardinality,    % {finite, N} | aleph_zero | continuum
-    generator,      % Generator function (infinite only), undefined for finite
-    provenance      % Provenance tracking for updatable views (future)
+    hash,                  % Content hash (finite) or generator hash (infinite)
+    name,                  % Relation name (atom)
+    tree,                  % Merkle tree (mutable only), undefined for immutable/generator-based
+    schema,                % #{attribute_name => relation_name}
+    constraints,           % #{attribute_name => constraint_spec()} - integrity constraints
+    cardinality,           % {finite, N} | aleph_zero | continuum
+    generator,             % Generator function (immutable only), undefined for tree-based
+    membership_criteria,   % #{attribute_name => constraint_spec()} - domain membership test
+    mutability,            % mutable | immutable
+    provenance             % Provenance tracking for updatable views (future)
 }).
 
 -record(tuple, {hash, relation, attribute_map}).
 -record(attribute, {hash, value}).
 
+%% Specification record for creating immutable relations
+-record(immutable_relation_spec, {
+    name,                  % Atom - relation name
+    schema,                % #{attribute_name => relation_name}
+    generator,             % {module, function} - tuple generator
+    membership_criteria,   % #{attribute_name => constraint_spec()} - domain membership
+    cardinality            % {finite, N} | aleph_zero | continuum
+}).
+
 %%% Cardinality Types
 
--type cardinality() :: {finite, non_neg_integer()}  % Finite set with N elements
+-type cardinality() :: {finite, non_neg_integer()}   % Finite set with N elements
                      | aleph_zero                    % Countably infinite (ℵ₀)
                      | continuum.                    % Uncountably infinite (2^ℵ₀)
+
+%%% Mutability Types
+
+-type mutability() :: mutable                        % Supports insert/delete (tree-based)
+                    | immutable.                     % Read-only (generator-based or protected)
 
 %%% Constraint Types
 
@@ -33,7 +49,10 @@
   | {gte, number()}                       % Greater than or equal: attr ≥ value
   | {in, [term()]}                        % Membership: attr ∈ list
   | {range, number(), number()}           % Range: attr ∈ [min, max]
-  | {member_of, atom()}.                  % Type constraint: attr ∈ Relation
+  | {member_of, atom()}                   % Type constraint: attr ∈ Relation
+  | {'and', [term()]}
+  | is_integer
+  | is_float.
 
 -type constraints() :: #{atom() => constraint_spec()}.
 

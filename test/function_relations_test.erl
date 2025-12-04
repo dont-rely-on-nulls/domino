@@ -38,51 +38,43 @@ setup() ->
     operations:setup(),
     DB = operations:create_database(test_db),
 
-    % First set up the basic number types (integers, naturals, etc)
-    {DB1, _Integers} = operations:create_infinite_relation(DB, #{
-        name => integers,
-        schema => #{},  % empty schema - this is a base type
-        cardinality => aleph_zero,
-        generator => {primitive, integers}
+    % Integers and naturals are now built-in to every database
+    % Just create the function relations using the new format
+
+    % Create function relations - note how their schemas reference the domain relations
+    {DB1, _Plus} = operations:create_immutable_relation(DB, #immutable_relation_spec{
+        name = plus,
+        schema = #{a => integer, b => integer, sum => integer},
+        generator = {generators, plus},
+        membership_criteria = #{},
+        cardinality = aleph_zero
     }),
 
-    {DB2, _Naturals} = operations:create_infinite_relation(DB1, #{
-        name => naturals,
-        schema => #{},
-        cardinality => aleph_zero,
-        generator => {primitive, naturals}
+    {DB2, _Times} = operations:create_immutable_relation(DB1, #immutable_relation_spec{
+        name = times,
+        schema = #{a => integer, b => integer, product => integer},
+        generator = {generators, times},
+        membership_criteria = #{},
+        cardinality = aleph_zero
     }),
 
-    % Now create the function relations - note how their schemas reference the domain relations above
-    {DB3, _Plus} = operations:create_infinite_relation(DB2, #{
-        name => plus,
-        schema => #{a => integers, b => integers, sum => integers},
-        cardinality => aleph_zero,
-        generator => {primitive, plus}
+    {DB3, _Minus} = operations:create_immutable_relation(DB2, #immutable_relation_spec{
+        name = minus,
+        schema = #{a => integer, b => integer, difference => integer},
+        generator = {generators, minus},
+        membership_criteria = #{},
+        cardinality = aleph_zero
     }),
 
-    {DB4, _Times} = operations:create_infinite_relation(DB3, #{
-        name => times,
-        schema => #{a => integers, b => integers, product => integers},
-        cardinality => aleph_zero,
-        generator => {primitive, times}
+    {DB4, _Divide} = operations:create_immutable_relation(DB3, #immutable_relation_spec{
+        name = divide,
+        schema = #{a => integer, b => integer, quotient => integer, remainder => natural},
+        generator = {generators, divide},
+        membership_criteria = #{},
+        cardinality = aleph_zero
     }),
 
-    {DB5, _Minus} = operations:create_infinite_relation(DB4, #{
-        name => minus,
-        schema => #{a => integers, b => integers, difference => integers},
-        cardinality => aleph_zero,
-        generator => {primitive, minus}
-    }),
-
-    {DB6, _Divide} = operations:create_infinite_relation(DB5, #{
-        name => divide,
-        schema => #{a => integers, b => integers, quotient => integers, remainder => naturals},
-        cardinality => aleph_zero,
-        generator => {primitive, divide}
-    }),
-
-    DB6.
+    DB4.
 
 cleanup(_DB) ->
     ok.

@@ -7,40 +7,37 @@
 %%% == Protocol ==
 %%%
 %%% Client sends commands as line-delimited strings:
-%%%
-%%% ```
-%%% QUERY <erlang-term-string>   - Execute a query plan, returns session ID
-%%% NEXT <session-id> <count>    - Get next N tuples from iterator
-%%% CLOSE <session-id>           - Close iterator and free resources
-%%% ```
+%%% <pre>
+%%% QUERY &lt;erlang-term-string&gt;   - Execute a query plan, returns session ID
+%%% NEXT &lt;session-id&gt; &lt;count&gt;    - Get next N tuples from iterator
+%%% CLOSE &lt;session-id&gt;           - Close iterator and free resources
+%%% </pre>
 %%%
 %%% Server responds with XML:
-%%%
-%%% ```
-%%% <?xml version="1.0"?>
-%%% <response>
-%%%   <session>abc123</session>
-%%%   <tuples>
-%%%     <tuple>
-%%%       <attribute name="id">1</attribute>
-%%%       <attribute name="name">Alice</attribute>
-%%%     </tuple>
-%%%   </tuples>
-%%% </response>
-%%% ```
+%%% <pre>
+%%% &lt;?xml version="1.0"?&gt;
+%%% &lt;response&gt;
+%%%   &lt;session&gt;abc123&lt;/session&gt;
+%%%   &lt;tuples&gt;
+%%%     &lt;tuple&gt;
+%%%       &lt;attribute name="id"&gt;1&lt;/attribute&gt;
+%%%       &lt;attribute name="name"&gt;Alice&lt;/attribute&gt;
+%%%     &lt;/tuple&gt;
+%%%   &lt;/tuples&gt;
+%%% &lt;/response&gt;
+%%% </pre>
 %%%
 %%% == Usage ==
-%%%
-%%% ```
+%%% <pre>
 %%% % Start server on port 8080
 %%% xml_server:start(8080).
 %%%
 %%% % Client connects and sends:
 %%% % QUERY {scan, employees}\n
-%%% % NEXT <session-id> 10\n
-%%% % NEXT <session-id> 10\n
-%%% % CLOSE <session-id>\n
-%%% ```
+%%% % NEXT &lt;session-id&gt; 10\n
+%%% % NEXT &lt;session-id&gt; 10\n
+%%% % CLOSE &lt;session-id&gt;\n
+%%% </pre>
 %%%
 %%% @author Nekoma Team
 %%% @copyright 2025

@@ -207,19 +207,13 @@ test_theta_join_complex_predicate(DB) ->
 %%% Integration Tests
 
 test_join_with_infinite_relation(DB) ->
-    % Create integers relation
-    {DB1, _} = operations:create_infinite_relation(DB, #{
-        name => integers,
-        schema => #{},
-        cardinality => aleph_zero,
-        generator => {primitive, integers}
-    }),
+    % Integers are built-in, no need to create them
 
     % Get small set of integers
-    IntIter = operations:get_tuples_iterator(DB1, integers, #{value => {range, 1, 5}}),
+    IntIter = operations:get_tuples_iterator(DB, integer, #{value => {range, 1, 5}}),
 
     % Get employees
-    EmpIter = operations:get_tuples_iterator(DB1, employees, #{}),
+    EmpIter = operations:get_tuples_iterator(DB, employees, #{}),
 
     % Join where employee.id matches integer.value
     Predicate = fun(Emp, Int) ->

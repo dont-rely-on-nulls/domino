@@ -5,19 +5,18 @@
 %%%
 %%% == Modes ==
 %%%
-%%% - `table` - Classic flat table (default)
-%%% - `nested_table` - Tables within table cells
-%%% - `tree` - Hierarchical tree view with indentation
-%%% - `linked_tables` - Separate linked tables for nested relations
-%%% - `outline` - Indented outline format
+%%% - table - Classic flat table (default)
+%%% - nested_table - Tables within table cells
+%%% - tree - Hierarchical tree view with indentation
+%%% - linked_tables - Separate linked tables for nested relations
+%%% - outline - Indented outline format
 %%%
 %%% == Usage ==
-%%%
-%%% ```
+%%% <pre>
 %%% Results = query_planner:collect(DB, Plan),
 %%% visualizer:render(Results, tree).
 %%% visualizer:render(Results, nested_table).
-%%% ```
+%%% </pre>
 %%%
 %%% @author Nekoma Team
 %%% @copyright 2025

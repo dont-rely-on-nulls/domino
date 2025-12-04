@@ -5,8 +5,7 @@
 %%% results and working with prepared statements.
 %%%
 %%% == Quick Start ==
-%%%
-%%% ```
+%%% <pre>
 %%% % Start the system
 %%% repl:start().
 %%%
@@ -14,20 +13,19 @@
 %%% DB = repl:example_db().
 %%%
 %%% % Execute a query
-%%% repl:q(DB, {select, {relation, employees}, fun(T) -> maps:get(age, T) > 30 end}).
+%%% repl:q(DB, {select, {relation, employees}, fun(T) -&gt; maps:get(age, T) &gt; 30 end}).
 %%%
 %%% % Explain a query plan
 %%% repl:explain({project, {relation, employees}, [name, age]}).
-%%% ```
+%%% </pre>
 %%%
 %%% == Query Syntax Examples ==
-%%%
-%%% ```
+%%% <pre>
 %%% % Scan relation
 %%% {scan, employees}
 %%%
 %%% % Filter
-%%% {select, {scan, employees}, fun(T) -> maps:get(age, T) > 30 end}
+%%% {select, {scan, employees}, fun(T) -&gt; maps:get(age, T) &gt; 30 end}
 %%%
 %%% % Project
 %%% {project, {scan, employees}, [name, age]}
@@ -47,11 +45,11 @@
 %%%           {scan, employees},
 %%%           {scan, departments},
 %%%           dept_id},
-%%%         fun(T) -> maps:get(age, T) > 30 end},
+%%%         fun(T) -&gt; maps:get(age, T) &gt; 30 end},
 %%%       [name, dept_name, age]},
-%%%     fun(A, B) -> maps:get(age, A) =< maps:get(age, B) end},
+%%%     fun(A, B) -&gt; maps:get(age, A) =&lt; maps:get(age, B) end},
 %%%   5}
-%%% ```
+%%% </pre>
 %%%
 %%% @author Nekoma Team
 %%% @copyright 2025
@@ -121,19 +119,15 @@ example_db() ->
     {DB8, _} = operations:create_tuple(DB7, departments, #{dept_id => 10, dept_name => "Engineering", budget => 100000}),
     {DB9, _} = operations:create_tuple(DB8, departments, #{dept_id => 20, dept_name => "Sales", budget => 80000}),
     {DB10, _} = operations:create_tuple(DB9, departments, #{dept_id => 30, dept_name => "Marketing", budget => 90000}),
-    {DB11, _} = operations:create_infinite_relation(DB10, #{
-        name => naturals,
-        schema => #{value => integer},
-        cardinality => aleph_zero,
-        generator => {primitive, naturals},
-        constraints => #{value => {gte, 0}}
-    }),
+
+    %% Note: natural, integer, rational, and boolean are now built-in to every database
 
     io:format("Example database created with:~n"),
     io:format("  - employees (5 tuples)~n"),
-    io:format("  - departments (3 tuples)~n~n"),
+    io:format("  - departments (3 tuples)~n"),
+    io:format("  - Built-in immutable relations: boolean, natural, integer, rational~n~n"),
 
-    DB11.
+    DB10.
 
 %% @doc Execute a query and pretty-print results (default table mode).
 %%
@@ -178,11 +172,11 @@ q(DB, Plan, Mode) ->
 %% @returns List of result tuples
 %%
 %% == Example ==
-%% ```
+%% <pre>
 %% Results = repl:query(DB, {scan, employees}).
-%% FilteredResults = lists:filter(fun(T) -> maps:get(age, T) > 30 end, Results).
+%% FilteredResults = lists:filter(fun(T) -&gt; maps:get(age, T) &gt; 30 end, Results).
 %% repl:show(FilteredResults, tree).
-%% ```
+%% </pre>
 -spec query(term(), query_planner:query_plan()) -> [map()].
 query(DB, Plan) ->
     PreparedPlan = query_planner:prepare(Plan),
@@ -190,7 +184,7 @@ query(DB, Plan) ->
 
 %% @doc Display results using default visualization mode (table).
 %%
-%% Takes a list of tuples (e.g., from `query/2`) and displays them
+%% Takes a list of tuples (e.g., from query/2) and displays them
 %% using the table visualization mode.
 %%
 %% @param Results List of result tuples
@@ -201,7 +195,7 @@ show(Results) ->
 
 %% @doc Display results using specified visualization mode.
 %%
-%% Takes a list of tuples (e.g., from `query/2`) and displays them
+%% Takes a list of tuples (e.g., from query/2) and displays them
 %% using the specified visualization mode.
 %%
 %% @param Results List of result tuples
@@ -209,10 +203,10 @@ show(Results) ->
 %% @returns ok
 %%
 %% == Example ==
-%% ```
+%% <pre>
 %% Results = repl:query(DB, {scan, employees}),
 %% repl:show(Results, tree).
-%% ```
+%% </pre>
 -spec show([map()], visualizer:render_mode()) -> ok.
 show(Results, Mode) ->
     visualizer:render(Results, Mode).

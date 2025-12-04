@@ -7,8 +7,7 @@
 %%% == Query DSL Syntax ==
 %%%
 %%% The DSL uses nested tuples to represent relational operations:
-%%%
-%%% ```
+%%% <pre>
 %%% % Scan relation (base case)
 %%% {scan, employees}
 %%%
@@ -16,7 +15,7 @@
 %%% {relation, employees}
 %%%
 %%% % Selection (filter)
-%%% {select, {scan, employees}, fun(T) -> maps:get(age, T) > 30 end}
+%%% {select, {scan, employees}, fun(T) -&gt; maps:get(age, T) &gt; 30 end}
 %%%
 %%% % Projection
 %%% {project, {scan, employees}, [name, age]}
@@ -28,10 +27,10 @@
 %%% {theta_join,
 %%%   {scan, employees},
 %%%   {scan, departments},
-%%%   fun(L, R) -> maps:get(dept_id, L) =:= maps:get(id, R) end}
+%%%   fun(L, R) -&gt; maps:get(dept_id, L) =:= maps:get(id, R) end}
 %%%
 %%% % Sort
-%%% {sort, {scan, employees}, fun(A, B) -> maps:get(age, A) =< maps:get(age, B) end}
+%%% {sort, {scan, employees}, fun(A, B) -&gt; maps:get(age, A) =&lt; maps:get(age, B) end}
 %%%
 %%% % Take (limit)
 %%% {take, {scan, employees}, 10}
@@ -46,23 +45,22 @@
 %%%       {scan, employees},
 %%%       {scan, departments},
 %%%       dept_id},
-%%%     fun(T) -> maps:get(age, T) > 30 end},
+%%%     fun(T) -&gt; maps:get(age, T) &gt; 30 end},
 %%%   [name, dept_name]}
-%%% ```
+%%% </pre>
 %%%
 %%% == Usage ==
-%%%
-%%% ```
+%%% <pre>
 %%% % Prepare a query plan
 %%% Plan = query_planner:prepare({select, {scan, employees},
-%%%                                fun(T) -> maps:get(age, T) > 30 end}).
+%%%                                fun(T) -&gt; maps:get(age, T) &gt; 30 end}).
 %%%
 %%% % Execute and get iterator
 %%% Iter = query_planner:execute(DB, Plan).
 %%%
 %%% % Collect all results
 %%% Results = query_planner:collect(DB, Plan).
-%%% ```
+%%% </pre>
 %%%
 %%% @author Nekoma Team
 %%% @copyright 2025
@@ -236,8 +234,18 @@ compile_to_iterator(DB, {sort, SubPlan, Comparator}) ->
     operations:sort_iterator(SubIter, Comparator);
 
 compile_to_iterator(DB, {take, SubPlan, N}) ->
-    SubIter = compile_to_iterator(DB, SubPlan),
-    operations:take_iterator(SubIter, N);
+    %% Use relational take operator when possible (for scans)
+    case SubPlan of
+        {scan, RelationName} ->
+            %% Direct scan: use relational take operator
+            {DB2, TakeRelation} = operations:take(DB, RelationName, N),
+            %% Get iterator from the take relation (now properly registered)
+            operations:get_tuples_iterator(DB2, TakeRelation#relation.name, #{});
+        _ ->
+            %% Complex plan: fall back to iterator-based take for composition
+            SubIter = compile_to_iterator(DB, SubPlan),
+            operations:take_iterator(SubIter, N)
+    end;
 
 compile_to_iterator(DB, {rename, OldAttr, NewAttr, SubPlan}) ->
     SubIter = compile_to_iterator(DB, SubPlan),

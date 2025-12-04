@@ -25,18 +25,18 @@
 %%% </ul>
 %%%
 %%% Function relations reference domain relations in their schemas:
-%%% ```
-%%% schema => #{a => integers, b => integers, sum => integers}
-%%% '''
+%%% <pre>
+%%% schema =&gt; #{a =&gt; integers, b =&gt; integers, sum =&gt; integers}
+%%% </pre>
 %%%
 %%% == Reversibility ==
 %%%
 %%% Function relations support bidirectional querying (like Prolog):
 %%% <ul>
-%%%   <li>`Plus[1, 2, ?]' → ? = 3 (forward)</li>
-%%%   <li>`Plus[1, ?, 3]' → ? = 2 (backward, solve for b)</li>
-%%%   <li>`Plus[?, 2, 3]' → ? = 1 (backward, solve for a)</li>
-%%%   <li>`Plus[?, ?, 5]' → all pairs (a,b) where a+b=5</li>
+%%%   <li>Plus[1, 2, ?] yields ? = 3 (forward)</li>
+%%%   <li>Plus[1, ?, 3] yields ? = 2 (backward, solve for b)</li>
+%%%   <li>Plus[?, 2, 3] yields ? = 1 (backward, solve for a)</li>
+%%%   <li>Plus[?, ?, 5] yields all pairs (a,b) where a+b=5</li>
 %%% </ul>
 %%%
 %%% The generators use constraint analysis to determine which arguments
@@ -45,9 +45,9 @@
 %%% == Relational Composition ==
 %%%
 %%% In the future, function relations will be used through joins:
-%%% ```
+%%% <pre>
 %%% Integer[A], Integer[B], Plus[A, B, Sum]
-%%% '''
+%%% </pre>
 %%%
 %%% This corresponds to a three-way join where the join conditions
 %%% provide the constraints to each relation.
@@ -62,12 +62,13 @@
 -include("operations.hrl").
 
 -export([
-    naturals/1,
-    integers/1,
-    rationals/1,
+    boolean/1,
+    natural/1,
+    integer/1,
+    rational/1,
     make_range_generator/3,
-    constrained_naturals/2,
-    constrained_integers/2,
+    constrained_natural/2,
+    constrained_integer/2,
     %% Function relations
     plus/1,
     times/1,
@@ -79,6 +80,28 @@
 %%% Primitive Generators
 %%% ============================================================================
 
+%% @doc Generator for boolean domain (𝔹 = {true, false}).
+%%
+%% Generates the two boolean values. This is a finite immutable relation.
+%% If constraints specify equality, only generates that value.
+%%
+%% @param Constraints Map of attribute constraints
+%% @returns Generator function producing booleans
+boolean(Constraints) ->
+    case maps:get(value, Constraints, unbounded) of
+        {eq, true} ->
+            make_singleton_generator(#{value => true});
+        {eq, false} ->
+            make_singleton_generator(#{value => false});
+        {in, Values} ->
+            %% Filter to only boolean values
+            BoolValues = [V || V <- Values, V =:= true orelse V =:= false],
+            make_membership_generator(BoolValues, fun(V) -> #{value => V} end);
+        _ ->
+            %% Enumerate all booleans: true, false
+            make_membership_generator([true, false], fun(V) -> #{value => V} end)
+    end.
+
 %% @doc Generator for natural numbers (ℕ = {0, 1, 2, 3, ...}).
 %%
 %% Enumerates natural numbers starting from 0. If constraints specify a range,
@@ -86,7 +109,7 @@
 %%
 %% @param Constraints Map of attribute constraints
 %% @returns Generator function producing naturals
-naturals(Constraints) ->
+natural(Constraints) ->
     case extract_bounds(Constraints, value) of
         {range, Min, Max} when Min >= 0 ->
             make_range_generator(Min, Max, fun(N) -> #{value => N} end);
@@ -130,7 +153,7 @@ naturals(Constraints) ->
 %%
 %% @param Constraints Map of attribute constraints
 %% @returns Generator function producing integers
-integers(Constraints) ->
+integer(Constraints) ->
     case extract_bounds(Constraints, value) of
         {range, Min, Max} ->
             make_integer_range_generator(Min, Max);
@@ -158,7 +181,7 @@ integers(Constraints) ->
 %%
 %% @param Constraints Map of attribute constraints
 %% @returns Generator function producing rationals
-rationals(Constraints) ->
+rational(Constraints) ->
     %% Stern-Brocot tree enumeration
     %% Start with mediant tree: 0/1, 1/1, then generate mediants
     InitialState = {queue:from_list([{0, 1}, {1, 1}]), {0, 1}, {1, 0}},
@@ -320,15 +343,15 @@ make_sb_gen({Queue, {LA, LB}, {RA, RB}}) ->
 %%% Constrained Generators (Public API)
 %%% ============================================================================
 
-%% @doc Create a constrained naturals generator.
--spec constrained_naturals(non_neg_integer(), non_neg_integer()) -> generator_fun().
-constrained_naturals(Min, Max) ->
-    naturals(#{value => {range, Min, Max}}).
+%% @doc Create a constrained natural generator.
+-spec constrained_natural(non_neg_integer(), non_neg_integer()) -> generator_fun().
+constrained_natural(Min, Max) ->
+    natural(#{value => {range, Min, Max}}).
 
-%% @doc Create a constrained integers generator.
--spec constrained_integers(integer(), integer()) -> generator_fun().
-constrained_integers(Min, Max) ->
-    integers(#{value => {range, Min, Max}}).
+%% @doc Create a constrained integer generator.
+-spec constrained_integer(integer(), integer()) -> generator_fun().
+constrained_integer(Min, Max) ->
+    integer(#{value => {range, Min, Max}}).
 
 %%% ============================================================================
 %%% Function Relations

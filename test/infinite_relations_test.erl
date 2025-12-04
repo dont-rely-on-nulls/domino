@@ -37,35 +37,22 @@ strip_meta(Tuples) when is_list(Tuples) ->
 %%% Tests
 
 test_create_naturals(DB) ->
-    %% Create infinite relation of natural numbers
-    %% Domain relations have empty schemas (base case)
-    {DB1, Naturals} = operations:create_infinite_relation(DB, #{
-        name => naturals,
-        schema => #{},
-        cardinality => aleph_zero,
-        generator => {primitive, naturals},
-        constraints => #{value => {gte, 0}}
-    }),
+    %% Naturals are now built-in to every database
+    %% Just retrieve the relation to verify it exists
+    {ok, NaturalsHash} = operations:get_relation_hash(DB, natural),
+    [NaturalsRel] = mnesia:dirty_read(relation, NaturalsHash),
 
     [
-     ?_assert(is_record(Naturals, relation)),
-     ?_assertEqual(naturals, Naturals#relation.name),
-     ?_assertEqual(aleph_zero, Naturals#relation.cardinality),
-     ?_assertEqual({primitive, naturals}, Naturals#relation.generator)
+     ?_assert(is_record(NaturalsRel, relation)),
+     ?_assertEqual(natural, NaturalsRel#relation.name),
+     ?_assertEqual(aleph_zero, NaturalsRel#relation.cardinality),
+     ?_assertEqual({generators, natural}, NaturalsRel#relation.generator)
     ].
 
 test_naturals_with_constraints(DB) ->
-    %% Create naturals relation
-    {DB1, _Naturals} = operations:create_infinite_relation(DB, #{
-        name => naturals,
-        schema => #{},
-        cardinality => aleph_zero,
-        generator => {primitive, naturals},
-        constraints => #{value => {gte, 0}}
-    }),
-
+    %% Naturals are built-in, just query them
     %% Query with range constraint [0, 9]
-    Iterator = operations:get_tuples_iterator(DB1, naturals, #{value => {range, 0, 9}}),
+    Iterator = operations:get_tuples_iterator(DB, natural, #{value => {range, 0, 9}}),
     Tuples = operations:collect_all(Iterator),
     DataOnly = strip_meta(Tuples),
 
@@ -78,16 +65,12 @@ test_naturals_with_constraints(DB) ->
     ].
 
 test_integers_generator(DB) ->
-    %% Create integers relation
-    {DB1, Integers} = operations:create_infinite_relation(DB, #{
-        name => integers,
-        schema => #{},
-        cardinality => aleph_zero,
-        generator => {primitive, integers}
-    }),
+    %% Integers are built-in
+    {ok, IntegersHash} = operations:get_relation_hash(DB, integer),
+    [Integers] = mnesia:dirty_read(relation, IntegersHash),
 
     %% Query with range constraint [-5, 5]
-    Iterator = operations:get_tuples_iterator(DB1, integers, #{value => {range, -5, 5}}),
+    Iterator = operations:get_tuples_iterator(DB, integer, #{value => {range, -5, 5}}),
     Tuples = operations:collect_all(Iterator),
     DataOnly = strip_meta(Tuples),
 
@@ -101,16 +84,12 @@ test_integers_generator(DB) ->
     ].
 
 test_rationals_generator(DB) ->
-    %% Create rationals relation
-    {DB1, Rationals} = operations:create_infinite_relation(DB, #{
-        name => rationals,
-        schema => #{},
-        cardinality => aleph_zero,
-        generator => {primitive, rationals}
-    }),
+    %% Rationals are built-in
+    {ok, RationalsHash} = operations:get_relation_hash(DB, rational),
+    [Rationals] = mnesia:dirty_read(relation, RationalsHash),
 
     %% Take first 10 rationals using constraints
-    Iterator = operations:get_tuples_iterator(DB1, rationals, #{}),
+    Iterator = operations:get_tuples_iterator(DB, rational, #{}),
 
     %% Just get a few tuples to verify generator works
     {ok, First} = operations:next_tuple(Iterator),
@@ -126,22 +105,14 @@ test_rationals_generator(DB) ->
     ].
 
 test_take_operator(DB) ->
-    %% Create naturals
-    {DB1, _} = operations:create_infinite_relation(DB, #{
-        name => naturals,
-        schema => #{},
-        cardinality => aleph_zero,
-        generator => {primitive, naturals},
-        constraints => #{value => {gte, 0}}
-    }),
-
+    %% Naturals are built-in, just use them
     %% Take 100 naturals
-    {_DB2, Naturals100} = operations:take(DB1, naturals, 100),
+    {_DB2, Naturals100} = operations:take(DB, natural, 100),
 
     %% Verify result is finite
     [
      ?_assertEqual({finite, 100}, Naturals100#relation.cardinality),
-     ?_assertEqual({take, naturals, 100}, Naturals100#relation.generator)
+     ?_assertEqual({take, natural, 100}, Naturals100#relation.generator)
     ].
 
 test_finite_relation_cardinality(DB) ->
@@ -149,7 +120,7 @@ test_finite_relation_cardinality(DB) ->
     {DB1, _} = operations:create_relation(DB, users, #{name => string, age => integer}),
 
     %% Add tuple
-    {DB2, UpdatedRel} = operations:create_tuple(DB1, users, #{name => "Alice", age => 30}),
+    {_DB2, UpdatedRel} = operations:create_tuple(DB1, users, #{name => "Alice", age => 30}),
 
     %% Cardinality should be 1
     [
