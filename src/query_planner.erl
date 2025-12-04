@@ -77,8 +77,8 @@
 %%% Types
 
 -type query_plan() ::
-    {scan, atom()}                                          % Scan relation
-  | {relation, atom()}                                      % Reference relation
+    {scan, atom()}                                         % Scan relation
+  | {relation, atom()}                                     % Reference relation
   | {select, query_plan(), fun((map()) -> boolean())}      % Filter
   | {project, query_plan(), [atom()]}                      % Projection
   | {join, query_plan(), query_plan(), atom()}             % Equijoin
@@ -111,21 +111,22 @@ prepare(Plan) ->
 
 %% @doc Execute a prepared query plan against a database.
 %%
-%% Compiles the query plan into an iterator pipeline and returns
-%% the iterator handle. The caller must consume the iterator using
-%% operations:next_tuple/1 and close it with operations:close_iterator/1.
+%% Returns an ephemeral relation for top-level operations that can spawn
+%% multiple independent iterators. The relation's generator creates fresh
+%% iterator pipelines on demand, allowing reproducible results.
 %%
 %% @param DB The database state
 %% @param Plan The prepared query plan
-%% @returns Iterator process PID
--spec execute(term(), query_plan()) -> pid().
+%% @returns Ephemeral relation record
+-spec execute(term(), query_plan()) -> #relation{}.
 execute(DB, Plan) ->
-    compile_to_iterator(DB, Plan).
+    create_ephemeral_relation(DB, Plan).
 
 %% @doc Execute a query plan and collect all results.
 %%
 %% Convenience function that executes the plan and collects all
-%% tuples into a list. Automatically closes the iterator.
+%% tuples into a list. Uses the ephemeral relation to create an
+%% iterator and automatically closes it.
 %%
 %% If the iterator times out (e.g., when sorting an infinite relation),
 %% returns partial results with a warning.
@@ -135,7 +136,9 @@ execute(DB, Plan) ->
 %% @returns List of result tuples, or partial results on timeout
 -spec collect(term(), query_plan()) -> [map()].
 collect(DB, Plan) ->
-    Iter = execute(DB, Plan),
+    EphemeralRelation = execute(DB, Plan),
+    % Create iterator from the ephemeral relation's generator
+    Iter = (EphemeralRelation#relation.generator)(#{}),
     Results = operations:collect_all(Iter),
     operations:close_iterator(Iter),
     case Results of
@@ -164,6 +167,68 @@ explain(Plan) ->
     explain_plan(Plan, 0).
 
 %%% Internal Functions
+
+%% @doc Create an ephemeral relation for the top-level query plan.
+%%
+%% Creates an ephemeral relation with a generator closure that can spawn
+%% fresh iterators for the query plan. This allows the relation to be
+%% consumed multiple times with reproducible results.
+%%
+%% @param DB The database state
+%% @param Plan The query plan
+%% @returns Ephemeral relation record
+-spec create_ephemeral_relation(term(), query_plan()) -> #relation{}.
+create_ephemeral_relation(DB, Plan) ->
+    % Create a generator closure that captures DB and Plan
+    GeneratorFun = fun(_Constraints) ->
+        compile_to_iterator(DB, Plan)
+    end,
+    
+    % Compute schema from the plan (simplified for now)
+    Schema = compute_schema(DB, Plan),
+    
+    % Generate a unique name for the ephemeral relation
+    EphemeralName = list_to_atom("ephemeral_" ++ integer_to_list(erlang:unique_integer([positive]))),
+    
+    % Create the ephemeral relation record
+    #relation{
+        hash = crypto:hash(sha256, term_to_binary({ephemeral, Plan})),
+        name = EphemeralName,
+        tree = undefined,  % No tree for ephemeral relations
+        schema = Schema,
+        constraints = #{},  % No constraints for now
+        cardinality = unknown,  % Cardinality would need to be computed
+        generator = GeneratorFun,
+        membership_criteria = #{},
+        mutability = immutable,
+        provenance = undefined
+    }.
+
+%% @doc Compute the schema for a query plan.
+%%
+%% This is a simplified schema computation. In practice, this would need
+%% to analyze the query plan structure to determine the output schema.
+%%
+%% @param DB The database state
+%% @param Plan The query plan
+%% @returns Schema map
+-spec compute_schema(term(), query_plan()) -> map().
+compute_schema(_DB, _Plan) ->
+    % For now, return an empty schema
+    % In practice, this should analyze the plan to determine output attributes
+    #{}.
+
+%% @doc Legacy function: Execute a query plan and return an iterator.
+%%
+%% This is kept for backward compatibility and internal use by the
+%% ephemeral relation generator.
+%%
+%% @param DB The database state
+%% @param Plan The query plan
+%% @returns Iterator process PID
+-spec execute_to_iterator(term(), query_plan()) -> pid().
+execute_to_iterator(DB, Plan) ->
+    compile_to_iterator(DB, Plan).
 
 %% Validate query plan structure
 -spec validate_plan(query_plan()) -> ok | {error, term()}.
