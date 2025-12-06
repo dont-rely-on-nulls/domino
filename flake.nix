@@ -9,36 +9,24 @@
     };
 
     treefmt-nix.url = "github:numtide/treefmt-nix";
-
-    erlang.url = "github:nixos/nixpkgs?ref=nixos-unstable";
   };
 
-  outputs = { self, nixpkgs, flake-parts, treefmt-nix, erlang, ... }@inputs:
+  outputs = { self, nixpkgs, flake-parts, treefmt-nix, ... }@inputs:
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
 
       perSystem = { pkgs, system, ... }: 
         let
-          # Fetching rebar3_nix plugin  
-          rebar3_nix = pkgs.fetchFromGitHub {
-            owner = "erlang-nix";
-            repo = "rebar3_nix";
-            rev = "v0.1.1"; 
-            sha256 = "sha256-Powzl56wtB0yvMMBvxdaDeqb9qqHD4/BxrDsjQ1gMoI=";
-          };
-
-          erlangPlatform = pkgs.beam.interpreters.erlang_28;
+          erlang = pkgs.erlang_28; 
 
           buildRebar3 = pkgs.beamPackages.buildRebar3 {
             pname = "domino";     
             version = "0.1.0";
             src = ./.;           
-            beam = erlangPlatform;
+            beam = erlang;  
             generate-lock = true; 
-
             name = "domino";     
-
-            buildInputs = [ rebar3_nix ];
+            buildInputs = [ pkgs.rebar3 ];  
 
             meta = with pkgs.lib; {
               description = "Domino Erlang Server";
