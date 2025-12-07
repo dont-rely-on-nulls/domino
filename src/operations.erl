@@ -818,8 +818,13 @@ get_tuples_iterator(Database, RelationName, Options) when is_record(Database, da
                             SourceIter = get_tuples_iterator(Database, SourceRelName, Constraints),
                             spawn(fun() -> take_iter_loop(SourceIter, N, 0, N) end);
 
+                        GeneratorFun when is_function(GeneratorFun) ->
+                            %% Function generator (finite mutable relations, ephemeral relations)
+                            Generator = GeneratorFun(Constraints),
+                            spawn(fun() -> generator_iterator_loop(Generator, RelationName, true) end);
+
                         {GeneratorModule, GeneratorFunction} ->
-                            %% Normal generator (naturals, integers, etc.)
+                            %% Tuple-spec generator (naturals, integers, etc.)
                             Generator = erlang:apply(GeneratorModule, GeneratorFunction, [Constraints]),
                             spawn(fun() -> generator_iterator_loop(Generator, RelationName, true) end)
                     end
