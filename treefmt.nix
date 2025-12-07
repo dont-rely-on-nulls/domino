@@ -5,5 +5,6 @@
   projectRootFile = "flake.nix";
   programs = {
     erlfmt.enable = true;
+    nixfmt.enable = true;
   };
 }

@@ -1,0 +1,7 @@
+## Name of the node
+-sname domino
+
+## Extra options
+-heart
+-env HEART_BEAT_TIMEOUT 20
++K true

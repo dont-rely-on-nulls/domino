@@ -1,0 +1,61 @@
+name: "[Domino] Build"
+
+on:
+  push:
+    branches: [ "master" ]
+    paths:
+      - .github/workflows/**
+      - config/**
+      - docs/**
+      - include/**
+      - test/**
+      - src/**
+      - flake.nix
+      - flake.lock
+      - rebar.config
+      - rebar-deps.nix
+      - rebar.lock
+
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - .github/workflows/**
+      - config/**
+      - docs/**
+      - include/**
+      - test/**
+      - src/**
+      - flake.nix
+      - flake.lock
+      - rebar.config
+      - rebar-deps.nix
+      - rebar.lock
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: "[Domino] Nix Build"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          # Mostly to avoid GitHub rate limiting
+          extra_nix_config: |
+            access-tokens = github.com=${{ github.token }}
+
+      - name: Install Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      # Actual Pipelines
+      - name: "Build"
+        run: |
+          nix build

@@ -17,24 +17,11 @@
 
       perSystem = { pkgs, system, ... }: 
         let
-          erlang = pkgs.erlang_28; 
-
-          buildRebar3 = pkgs.beamPackages.buildRebar3 {
-            pname = "domino";     
-            version = "0.1.0";
-            src = ./.;           
-            beam = erlang;  
-            generate-lock = true; 
-            name = "domino";     
-            buildInputs = [ pkgs.rebar3 ];  
-
-            meta = with pkgs.lib; {
-              description = "Domino Erlang Server";
-              license = pkgs.lib.licenses.mit;
-              platforms = pkgs.lib.platforms.all;
-            };
-          };
-
+          erlangLatest = pkgs.erlang_28; 
+          
+          rebar_config = builtins.readFile ./rebar.config;
+          match = builtins.match ".*release,.+domino, \"([0-9.]+)\".*" rebar_config;
+          pversion = builtins.head match;
         in {
           # This sets `pkgs` to a nixpkgs with allowUnfree option set.
           _module.args.pkgs = import nixpkgs {
@@ -44,18 +31,42 @@
 
           # nix build
           packages = {
-            domino = buildRebar3;  
-            default = buildRebar3; 
+            default =
+              let
+                deps = import ./rebar-deps.nix {
+                  inherit (pkgs) fetchHex fetchFromGitHub fetchgit;
+                  builder = pkgs.beamPackages.buildRebar3;
+                };
+              in
+              pkgs.beamPackages.rebar3Relx {
+                pname = "domino";
+                version = pversion;
+                src = pkgs.lib.cleanSource ./.;
+                releaseType = "release";
+                profile = "prod";
+                buildInputs = (
+                  with pkgs;
+                  [
+                    coreutils
+                    gawk
+                    gnugrep
+                    openssl
+                  ]
+                  ++ lib.optional stdenv.isLinux [
+                    liburing
+                  ]
+                );
+                beamDeps = builtins.attrValues deps;
+              };
           };
 
           # Define devShell for Erlang + Rebar3
           devShells = {
             default = pkgs.mkShell {
               packages = with pkgs; [
-                erlang_28
                 erlang-language-platform
                 rebar3
-              ];
+              ] ++ [erlangLatest];
             };
           };
 
