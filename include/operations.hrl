@@ -109,16 +109,3 @@
   | {take, pos_integer(), lineage_op()}                 % Limit operation
   | {aggregate, atom(), atom(), lineage_op()}.          % Aggregation (future)
 
-%% Tuple metadata (contains provenance, lineage, and other system-managed fields)
--type tuple_metadata() :: #{
-    provenance => attribute_provenance(),
-    lineage => lineage_op()
-    % Future: timestamp, version, etc.
-}.
-
-%% Tuples with metadata use a nested 'meta' field:
-%% #{id => 1, name => "Alice",
-%%   meta => #{
-%%     provenance => #{id => {employees, id}, name => {employees, name}},
-%%     lineage => {select, fun(T) -> maps:get(age, T) > 30 end, {base, employees}}
-%%   }}

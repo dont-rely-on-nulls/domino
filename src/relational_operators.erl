@@ -36,6 +36,36 @@
     sort/2
 ]).
 
+%%% ============================================================================
+%%% Internal Helper Functions
+%%% ============================================================================
+
+%% @private
+%% Generate unique name for ephemeral relation.
+%% @param Prefix Operation prefix (e.g., "take", "select", "project")
+%% @param SourceRelation Source relation
+%% @param Suffix Optional additional suffix (e.g., integer parameter)
+generate_ephemeral_name(Prefix, SourceRelation) ->
+    generate_ephemeral_name(Prefix, SourceRelation, "").
+
+generate_ephemeral_name(Prefix, SourceRelation, "") ->
+    list_to_atom(
+        atom_to_list(Prefix) ++ "_" ++
+        atom_to_list(SourceRelation#relation.name) ++ "_" ++
+        integer_to_list(erlang:unique_integer([positive]))
+    );
+generate_ephemeral_name(Prefix, SourceRelation, Suffix) when is_integer(Suffix) ->
+    list_to_atom(
+        atom_to_list(Prefix) ++ "_" ++
+        atom_to_list(SourceRelation#relation.name) ++ "_" ++
+        integer_to_list(Suffix) ++ "_" ++
+        integer_to_list(erlang:unique_integer([positive]))
+    ).
+
+%%% ============================================================================
+%%% Relational Operators
+%%% ============================================================================
+
 %% @doc Take operator (τ): Returns ephemeral relation with first N tuples.
 %%
 %% Creates an ephemeral relation containing N arbitrary elements from the
@@ -69,11 +99,7 @@ take(SourceRelation, N) when is_record(SourceRelation, relation), is_integer(N),
     end,
 
     %% Create unique name
-    Name = list_to_atom(
-        "take_" ++ atom_to_list(SourceRelation#relation.name) ++ "_" ++
-        integer_to_list(N) ++ "_" ++
-        integer_to_list(erlang:unique_integer([positive]))
-    ),
+    Name = generate_ephemeral_name(take, SourceRelation, N),
 
     %% Generator closure that spawns fresh iterators
     GeneratorFun = fun(Constraints) ->
@@ -107,10 +133,7 @@ take(SourceRelation, N) when is_record(SourceRelation, relation), is_integer(N),
 %% @returns Ephemeral #relation{} with generator
 -spec select(#relation{}, fun((map()) -> boolean())) -> #relation{}.
 select(SourceRelation, Predicate) when is_record(SourceRelation, relation), is_function(Predicate, 1) ->
-    Name = list_to_atom(
-        "select_" ++ atom_to_list(SourceRelation#relation.name) ++ "_" ++
-        integer_to_list(erlang:unique_integer([positive]))
-    ),
+    Name = generate_ephemeral_name(select, SourceRelation),
 
     GeneratorFun = fun(Constraints) ->
         SourceIter = spawn_iterator_from_generator(SourceRelation#relation.generator, Constraints),
@@ -141,10 +164,7 @@ select(SourceRelation, Predicate) when is_record(SourceRelation, relation), is_f
 %% @returns Ephemeral #relation{} with generator
 -spec project(#relation{}, [atom()]) -> #relation{}.
 project(SourceRelation, Attributes) when is_record(SourceRelation, relation), is_list(Attributes) ->
-    Name = list_to_atom(
-        "project_" ++ atom_to_list(SourceRelation#relation.name) ++ "_" ++
-        integer_to_list(erlang:unique_integer([positive]))
-    ),
+    Name = generate_ephemeral_name(project, SourceRelation),
 
     %% Compute projected schema
     ProjectedSchema = maps:with(Attributes, SourceRelation#relation.schema),
@@ -265,10 +285,7 @@ theta_join(LeftRelation, RightRelation, Predicate)
 %% @returns Ephemeral #relation{} with generator
 -spec rename(#relation{}, #{atom() => atom()}) -> #relation{}.
 rename(SourceRelation, RenameMappings) when is_record(SourceRelation, relation), is_map(RenameMappings) ->
-    Name = list_to_atom(
-        "rename_" ++ atom_to_list(SourceRelation#relation.name) ++ "_" ++
-        integer_to_list(erlang:unique_integer([positive]))
-    ),
+    Name = generate_ephemeral_name(rename, SourceRelation),
 
     %% Compute renamed schema
     RenamedSchema = maps:fold(
@@ -313,10 +330,7 @@ rename(SourceRelation, RenameMappings) when is_record(SourceRelation, relation),
 %% @returns Ephemeral #relation{} with generator
 -spec sort(#relation{}, fun((map(), map()) -> boolean())) -> #relation{}.
 sort(SourceRelation, Comparator) when is_record(SourceRelation, relation), is_function(Comparator, 2) ->
-    Name = list_to_atom(
-        "sort_" ++ atom_to_list(SourceRelation#relation.name) ++ "_" ++
-        integer_to_list(erlang:unique_integer([positive]))
-    ),
+    Name = generate_ephemeral_name(sort, SourceRelation),
 
     GeneratorFun = fun(Constraints) ->
         SourceIter = spawn_iterator_from_generator(SourceRelation#relation.generator, Constraints),

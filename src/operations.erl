@@ -804,29 +804,24 @@ get_tuples_iterator(Database, RelationName, Options) when is_record(Database, da
                 {finite, _} when Relation#relation.tree =/= undefined ->
                     %% Finite relation with materialized tuples: use tuple hashes
                     TupleHashes = hashes_from_tuple(RelationHash),
-                    spawn(fun() -> tuple_iterator_loop(TupleHashes, RelationName, true) end);
+                    spawn(fun() -> tuple_iterator_loop(TupleHashes) end);
 
                 _ ->
-                    %% Relation with generator (infinite or take) or empty finite relation
+                    %% Relation with generator (infinite or ephemeral) or empty finite relation
                     case Relation#relation.generator of
                         undefined ->
                             %% Empty finite relation without materialized tuples
-                            spawn(fun() -> tuple_iterator_loop([], RelationName, true) end);
-
-                        {take, SourceRelName, N} ->
-                            %% Take relation: get source iterator and limit to N tuples
-                            SourceIter = get_tuples_iterator(Database, SourceRelName, Constraints),
-                            spawn(fun() -> take_iter_loop(SourceIter, N, 0, N) end);
+                            spawn(fun() -> tuple_iterator_loop([]) end);
 
                         GeneratorFun when is_function(GeneratorFun) ->
                             %% Function generator (finite mutable relations, ephemeral relations)
                             Generator = GeneratorFun(Constraints),
-                            spawn(fun() -> generator_iterator_loop(Generator, RelationName, true) end);
+                            spawn(fun() -> generator_iterator_loop(Generator) end);
 
                         {GeneratorModule, GeneratorFunction} ->
                             %% Tuple-spec generator (naturals, integers, etc.)
                             Generator = erlang:apply(GeneratorModule, GeneratorFunction, [Constraints]),
-                            spawn(fun() -> generator_iterator_loop(Generator, RelationName, true) end)
+                            spawn(fun() -> generator_iterator_loop(Generator) end)
                     end
             end
     end.
@@ -914,23 +909,20 @@ close_iterator(IteratorPid) ->
 %% </ul>
 %%
 %% @param TupleHashes List of binary tuple hashes to stream
-%% @param RelationName Name of the source relation (for provenance)
-%% @param EnableProvenance Boolean flag to enable provenance tracking
-tuple_iterator_loop([], _RelationName, _EnableProvenance) ->
+tuple_iterator_loop([]) ->
     receive
         {next, Caller} ->
             Caller ! done;
         stop ->
             ok
     end;
-tuple_iterator_loop([TupleHash | Rest], RelationName, EnableProvenance) ->
+tuple_iterator_loop([TupleHash | Rest]) ->
     receive
         {next, Caller} ->
             %% Resolve tuple on demand
             ResolvedTuple = resolve_tuple(TupleHash),
-            %% Pass through tuple without metadata injection
             Caller ! {tuple, ResolvedTuple},
-            tuple_iterator_loop(Rest, RelationName, EnableProvenance);
+            tuple_iterator_loop(Rest);
         stop ->
             ok
     end.
@@ -1281,50 +1273,20 @@ insert_all_tuples(DB, RelationName, Tuples) ->
 %%% Generator Support Functions
 %%% ============================================================================
 
-%% Instantiate a generator from a generator specification (commented out).
-%% Converts a generator spec (stored in relation record) into an actual
-%% generator function that can produce tuples.
-%%
-%% @param GeneratorSpec Generator specification
-%% @param Constraints Boundedness constraints
-%% @returns Generator function
-%% instantiate_generator({primitive, naturals}, Constraints) ->
-%%     generators:naturals(Constraints);
-%% instantiate_generator({primitive, integers}, Constraints) ->
-%%     generators:integers(Constraints);
-%% instantiate_generator({primitive, rationals}, Constraints) ->
-%%     generators:rationals(Constraints);
-%% instantiate_generator({primitive, plus}, Constraints) ->
-%%     generators:plus(Constraints);
-%% instantiate_generator({primitive, times}, Constraints) ->
-%%     generators:times(Constraints);
-%% instantiate_generator({primitive, minus}, Constraints) ->
-%%     generators:minus(Constraints);
-%% instantiate_generator({primitive, divide}, Constraints) ->
-%%     generators:divide(Constraints);
-%% instantiate_generator({custom, GeneratorFun}, Constraints) ->
-%%     GeneratorFun(Constraints);
-%% instantiate_generator({take, RelationName, N}, Constraints) ->
-%%     %% Take generator: wrap another generator with limit
-%%     %% This is a simplified version - full implementation would look up the base relation
-%%     make_take_generator(RelationName, N, Constraints);
-%% instantiate_generator(Other, _) ->
-%%     erlang:error({unknown_generator, Other}).
 
 %% @private
 %% Generator iterator loop for infinite relations.
 %% Similar to tuple_iterator_loop but works with generator functions instead
 %% of tuple hashes.
-generator_iterator_loop(Generator, RelationName, EnableProvenance) ->
+generator_iterator_loop(Generator) ->
     receive
         {next, Caller} ->
             case Generator(next) of
                 done ->
                     Caller ! done;
                 {value, Tuple, NextGen} ->
-                    %% Pass through tuple without metadata injection
                     Caller ! {tuple, Tuple},
-                    generator_iterator_loop(NextGen, RelationName, EnableProvenance);
+                    generator_iterator_loop(NextGen);
                 {error, Reason} ->
                     Caller ! {error, Reason}
             end;

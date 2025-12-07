@@ -429,7 +429,10 @@ compile_to_iterator(DB, {take, SubPlan, N}) ->
 
 compile_to_iterator(DB, {rename, OldAttr, NewAttr, SubPlan}) ->
     SubIter = compile_to_iterator(DB, SubPlan),
-    rename_iterator(SubIter, OldAttr, NewAttr);
+    %% Inline simple rename - no need for separate function
+    spawn(fun() ->
+        rename_loop_inline(SubIter, OldAttr, NewAttr)
+    end);
 
 compile_to_iterator(DB, {materialize, SubPlan}) ->
     % Materialize returns all tuples as a "static" iterator
@@ -466,18 +469,15 @@ static_loop(Tuples) ->
             Caller ! ok
     end.
 
-%% Rename iterator - renames an attribute in each tuple
--spec rename_iterator(pid(), atom(), atom()) -> pid().
-rename_iterator(SourceIter, OldAttr, NewAttr) ->
-    spawn(fun() -> rename_loop(SourceIter, OldAttr, NewAttr) end).
-
-rename_loop(SourceIter, OldAttr, NewAttr) ->
+%% @private
+%% Inline helper for compile_to_iterator rename case
+rename_loop_inline(SourceIter, OldAttr, NewAttr) ->
     receive
         {next, Caller} ->
             case operations:next_tuple(SourceIter) of
                 done ->
                     Caller ! done,
-                    rename_loop(SourceIter, OldAttr, NewAttr);
+                    rename_loop_inline(SourceIter, OldAttr, NewAttr);
                 {ok, Tuple} ->
                     RenamedTuple = case maps:is_key(OldAttr, Tuple) of
                         true ->
@@ -488,7 +488,7 @@ rename_loop(SourceIter, OldAttr, NewAttr) ->
                             Tuple
                     end,
                     Caller ! {tuple, RenamedTuple},
-                    rename_loop(SourceIter, OldAttr, NewAttr)
+                    rename_loop_inline(SourceIter, OldAttr, NewAttr)
             end;
         {close, Caller} ->
             operations:close_iterator(SourceIter),
