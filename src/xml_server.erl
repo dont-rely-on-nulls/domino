@@ -209,9 +209,12 @@ handle_query(QueryStr, DB, Sessions) ->
         {ok, Exprs} = erl_parse:parse_exprs(Tokens),
         {value, QueryPlan, _} = erl_eval:exprs(Exprs, erl_eval:new_bindings()),
 
-        % Prepare and execute query to get iterator
+        % Prepare and execute query to get ephemeral relation
         PreparedPlan = query_planner:prepare(QueryPlan),
-        Iterator = query_planner:execute(DB, PreparedPlan),
+        EphemeralRelation = query_planner:execute(DB, PreparedPlan),
+
+        % Create actual iterator from ephemeral relation's generator
+        Iterator = (EphemeralRelation#relation.generator)(#{}),
 
         % Generate session ID
         SessionId = generate_session_id(),

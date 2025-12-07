@@ -56,7 +56,6 @@
          hashes_from_tuple/1,
 	 get_tuples_iterator/2,
 	 get_tuples_iterator/3,
-	 take/3,
 	 next_tuple/1,
 	 close_iterator/1,
 	 collect_all/1,
@@ -103,7 +102,8 @@ setup() ->
     mnesia:create_table(relation, [
         {attributes, [hash, name, tree, schema, constraints, cardinality, generator, membership_criteria, mutability, provenance, lineage]},
         {disc_copies, [node()]},
-        {type, set}
+        {type, set},
+        {index, [name]}  % Index on name for efficient lookup
     ]),
     mnesia:create_table(database_state, [
         {attributes, [hash, name, tree, relations, timestamp]},
@@ -212,8 +212,14 @@ create_tuple_internal(Database, RelationName, Tuple, _RelationRecord) ->
             constraints = RelationRecord#relation.constraints,
             cardinality = NewCardinality,
             generator = RelationRecord#relation.generator,
-            provenance = RelationRecord#relation.provenance
+            provenance = RelationRecord#relation.provenance,
+            lineage = RelationRecord#relation.lineage,
+            membership_criteria = RelationRecord#relation.membership_criteria,
+            mutability = RelationRecord#relation.mutability
         },
+        %% Delete old relation record before writing new one
+        %% This ensures only one relation record exists per name
+        mnesia:delete({relation, CurrentRelationHash}),
         mnesia:write(relation, UpdatedRelation, write),
         
         %% Step 7: Update database relations map
@@ -423,6 +429,25 @@ create_relation(Database, Name, Definition) when is_record(Database, database_st
         %% Two relations might share definitions but their name gives another interpretation
         %% and therefore different tuples
         RelationHash = hash({Name, Definition, undefined}),
+
+        %% Create generator function for mutable finite relations
+        %% This allows pure relational operators to work with finite relations
+        %% The generator captures the relation NAME and looks up current state from Mnesia by name
+        %% Returns a generator function (not a PID) that yields tuples one at a time
+        GeneratorFun = fun(_Constraints) ->
+            %% Read current relation state from Mnesia by name using index
+            %% Only one relation record exists per name (old versions are deleted)
+            [CurrentRelation] = mnesia:dirty_index_read(relation, Name, #relation.name),
+            CurrentHash = CurrentRelation#relation.hash,
+            %% Get tuple hashes
+            TupleHashes = case CurrentRelation#relation.tree of
+                undefined -> [];
+                _ -> hashes_from_tuple(CurrentHash)
+            end,
+            %% Return a generator function that yields tuples
+            make_finite_generator(TupleHashes)
+        end,
+
         NewRelation = #relation{
             hash = RelationHash,
             name = Name,
@@ -430,7 +455,7 @@ create_relation(Database, Name, Definition) when is_record(Database, database_st
             schema = Definition,
             constraints = #{},              % No constraints by default
             cardinality = {finite, 0},      % Empty relation
-            generator = undefined,          % Finite relation has no generator
+            generator = GeneratorFun,       % Function generator for finite relations
             membership_criteria = #{},      % No membership criteria by default
             mutability = mutable,           % Mutable by default
             provenance = build_base_provenance(Definition, Name), % Base relation provenance
@@ -701,75 +726,10 @@ hashes_from_tuple(RelationHash) ->
         Tree -> merklet:keys(Tree)
     end.
 
-%% @doc Take operator (τ): Returns N arbitrary elements from a relation.
-%%
-%% The take operator is a unary relational operator that produces a finite
-%% relation containing N arbitrary elements from the input relation. Since
-%% relations are sets (unordered), the specific elements returned are
-%% determined by the enumeration order.
-%%
-%% For finite relations smaller than N, returns all elements.
-%% For infinite relations, returns first N elements by generator order.
-%%
-%% == Example ==
-%% <pre>
-%% %% Take 100 naturals (returns {0, 1, 2, ..., 99})
-%% {DB1, Naturals100} = operations:take(DB, naturals, 100).
-%%
-%% %% Can compose with other operators
-%% Iterator = operations:get_tuples_iterator(DB1, naturals100).
-%% </pre>
-%%
-%% @param Database `#database_state{}' record
-%% @param RelationName Atom naming the source relation
-%% @param N Number of elements to take
-%% @returns `{UpdatedDatabase, TakeRelation}' where TakeRelation is finite
-%%
-%% @see get_tuples_iterator/3
-take(Database, RelationName, N) when is_record(Database, database_state), is_integer(N), N > 0 ->
-    case maps:get(RelationName, Database#database_state.relations, error) of
-        error ->
-            erlang:error({relation_not_found, RelationName});
-        RelationHash ->
-            [SourceRelation] = mnesia:dirty_read(relation, RelationHash),
-
-            %% Compute cardinality of result
-            ResultCardinality = case SourceRelation#relation.cardinality of
-                {finite, M} when M < N -> {finite, M};
-                {finite, _} -> {finite, N};
-                _ -> {finite, N}  % Taking from infinite yields finite
-            end,
-
-            %% Create take relation
-            TakeName = list_to_atom(atom_to_list(RelationName) ++ "_take_" ++ integer_to_list(N)),
-
-            TakeHash = hash({take, RelationName, N}),
-
-            TakeRelation = #relation{
-                hash = TakeHash,
-                name = TakeName,
-                tree = undefined,  % Generated on-demand
-                schema = SourceRelation#relation.schema,
-                constraints = SourceRelation#relation.constraints,
-                cardinality = ResultCardinality,
-                generator = {take, RelationName, N},
-                membership_criteria = #{},
-                mutability = immutable,  % Take relations are read-only
-                provenance = SourceRelation#relation.provenance, % Inherit source provenance
-                lineage = {take, N, SourceRelation#relation.lineage} % Wrap source lineage
-            },
-
-            %% Register the take relation (ephemeral - not persisted to Mnesia disk)
-            %% This allows get_tuples_iterator to find it
-            UpdatedDatabase = Database#database_state{
-                relations = maps:put(TakeName, TakeHash, Database#database_state.relations)
-            },
-
-            %% Store in Mnesia (in-memory transaction)
-            mnesia:dirty_write(relation, TakeRelation),
-
-            {UpdatedDatabase, TakeRelation}
-    end.
+%% NOTE: The take operator has been moved to relational_operators module.
+%% Use relational_operators:take/2 for pure relational operations.
+%% This maintains separation: operations.erl handles DB/iterator management,
+%% while relational_operators.erl handles pure relational algebra.
 
 %% @doc Create an iterator for streaming tuples from a relation with constraints.
 %%
@@ -1529,4 +1489,24 @@ build_base_provenance(Schema, RelationName) ->
         #{},
         Schema
     ).
+
+%% @private
+%% @doc Create a generator function from a list of tuple hashes.
+%%
+%% Converts a list of tuple hashes into a generator function compatible
+%% with the generator protocol used by infinite relations. The generator
+%% reads tuples from Mnesia on demand.
+%%
+%% @param TupleHashes List of tuple hashes to iterate over
+%% @returns Generator function that accepts 'next' and returns {value, Tuple, NextGen} or done
+make_finite_generator([]) ->
+    fun(_) -> done end;
+make_finite_generator([Hash | Rest]) ->
+    fun(next) ->
+        %% Read tuple from Mnesia
+        [Tuple] = mnesia:dirty_read(tuple, Hash),
+        TupleData = Tuple#tuple.attribute_map,
+        NextGen = make_finite_generator(Rest),
+        {value, TupleData, NextGen}
+    end.
 

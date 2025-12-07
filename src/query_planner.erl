@@ -170,42 +170,17 @@ explain(Plan) ->
 
 %% @doc Create an ephemeral relation for the top-level query plan.
 %%
-%% Creates an ephemeral relation with a generator closure that can spawn
-%% fresh iterators for the query plan. This allows the relation to be
-%% consumed multiple times with reproducible results.
+%% Uses pure relational operators from relational_operators module to construct
+%% the query result. Returns an ephemeral relation with a generator closure that
+%% can spawn fresh iterators, allowing reproducible query results.
 %%
-%% @param DB The database state
+%% @param DB The database state (for looking up base relations only)
 %% @param Plan The query plan
 %% @returns Ephemeral relation record
 -spec create_ephemeral_relation(term(), query_plan()) -> #relation{}.
 create_ephemeral_relation(DB, Plan) ->
-    % Create a generator closure that captures DB and Plan
-    GeneratorFun = fun(_Constraints) ->
-        compile_to_iterator(DB, Plan)
-    end,
-    
-    % Compute schema from the plan (simplified for now)
-    Schema = compute_schema(DB, Plan),
-    
-    % Generate a unique name for the ephemeral relation
-    EphemeralName = list_to_atom("ephemeral_" ++ integer_to_list(erlang:unique_integer([positive]))),
-    
-    % Compute provenance from the plan
-    Provenance = compute_provenance(Plan),
-    
-    % Create the ephemeral relation record
-    #relation{
-        hash = crypto:hash(sha256, term_to_binary({ephemeral, Plan})),
-        name = EphemeralName,
-        tree = undefined,  % No tree for ephemeral relations
-        schema = Schema,
-        constraints = #{},  % No constraints for now
-        cardinality = unknown,  % Cardinality would need to be computed
-        generator = GeneratorFun,
-        membership_criteria = #{},
-        mutability = immutable,
-        provenance = Provenance
-    }.
+    % Compile plan to ephemeral relation using pure operators
+    compile_to_relation(DB, Plan).
 
 %% @doc Compute the schema for a query plan.
 %%
@@ -448,18 +423,9 @@ compile_to_iterator(DB, {sort, SubPlan, Comparator}) ->
     operations:sort_iterator(SubIter, Comparator);
 
 compile_to_iterator(DB, {take, SubPlan, N}) ->
-    %% Use relational take operator when possible (for scans)
-    case SubPlan of
-        {scan, RelationName} ->
-            %% Direct scan: use relational take operator
-            {DB2, TakeRelation} = operations:take(DB, RelationName, N),
-            %% Get iterator from the take relation (now properly registered)
-            operations:get_tuples_iterator(DB2, TakeRelation#relation.name, #{});
-        _ ->
-            %% Complex plan: fall back to iterator-based take for composition
-            SubIter = compile_to_iterator(DB, SubPlan),
-            operations:take_iterator(SubIter, N)
-    end;
+    %% For iterator-based compilation, use take_iterator
+    SubIter = compile_to_iterator(DB, SubPlan),
+    operations:take_iterator(SubIter, N);
 
 compile_to_iterator(DB, {rename, OldAttr, NewAttr, SubPlan}) ->
     SubIter = compile_to_iterator(DB, SubPlan),
@@ -579,3 +545,84 @@ explain_plan({materialize, SubPlan, N}, Indent) ->
 %% Helper: indent string
 -spec indent(non_neg_integer()) -> string().
 indent(N) -> lists:duplicate(N, $\s).
+
+%% Helper: get relation from database
+-spec get_relation_from_db(term(), atom()) -> #relation{}.
+get_relation_from_db(DB, RelationName) ->
+    case maps:get(RelationName, DB#database_state.relations, undefined) of
+        undefined ->
+            erlang:error({relation_not_found, RelationName});
+        RelationHash ->
+            [Relation] = mnesia:dirty_read(relation, RelationHash),
+            Relation
+    end.
+
+%% @doc Compile query plan to ephemeral relation using pure relational operators.
+%%
+%% This is the new approach: build a relation tree using pure operators,
+%% then return the final ephemeral relation. No iterators are created until
+%% the generator is called.
+-spec compile_to_relation(term(), query_plan()) -> #relation{}.
+compile_to_relation(DB, {scan, RelationName}) ->
+    get_relation_from_db(DB, RelationName);
+
+compile_to_relation(DB, {relation, RelationName}) ->
+    get_relation_from_db(DB, RelationName);
+
+compile_to_relation(DB, {select, SubPlan, Predicate}) ->
+    SubRelation = compile_to_relation(DB, SubPlan),
+    relational_operators:select(SubRelation, Predicate);
+
+compile_to_relation(DB, {project, SubPlan, Attributes}) ->
+    SubRelation = compile_to_relation(DB, SubPlan),
+    relational_operators:project(SubRelation, Attributes);
+
+compile_to_relation(DB, {join, LeftPlan, RightPlan, Attribute}) ->
+    LeftRelation = compile_to_relation(DB, LeftPlan),
+    RightRelation = compile_to_relation(DB, RightPlan),
+    relational_operators:join(LeftRelation, RightRelation, Attribute);
+
+compile_to_relation(DB, {theta_join, LeftPlan, RightPlan, Predicate}) ->
+    LeftRelation = compile_to_relation(DB, LeftPlan),
+    RightRelation = compile_to_relation(DB, RightPlan),
+    relational_operators:theta_join(LeftRelation, RightRelation, Predicate);
+
+compile_to_relation(DB, {sort, SubPlan, Comparator}) ->
+    SubRelation = compile_to_relation(DB, SubPlan),
+    relational_operators:sort(SubRelation, Comparator);
+
+compile_to_relation(DB, {take, SubPlan, N}) ->
+    SubRelation = compile_to_relation(DB, SubPlan),
+    relational_operators:take(SubRelation, N);
+
+compile_to_relation(DB, {rename, OldAttr, NewAttr, SubPlan}) ->
+    SubRelation = compile_to_relation(DB, SubPlan),
+    relational_operators:rename(SubRelation, #{OldAttr => NewAttr});
+
+compile_to_relation(DB, {materialize, SubPlan}) ->
+    % Materialize is different - it creates an iterator and collects results
+    % For now, fall back to iterator-based compilation
+    % TODO: Create a pure relational materialize operator
+    GeneratorFun = fun(_Constraints) ->
+        compile_to_iterator(DB, SubPlan)
+    end,
+    EphemeralName = list_to_atom("materialized_" ++ integer_to_list(erlang:unique_integer([positive]))),
+    #relation{
+        hash = crypto:hash(sha256, term_to_binary({materialize, SubPlan})),
+        name = EphemeralName,
+        tree = undefined,
+        schema = compute_schema(DB, SubPlan),
+        constraints = #{},
+        cardinality = unknown,
+        generator = GeneratorFun,
+        membership_criteria = #{},
+        mutability = immutable,
+        provenance = compute_provenance(SubPlan)
+    };
+
+compile_to_relation(DB, {materialize, SubPlan, N}) ->
+    % Materialize with limit
+    SubRelation = compile_to_relation(DB, SubPlan),
+    TakeRelation = relational_operators:take(SubRelation, N),
+    % Then wrap in a materialized form (for now just return take)
+    TakeRelation.
