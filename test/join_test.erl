@@ -26,7 +26,7 @@ join_test_() ->
 %%% Setup and Cleanup
 
 setup() ->
-    operations:setup(),
+    main:setup(),
     DB = operations:create_database(test_db),
 
     % Create employees relation
@@ -62,8 +62,8 @@ cleanup(_DB) ->
 
 test_equijoin_simple(DB) ->
     % Join employees with departments on dept_id
-    EmpIter = operations:get_tuples_iterator(DB, employees, #{}),
-    DeptIter = operations:get_tuples_iterator(DB, departments, #{}),
+    EmpIter = operations:get_tuples_iterator(DB, employees),
+    DeptIter = operations:get_tuples_iterator(DB, departments),
 
     JoinIter = operations:equijoin_iterator(EmpIter, DeptIter, dept_id),
     Results = operations:collect_all(JoinIter),
@@ -91,8 +91,8 @@ test_equijoin_simple(DB) ->
 
 test_equijoin_multiple_matches(DB) ->
     % Multiple employees in same department should produce multiple results
-    EmpIter = operations:get_tuples_iterator(DB, employees, #{}),
-    DeptIter = operations:get_tuples_iterator(DB, departments, #{}),
+    EmpIter = operations:get_tuples_iterator(DB, employees),
+    DeptIter = operations:get_tuples_iterator(DB, departments),
 
     JoinIter = operations:equijoin_iterator(EmpIter, DeptIter, dept_id),
     Results = operations:collect_all(JoinIter),
@@ -113,10 +113,10 @@ test_equijoin_no_matches(DB) ->
     {DB1, _} = operations:create_tuple(DB, departments, #{dept_id => 40, dept_name => "HR", budget => 70000}),
 
     % Filter to only dept_id=40 which has no employees
-    DeptIter = operations:get_tuples_iterator(DB1, departments, #{}),
+    DeptIter = operations:get_tuples_iterator(DB1, departments),
     FilteredDept = operations:select_iterator(DeptIter, fun(D) -> maps:get(dept_id, D) =:= 40 end),
 
-    EmpIter = operations:get_tuples_iterator(DB1, employees, #{}),
+    EmpIter = operations:get_tuples_iterator(DB1, employees),
 
     JoinIter = operations:equijoin_iterator(EmpIter, FilteredDept, dept_id),
     Results = operations:collect_all(JoinIter),
@@ -140,8 +140,8 @@ test_equijoin_with_conflicts(DB) ->
     }),
     {DB4, _} = operations:create_tuple(DB3, table_b, #{id => 1, value => 200}),
 
-    AIter = operations:get_tuples_iterator(DB4, table_a, #{}),
-    BIter = operations:get_tuples_iterator(DB4, table_b, #{}),
+    AIter = operations:get_tuples_iterator(DB4, table_a),
+    BIter = operations:get_tuples_iterator(DB4, table_b),
 
     JoinIter = operations:equijoin_iterator(AIter, BIter, id),
     Results = operations:collect_all(JoinIter),
@@ -159,8 +159,8 @@ test_theta_join_greater_than(DB) ->
     % Join where employee.age > department.budget/1000
     % (contrived example for testing)
 
-    EmpIter = operations:get_tuples_iterator(DB, employees, #{}),
-    DeptIter = operations:get_tuples_iterator(DB, departments, #{}),
+    EmpIter = operations:get_tuples_iterator(DB, employees),
+    DeptIter = operations:get_tuples_iterator(DB, departments),
 
     Predicate = fun(Emp, Dept) ->
         Age = maps:get(age, Emp),
@@ -184,8 +184,8 @@ test_theta_join_greater_than(DB) ->
 
 test_theta_join_complex_predicate(DB) ->
     % Join with multiple conditions
-    EmpIter = operations:get_tuples_iterator(DB, employees, #{}),
-    DeptIter = operations:get_tuples_iterator(DB, departments, #{}),
+    EmpIter = operations:get_tuples_iterator(DB, employees),
+    DeptIter = operations:get_tuples_iterator(DB, departments),
 
     % Join where employee is in department AND age > 30
     Predicate = fun(Emp, Dept) ->
@@ -213,7 +213,7 @@ test_join_with_infinite_relation(DB) ->
     IntIter = operations:get_tuples_iterator(DB, integer, #{value => {range, 1, 5}}),
 
     % Get employees
-    EmpIter = operations:get_tuples_iterator(DB, employees, #{}),
+    EmpIter = operations:get_tuples_iterator(DB, employees),
 
     % Join where employee.id matches integer.value
     Predicate = fun(Emp, Int) ->
@@ -237,8 +237,8 @@ test_join_materialize_pipeline(DB) ->
     % Complex pipeline: join, filter, project, materialize
 
     % 1. Join employees with departments
-    EmpIter = operations:get_tuples_iterator(DB, employees, #{}),
-    DeptIter = operations:get_tuples_iterator(DB, departments, #{}),
+    EmpIter = operations:get_tuples_iterator(DB, employees),
+    DeptIter = operations:get_tuples_iterator(DB, departments),
     JoinIter = operations:equijoin_iterator(EmpIter, DeptIter, dept_id),
 
     % 2. Filter to high-budget departments
@@ -253,7 +253,7 @@ test_join_materialize_pipeline(DB) ->
     {DB1, HighBudgetEmps} = operations:materialize(DB, ProjectedIter, high_budget_employees),
 
     % Verify materialized relation
-    ResultIter = operations:get_tuples_iterator(DB1, high_budget_employees, #{}),
+    ResultIter = operations:get_tuples_iterator(DB1, high_budget_employees),
     Results = operations:collect_all(ResultIter),
 
     % Engineering (100k) has Alice and Carol

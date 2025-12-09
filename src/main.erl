@@ -1,7 +1,7 @@
 -module(main).
 -behaviour(application).
 
--export([start/2, stop/1]).
+-export([start/2, stop/1, setup/0]).
 
 %% @doc Initialize Mnesia database schema and tables.
 %%

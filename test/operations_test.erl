@@ -4,7 +4,7 @@
 
 %% Test fixtures and setup
 setup_test_env() ->
-    operations:setup(),
+    main:setup(),
     ok.
 
 cleanup_test_env() ->

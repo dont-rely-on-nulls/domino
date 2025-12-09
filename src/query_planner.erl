@@ -8,43 +8,37 @@
 %%%
 %%% The DSL uses nested tuples to represent relational operations:
 %%% <pre>
-%%% % Scan relation (base case)
-%%% {scan, employees}
-%%%
-%%% % Reference relation (synonym for scan)
-%%% {relation, employees}
+%%% % Base relation (just use the relation name)
+%%% employees
 %%%
 %%% % Selection (filter)
-%%% {select, {scan, employees}, fun(T) -&gt; maps:get(age, T) &gt; 30 end}
+%%% {select, employees, fun(T) -&gt; maps:get(age, T) &gt; 30 end}
 %%%
 %%% % Projection
-%%% {project, {scan, employees}, [name, age]}
+%%% {project, employees, [name, age]}
 %%%
 %%% % Equijoin (natural join on common attribute)
-%%% {join, {scan, employees}, {scan, departments}, dept_id}
+%%% {join, employees, departments, dept_id}
 %%%
 %%% % Theta join (join with arbitrary predicate)
 %%% {theta_join,
-%%%   {scan, employees},
-%%%   {scan, departments},
+%%%   employees,
+%%%   departments,
 %%%   fun(L, R) -&gt; maps:get(dept_id, L) =:= maps:get(id, R) end}
 %%%
 %%% % Sort
-%%% {sort, {scan, employees}, fun(A, B) -&gt; maps:get(age, A) =&lt; maps:get(age, B) end}
+%%% {sort, employees, fun(A, B) -&gt; maps:get(age, A) =&lt; maps:get(age, B) end}
 %%%
 %%% % Take (limit)
-%%% {take, {scan, employees}, 10}
+%%% {take, employees, 10}
 %%%
 %%% % Rename attribute
-%%% {rename, old_name, new_name, {scan, employees}}
+%%% {rename, old_name, new_name, employees}
 %%%
 %%% % Composite query
 %%% {project,
 %%%   {select,
-%%%     {join,
-%%%       {scan, employees},
-%%%       {scan, departments},
-%%%       dept_id},
+%%%     {join, employees, departments, dept_id},
 %%%     fun(T) -&gt; maps:get(age, T) &gt; 30 end},
 %%%   [name, dept_name]}
 %%% </pre>
@@ -52,7 +46,7 @@
 %%% == Usage ==
 %%% <pre>
 %%% % Prepare a query plan
-%%% Plan = query_planner:prepare({select, {scan, employees},
+%%% Plan = query_planner:prepare({select, employees,
 %%%                                fun(T) -&gt; maps:get(age, T) &gt; 30 end}).
 %%%
 %%% % Execute and get iterator
@@ -136,8 +130,7 @@ execute(DB, Plan) ->
 -spec collect(term(), query_plan()) -> [map()].
 collect(DB, Plan) ->
     EphemeralRelation = execute(DB, Plan),
-    % Create iterator from the ephemeral relation's generator
-    Iter = (EphemeralRelation#relation.generator)(#{}),
+    Iter = (EphemeralRelation#relation.generator)(),
     Results = operations:collect_all(Iter),
     operations:close_iterator(Iter),
     case Results of
@@ -529,21 +522,6 @@ explain_plan({materialize, SubPlan, N}, Indent) ->
 -spec indent(non_neg_integer()) -> string().
 indent(N) -> lists:duplicate(N, $\s).
 
-%% Helper: convert iterator PID to generator function
-%% Generator protocol: fun(next) -> done | {value, Tuple, NextGenerator} | {error, Reason}
--spec make_iterator_generator(pid()) -> fun((next) -> term()).
-make_iterator_generator(IterPid) ->
-    fun(next) ->
-        case operations:next_tuple(IterPid) of
-            done ->
-                done;
-            {ok, Tuple} ->
-                {value, Tuple, make_iterator_generator(IterPid)};
-            {error, Reason} ->
-                {error, Reason}
-        end
-    end.
-
 %% Helper: get relation from database
 -spec get_relation_from_db(term(), atom()) -> #relation{}.
 get_relation_from_db(DB, RelationName) ->
@@ -563,13 +541,8 @@ get_relation_from_db(DB, RelationName) ->
 -spec compile_to_relation(term(), query_plan()) -> #relation{}.
 compile_to_relation(DB, RelationName) when is_atom(RelationName) ->
     BaseRelation = get_relation_from_db(DB, RelationName),
-    % For base finite relations, create a generator that properly resolves tuples
-    % The generator returns a generator function (not a PID)
-    GeneratorFun = fun(Constraints) ->
-        % Get iterator PID
-        IterPid = operations:get_tuples_iterator(DB, RelationName, Constraints),
-        % Convert iterator to generator function
-        make_iterator_generator(IterPid)
+    GeneratorFun = fun() ->
+        operations:get_tuples_iterator(DB, RelationName)
     end,
     BaseRelation#relation{generator = GeneratorFun};
 
@@ -604,10 +577,7 @@ compile_to_relation(DB, {rename, OldAttr, NewAttr, SubPlan}) ->
     relational_operators:rename(SubRelation, #{OldAttr => NewAttr});
 
 compile_to_relation(DB, {materialize, SubPlan}) ->
-    % Materialize is different - it creates an iterator and collects results
-    % For now, fall back to iterator-based compilation
-    % TODO: Create a pure relational materialize operator
-    GeneratorFun = fun(_Constraints) ->
+    GeneratorFun = fun() ->
         compile_to_iterator(DB, SubPlan)
     end,
     EphemeralName = list_to_atom("materialized_" ++ integer_to_list(erlang:unique_integer([positive]))),

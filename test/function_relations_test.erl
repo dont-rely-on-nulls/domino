@@ -35,7 +35,7 @@ function_relations_test_() ->
 %%% Setup and Cleanup
 
 setup() ->
-    operations:setup(),
+    main:setup(),
     DB = operations:create_database(test_db),
 
     % Integers and naturals are now built-in to every database
@@ -193,7 +193,7 @@ test_plus_sum_range_constrained(DB) ->
 
 test_plus_insufficient_constraints(DB) ->
     % Try querying with zero constraints - should fail since we'd get infinite results
-    Iterator = operations:get_tuples_iterator(DB, plus, #{}),
+    Iterator = operations:get_tuples_iterator(DB, plus),
     Result = operations:next_tuple(Iterator),
 
     [
@@ -301,7 +301,7 @@ test_plus_join_with_finite(DB) ->
     {DB2, _} = operations:create_tuple(DB1, employees, #{name => "Alice", age => 30}),
     {DB3, _} = operations:create_tuple(DB2, employees, #{name => "Bob", age => 35}),
 
-    EmployeeIter = operations:get_tuples_iterator(DB3, employees, #{}),
+    EmployeeIter = operations:get_tuples_iterator(DB3, employees),
     Employees = operations:collect_all(EmployeeIter),
 
     % For each employee's age, find all the ways to add up to it
@@ -335,7 +335,7 @@ test_materialized_plus_relation(DB) ->
     {DB1, SmallPlus} = operations:materialize(DB, PlusIter, small_plus),
 
     % check that it worked
-    ResultIter = operations:get_tuples_iterator(DB1, small_plus, #{}),
+    ResultIter = operations:get_tuples_iterator(DB1, small_plus),
     Results = operations:collect_all(ResultIter),
 
     [

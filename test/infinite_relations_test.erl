@@ -20,7 +20,7 @@ infinite_relations_test_() ->
 %%% Setup and Cleanup
 
 setup() ->
-    operations:setup(),
+    main:setup(),
     operations:create_database(test_db).
 
 cleanup(_DB) ->
@@ -89,7 +89,7 @@ test_rationals_generator(DB) ->
     [Rationals] = mnesia:dirty_read(relation, RationalsHash),
 
     %% Take first 10 rationals using constraints
-    Iterator = operations:get_tuples_iterator(DB, rational, #{}),
+    Iterator = operations:get_tuples_iterator(DB, rational),
 
     %% Just get a few tuples to verify generator works
     {ok, First} = operations:next_tuple(Iterator),
