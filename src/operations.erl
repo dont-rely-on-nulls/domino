@@ -52,6 +52,7 @@
 	 retract_relation/2,
 	 retract_relation/3,
    get_relation_hash/2,
+   get_relations/1,
    hashes_from_tuple/1,
    get_tuples_iterator/2,
    get_iterator_from_generator/2,
@@ -392,6 +393,7 @@ create_relation(Database, Name, Definition) when is_record(Database, database_st
         RelationHash = hash({Name, Definition, undefined}),
 
         %% Returns a generator function (not a PID) that yields tuples one at a time
+	%% TODO: investigate if a generator should or should not be bound to a specific DATABASE VERSION. If so, create the fun passing the DB as an attribute
         GeneratorFun = fun() ->
             [CurrentRelation] = mnesia:dirty_index_read(relation, Name, #relation.name),
             CurrentHash = CurrentRelation#relation.hash,
@@ -625,6 +627,17 @@ get_relation_hash(Database, RelationName) ->
         error -> {error, not_found};
         X -> X
     end.
+
+%% @doc Get list of all relation names in the database.
+%%
+%% Returns a list of all relation names (atoms) currently stored in the database.
+%% This includes both user-defined relations and built-in infinite relations.
+%%
+%% @param Database `#database_state{}' record
+%% @returns List of relation names (atoms)
+-spec get_relations(#database_state{}) -> [atom()].
+get_relations(Database) ->
+    maps:keys(Database#database_state.relations).
 
 %% @doc Resolve a tuple hash to actual values.
 %%
