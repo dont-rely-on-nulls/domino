@@ -22,7 +22,7 @@ query_pipeline_test_() ->
 %%% Setup and Cleanup
 
 setup() ->
-    operations:setup(),
+    main:setup(),
     DB = operations:create_database(test_db),
 
     %% Create employees relation with test data
@@ -47,7 +47,7 @@ cleanup(_DB) ->
 
 test_select_iterator(DB) ->
     %% Filter employees age > 30
-    BaseIter = operations:get_tuples_iterator(DB, employees, #{}),
+    BaseIter = operations:get_tuples_iterator(DB, employees),
     FilteredIter = operations:select_iterator(BaseIter,
         fun(E) -> maps:get(age, E) > 30 end),
     Results = operations:collect_all(FilteredIter),
@@ -60,7 +60,7 @@ test_select_iterator(DB) ->
 
 test_project_iterator(DB) ->
     %% Project to [name, age] only
-    BaseIter = operations:get_tuples_iterator(DB, employees, #{}),
+    BaseIter = operations:get_tuples_iterator(DB, employees),
     ProjectedIter = operations:project_iterator(BaseIter, [name, age]),
     Results = operations:collect_all(ProjectedIter),
 
@@ -76,7 +76,7 @@ test_project_iterator(DB) ->
 
 test_take_iterator(DB) ->
     %% Take first 3 employees
-    BaseIter = operations:get_tuples_iterator(DB, employees, #{}),
+    BaseIter = operations:get_tuples_iterator(DB, employees),
     LimitedIter = operations:take_iterator(BaseIter, 3),
     Results = operations:collect_all(LimitedIter),
 
@@ -86,7 +86,7 @@ test_take_iterator(DB) ->
 
 test_sort_iterator(DB) ->
     %% Sort by age ascending
-    BaseIter = operations:get_tuples_iterator(DB, employees, #{}),
+    BaseIter = operations:get_tuples_iterator(DB, employees),
     SortedIter = operations:sort_iterator(BaseIter,
         fun(A, B) -> maps:get(age, A) =< maps:get(age, B) end),
     Results = operations:collect_all(SortedIter),
@@ -100,7 +100,7 @@ test_sort_iterator(DB) ->
 
 test_composed_pipeline(DB) ->
     %% Complex pipeline: filter age > 30, sort by age, take 2, project [name]
-    Iter1 = operations:get_tuples_iterator(DB, employees, #{}),
+    Iter1 = operations:get_tuples_iterator(DB, employees),
     Iter2 = operations:select_iterator(Iter1, fun(E) -> maps:get(age, E) > 30 end),
     Iter3 = operations:sort_iterator(Iter2, fun(A, B) -> maps:get(age, A) =< maps:get(age, B) end),
     Iter4 = operations:take_iterator(Iter3, 2),
@@ -119,7 +119,7 @@ test_composed_pipeline(DB) ->
 
 test_materialize_finite(DB) ->
     %% Build pipeline and materialize
-    Iter1 = operations:get_tuples_iterator(DB, employees, #{}),
+    Iter1 = operations:get_tuples_iterator(DB, employees),
     Iter2 = operations:select_iterator(Iter1, fun(E) ->
                 maps:get(department, E) =:= "Engineering"
             end),
@@ -135,7 +135,7 @@ test_materialize_finite(DB) ->
 
      %% Can query the materialized relation
      ?_assertMatch([_,_,_],
-        operations:collect_all(operations:get_tuples_iterator(DB1, engineers, #{})))
+        operations:collect_all(operations:get_tuples_iterator(DB1, engineers)))
     ].
 
 test_materialize_infinite(DB) ->
@@ -157,7 +157,7 @@ test_complete_query_pipeline(DB) ->
     %% ORDER BY age DESC
     %% LIMIT 3
 
-    Iter1 = operations:get_tuples_iterator(DB, employees, #{}),
+    Iter1 = operations:get_tuples_iterator(DB, employees),
     Iter2 = operations:select_iterator(Iter1, fun(E) -> maps:get(age, E) > 28 end),
     Iter3 = operations:sort_iterator(Iter2, fun(A, B) ->
                 maps:get(age, A) >= maps:get(age, B)  % DESC
@@ -169,7 +169,7 @@ test_complete_query_pipeline(DB) ->
 
     %% Verify result - NOTE: Relations are unordered sets!
     %% After materialization, tuples come back in hash order, not sort order
-    Results = operations:collect_all(operations:get_tuples_iterator(DB1, top_3_employees, #{})),
+    Results = operations:collect_all(operations:get_tuples_iterator(DB1, top_3_employees)),
     Ages = lists:sort(fun(A, B) -> A >= B end, [maps:get(age, R) || R <- Results]),
 
     [

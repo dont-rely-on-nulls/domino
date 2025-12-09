@@ -480,7 +480,7 @@ create_database(Name) ->
         #immutable_relation_spec{
             name = boolean,
             schema = #{value => boolean},
-            generator = {generators, boolean},
+            generator = fun() -> spawn(fun() -> generator_iterator_loop(generators:boolean(#{})) end) end,
             membership_criteria = #{value => {in, [true, false]}},
             cardinality = {finite, 2}
         },
@@ -488,7 +488,7 @@ create_database(Name) ->
         #immutable_relation_spec{
             name = natural,
             schema = #{value => natural},
-            generator = {generators, natural},
+            generator = fun() -> spawn(fun() -> generator_iterator_loop(generators:natural(#{})) end) end,
             membership_criteria = #{value => {'and', {gte, 0}, is_integer}},
             cardinality = aleph_zero
         },
@@ -496,7 +496,7 @@ create_database(Name) ->
         #immutable_relation_spec{
             name = integer,
             schema = #{value => integer},
-            generator = {generators, integer},
+            generator = fun() -> spawn(fun() -> generator_iterator_loop(generators:integer(#{})) end) end,
             membership_criteria = #{value => is_integer},
             cardinality = aleph_zero
         },
@@ -504,7 +504,7 @@ create_database(Name) ->
         #immutable_relation_spec{
             name = rational,
             schema = #{numerator => integer, denominator => integer},
-            generator = {generators, rational},
+            generator = fun() -> spawn(fun() -> generator_iterator_loop(generators:rational(#{})) end) end,
             membership_criteria = #{denominator => {neq, 0}},
             cardinality = aleph_zero
         }
@@ -512,7 +512,7 @@ create_database(Name) ->
         %% #immutable_relation_spec{
         %%     name = reals,
         %%     schema = #{value => reals},
-        %%     generator = {generators, reals},
+        %%     generator = fun() -> spawn(fun() -> generator_iterator_loop(generators:reals(#{})) end) end,
         %%     membership_criteria = #{value => is_float},
         %%     cardinality = continuum
         %% }

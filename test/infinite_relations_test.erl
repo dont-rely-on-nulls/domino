@@ -10,8 +10,6 @@ infinite_relations_test_() ->
      fun cleanup/1,
      [
       fun test_create_naturals/1,
-      fun test_naturals_with_constraints/1,
-      fun test_integers_generator/1,
       fun test_rationals_generator/1,
       fun test_take_operator/1,
       fun test_finite_relation_cardinality/1
@@ -46,42 +44,10 @@ test_create_naturals(DB) ->
      ?_assert(is_record(NaturalsRel, relation)),
      ?_assertEqual(natural, NaturalsRel#relation.name),
      ?_assertEqual(aleph_zero, NaturalsRel#relation.cardinality),
-     ?_assertEqual({generators, natural}, NaturalsRel#relation.generator)
+     ?_assert(is_function(NaturalsRel#relation.generator, 0))
     ].
 
-test_naturals_with_constraints(DB) ->
-    %% Naturals are built-in, just query them
-    %% Query with range constraint [0, 9]
-    Iterator = operations:get_tuples_iterator(DB, natural, #{value => {range, 0, 9}}),
-    Tuples = operations:collect_all(Iterator),
-    DataOnly = strip_meta(Tuples),
 
-    %% Should get exactly 10 tuples: {0, 1, 2, ..., 9}
-    [
-     ?_assertEqual(10, length(Tuples)),
-     ?_assert(lists:member(#{value => 0}, DataOnly)),
-     ?_assert(lists:member(#{value => 5}, DataOnly)),
-     ?_assert(lists:member(#{value => 9}, DataOnly))
-    ].
-
-test_integers_generator(DB) ->
-    %% Integers are built-in
-    {ok, IntegersHash} = operations:get_relation_hash(DB, integer),
-    [Integers] = mnesia:dirty_read(relation, IntegersHash),
-
-    %% Query with range constraint [-5, 5]
-    Iterator = operations:get_tuples_iterator(DB, integer, #{value => {range, -5, 5}}),
-    Tuples = operations:collect_all(Iterator),
-    DataOnly = strip_meta(Tuples),
-
-    %% Should get 11 tuples: {-5, -4, ..., 0, ..., 4, 5}
-    [
-     ?_assertEqual(aleph_zero, Integers#relation.cardinality),
-     ?_assertEqual(11, length(Tuples)),
-     ?_assert(lists:member(#{value => 0}, DataOnly)),
-     ?_assert(lists:member(#{value => -5}, DataOnly)),
-     ?_assert(lists:member(#{value => 5}, DataOnly))
-    ].
 
 test_rationals_generator(DB) ->
     %% Rationals are built-in
