@@ -97,7 +97,6 @@ take(SourceRelation, N) when is_record(SourceRelation, relation), is_integer(N),
         cardinality = ResultCardinality,
         generator = GeneratorFun,
         membership_criteria = #{},
-        mutability = immutable,
         provenance = SourceRelation#relation.provenance,
         lineage = {take, N, SourceRelation#relation.lineage}
     }.
@@ -129,7 +128,6 @@ select(SourceRelation, Predicate) when is_record(SourceRelation, relation), is_f
         cardinality = unknown,  % Cannot determine without evaluation
         generator = GeneratorFun,
         membership_criteria = #{},
-        mutability = immutable,
         provenance = SourceRelation#relation.provenance,
         lineage = {select, Predicate, SourceRelation#relation.lineage}
     }.
@@ -164,7 +162,6 @@ project(SourceRelation, Attributes) when is_record(SourceRelation, relation), is
         cardinality = SourceRelation#relation.cardinality,
         generator = GeneratorFun,
         membership_criteria = #{},
-        mutability = immutable,
         provenance = SourceRelation#relation.provenance,
         lineage = {project, Attributes, SourceRelation#relation.lineage}
     }.
@@ -210,7 +207,6 @@ join(LeftRelation, RightRelation, JoinAttribute)
         cardinality = unknown,
         generator = GeneratorFun,
         membership_criteria = #{},
-        mutability = immutable,
         provenance = {join, LeftRelation#relation.provenance, RightRelation#relation.provenance},
         lineage = {join, JoinAttribute, LeftRelation#relation.lineage, RightRelation#relation.lineage}
     }.
@@ -255,7 +251,6 @@ theta_join(LeftRelation, RightRelation, Predicate)
         cardinality = unknown,
         generator = GeneratorFun,
         membership_criteria = #{},
-        mutability = immutable,
         provenance = {join, LeftRelation#relation.provenance, RightRelation#relation.provenance},
         lineage = {theta_join, Predicate, LeftRelation#relation.lineage, RightRelation#relation.lineage}
     }.
@@ -301,7 +296,6 @@ rename(SourceRelation, RenameMappings) when is_record(SourceRelation, relation),
         cardinality = SourceRelation#relation.cardinality,
         generator = GeneratorFun,
         membership_criteria = #{},
-        mutability = immutable,
         provenance = SourceRelation#relation.provenance,
         lineage = {rename, RenameMappings, SourceRelation#relation.lineage}
     }.
@@ -333,7 +327,6 @@ sort(SourceRelation, Comparator) when is_record(SourceRelation, relation), is_fu
         cardinality = SourceRelation#relation.cardinality,
         generator = GeneratorFun,
         membership_criteria = #{},
-        mutability = immutable,
         provenance = SourceRelation#relation.provenance,
         lineage = {sort, Comparator, SourceRelation#relation.lineage}
     }.
