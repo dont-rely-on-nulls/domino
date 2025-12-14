@@ -38,25 +38,24 @@
 %%% @reference E. F. Codd (1970). "A Relational Model of Data for Large Shared Data Banks"
 
 -module(operations).
--include("operations.hrl").
--export([setup/0,
-	 hash/1,
-         create_database/1,
+-include("../include/operations.hrl").
+-export([
+   create_database/1,
 	 create_relation/3,
 	 create_immutable_relation/2,
 	 create_tuple/3,
+	 create_all_tuples/3,
 	 retract_tuple/3,
 	 retract_tuple/4,
 	 clear_relation/2,
 	 clear_relation/3,
 	 retract_relation/2,
 	 retract_relation/3,
-	 get_relations/1,
-	 get_relation_hash/2,
-         hashes_from_tuple/1,
-	 get_tuples_iterator/2,
-	 get_tuples_iterator/3,
-	 take/3,
+   get_relation_hash/2,
+   get_relations/1,
+   hashes_from_tuple/1,
+   get_tuples_iterator/2,
+   get_iterator_from_generator/2,
 	 next_tuple/1,
 	 close_iterator/1,
 	 collect_all/1,
@@ -69,48 +68,10 @@
 	 equijoin_iterator/3,
 	 theta_join_iterator/3,
 	 %% Materialization (eager)
-	 materialize/3]).
+	 materialize/3
+]).
 
-%% @doc Initialize Mnesia database schema and tables.
-%%
-%% Creates a fresh Mnesia schema with four tables for content-addressed storage:
-%% <ul>
-%%   <li>`attribute' - Hash → Value mapping for deduplication</li>
-%%   <li>`tuple' - Hash → Tuple mapping with attribute references</li>
-%%   <li>`relation' - Hash → Relation with merkle tree and schema</li>
-%%   <li>`database_state' - Hash → Database with relation merkle tree</li>
-%% </ul>
-%%
-%% <b>Warning:</b> This function deletes any existing schema and recreates it from scratch.
-%%
-%% @returns `ok' on success
-%% @see create_database/1
-setup() ->
-    mnesia:stop(),
-    mnesia:delete_schema([node()]),
-    mnesia:create_schema([node()]),
-    mnesia:start(),
-    mnesia:create_table(attribute, [
-        {attributes, [hash, value]},
-        {disc_copies, [node()]},
-        {type, set}
-    ]),
-    mnesia:create_table(tuple, [
-        {attributes, [hash, relation, attribute_map]},
-        {disc_copies, [node()]},
-        {type, set}
-    ]),
-    mnesia:create_table(relation, [
-        {attributes, [hash, name, tree, schema, constraints, cardinality, generator, membership_criteria, mutability, provenance]},
-        {disc_copies, [node()]},
-        {type, set}
-    ]),
-    mnesia:create_table(database_state, [
-        {attributes, [hash, name, tree, relations, timestamp]},
-        {disc_copies, [node()]},
-        {type, set}
-    ]).
-
+%% @private
 %% @doc Compute SHA-256 hash of an Erlang term.
 %%
 %% This is the foundational hashing function used throughout the system for
@@ -157,18 +118,10 @@ create_tuple(Database, RelationName, Tuple) when is_map(Tuple), is_record(Databa
     %% Check if relation is immutable before attempting insert
     CurrentRelationHash = maps:get(RelationName, Database#database_state.relations),
     [RelationRecord] = mnesia:dirty_read(relation, CurrentRelationHash),
+    create_tuple_internal(Database, RelationName, Tuple, RelationRecord).
 
-    case RelationRecord#relation.mutability of
-        immutable ->
-            {error, {immutable_relation, RelationName}};
-        mutable ->
-            create_tuple_internal(Database, RelationName, Tuple, RelationRecord);
-        undefined ->
-            %% Backwards compatibility: treat undefined as mutable
-            create_tuple_internal(Database, RelationName, Tuple, RelationRecord)
-    end.
-
-%% Internal function for tuple creation (after mutability check)
+%% @private
+%% Internal function for tuple creation
 create_tuple_internal(Database, RelationName, Tuple, _RelationRecord) ->
     F = fun() ->
         %% Step 1: Store each attribute value and build attribute_map
@@ -212,8 +165,13 @@ create_tuple_internal(Database, RelationName, Tuple, _RelationRecord) ->
             constraints = RelationRecord#relation.constraints,
             cardinality = NewCardinality,
             generator = RelationRecord#relation.generator,
-            provenance = RelationRecord#relation.provenance
+            provenance = RelationRecord#relation.provenance,
+            lineage = RelationRecord#relation.lineage,
+            membership_criteria = RelationRecord#relation.membership_criteria
         },
+        %% Delete old relation record before writing new one
+        %% This ensures only one relation record exists per name
+        mnesia:delete({relation, CurrentRelationHash}),
         mnesia:write(relation, UpdatedRelation, write),
         
         %% Step 7: Update database relations map
@@ -423,6 +381,20 @@ create_relation(Database, Name, Definition) when is_record(Database, database_st
         %% Two relations might share definitions but their name gives another interpretation
         %% and therefore different tuples
         RelationHash = hash({Name, Definition, undefined}),
+
+        %% Returns a generator function (not a PID) that yields tuples one at a time
+	%% TODO: investigate if a generator should or should not be bound to a specific DATABASE VERSION. If so, create the fun passing the DB as an attribute
+        GeneratorFun = fun() ->
+            [CurrentRelation] = mnesia:dirty_index_read(relation, Name, #relation.name),
+            CurrentHash = CurrentRelation#relation.hash,
+            TupleHashes = case CurrentRelation#relation.tree of
+                undefined -> [];
+                _ -> hashes_from_tuple(CurrentHash)
+            end,
+            InnerGen = make_finite_generator(TupleHashes),
+            spawn(fun() -> generator_iterator_loop(InnerGen) end)
+        end,
+
         NewRelation = #relation{
             hash = RelationHash,
             name = Name,
@@ -430,10 +402,10 @@ create_relation(Database, Name, Definition) when is_record(Database, database_st
             schema = Definition,
             constraints = #{},              % No constraints by default
             cardinality = {finite, 0},      % Empty relation
-            generator = undefined,          % Finite relation has no generator
+            generator = GeneratorFun,       % Function generator for finite relations
             membership_criteria = #{},      % No membership criteria by default
-            mutability = mutable,           % Mutable by default
-            provenance = {base, Name}       % Base relation
+            provenance = build_base_provenance(Definition, Name), % Base relation provenance
+            lineage = {base, Name}          % Base relation lineage
         },
         mnesia:write(relation, NewRelation, write),
         
@@ -494,42 +466,42 @@ create_database(Name) ->
     %% Standard immutable relations (domains and their predicates)
     StandardTypeRelations = [
         %% Boolean domain - finite, immutable
-        #immutable_relation_spec{
+        #domain{
             name = boolean,
             schema = #{value => boolean},
-            generator = {generators, boolean},
+            generator = fun() -> spawn(fun() -> generator_iterator_loop(generators:boolean(#{})) end) end,
             membership_criteria = #{value => {in, [true, false]}},
             cardinality = {finite, 2}
         },
         %% Natural numbers - infinite, immutable
-        #immutable_relation_spec{
+        #domain{
             name = natural,
             schema = #{value => natural},
-            generator = {generators, natural},
+            generator = fun() -> spawn(fun() -> generator_iterator_loop(generators:natural(#{})) end) end,
             membership_criteria = #{value => {'and', {gte, 0}, is_integer}},
             cardinality = aleph_zero
         },
         %% Integers - infinite, immutable
-        #immutable_relation_spec{
+        #domain{
             name = integer,
             schema = #{value => integer},
-            generator = {generators, integer},
+            generator = fun() -> spawn(fun() -> generator_iterator_loop(generators:integer(#{})) end) end,
             membership_criteria = #{value => is_integer},
             cardinality = aleph_zero
         },
         %% Rationals - infinite, immutable
-        #immutable_relation_spec{
+        #domain{
             name = rational,
             schema = #{numerator => integer, denominator => integer},
-            generator = {generators, rational},
+            generator = fun() -> spawn(fun() -> generator_iterator_loop(generators:rational(#{})) end) end,
             membership_criteria = #{denominator => {neq, 0}},
             cardinality = aleph_zero
         }
         %% Reals - TODO: implement
-        %% #immutable_relation_spec{
+        %% #domain{
         %%     name = reals,
         %%     schema = #{value => reals},
-        %%     generator = {generators, reals},
+        %%     generator = fun() -> spawn(fun() -> generator_iterator_loop(generators:reals(#{})) end) end,
         %%     membership_criteria = #{value => is_float},
         %%     cardinality = continuum
         %% }
@@ -561,7 +533,7 @@ create_database(Name) ->
 %% == Example ==
 %% <pre>
 %% %% Create immutable relation of natural numbers
-%% {DB1, Naturals} = operations:create_immutable_relation(DB, #immutable_relation_spec{
+%% {DB1, Naturals} = operations:create_immutable_relation(DB, #domain{
 %%     name = naturals,
 %%     schema = #{value => naturals},
 %%     generator = {generators, naturals},
@@ -575,19 +547,19 @@ create_database(Name) ->
 %% </pre>
 %%
 %% @param Database `#database_state{}' record
-%% @param Specification `#immutable_relation_spec{}' record
+%% @param Specification `#domain{}' record
 %% @returns `{UpdatedDatabase, NewRelation}'
 %%
 %% @see create_relation/3
 %% @see get_tuples_iterator/3
 create_immutable_relation(Database, Specification)
   when is_record(Database, database_state)
-       andalso is_record(Specification, immutable_relation_spec) ->
-    Name = Specification#immutable_relation_spec.name,
-    Schema = Specification#immutable_relation_spec.schema,
-    Generator = Specification#immutable_relation_spec.generator,
-    MembershipCriteria = Specification#immutable_relation_spec.membership_criteria,
-    Cardinality = Specification#immutable_relation_spec.cardinality,
+       andalso is_record(Specification, domain) ->
+    Name = Specification#domain.name,
+    Schema = Specification#domain.schema,
+    Generator = Specification#domain.generator,
+    MembershipCriteria = Specification#domain.membership_criteria,
+    Cardinality = Specification#domain.cardinality,
 
     F = fun() ->
         RelationHash = hash({Name, Schema, undefined}),
@@ -601,8 +573,8 @@ create_immutable_relation(Database, Specification)
             cardinality = Cardinality,
             generator = Generator,
             membership_criteria = MembershipCriteria,
-            mutability = immutable,     % Always immutable
-            provenance = {base, Name}
+            provenance = build_base_provenance(Schema, Name), % Base relation provenance
+            lineage = {base, Name}      % Base relation lineage
         },
         mnesia:write(relation, NewRelation, write),
 
@@ -627,19 +599,6 @@ create_immutable_relation(Database, Specification)
     {atomic, Result} = mnesia:transaction(F),
     Result.
 
-%% @doc Get all relation names in a database.
-%%
-%% Returns a list of atoms representing all relation names currently
-%% defined in the database.
-%%
-%% @param Database `#database_state{}' record
-%% @returns List of atoms (relation names)
-%%
-%% @see get_relation_hash/2
-%% @see create_relation/3
-get_relations(Database) ->
-    maps:keys(Database#database_state.relations).
-
 %% @doc Get relation hash by name.
 %%
 %% Looks up a relation's hash in the database's relation map. This hash
@@ -656,6 +615,17 @@ get_relation_hash(Database, RelationName) ->
         error -> {error, not_found};
         X -> X
     end.
+
+%% @doc Get list of all relation names in the database.
+%%
+%% Returns a list of all relation names (atoms) currently stored in the database.
+%% This includes both user-defined relations and built-in infinite relations.
+%%
+%% @param Database `#database_state{}' record
+%% @returns List of relation names (atoms)
+-spec get_relations(#database_state{}) -> [atom()].
+get_relations(Database) ->
+    maps:keys(Database#database_state.relations).
 
 %% @doc Resolve a tuple hash to actual values.
 %%
@@ -697,75 +667,6 @@ hashes_from_tuple(RelationHash) ->
     case Relation#relation.tree of
         undefined -> [];
         Tree -> merklet:keys(Tree)
-    end.
-
-%% @doc Take operator (τ): Returns N arbitrary elements from a relation.
-%%
-%% The take operator is a unary relational operator that produces a finite
-%% relation containing N arbitrary elements from the input relation. Since
-%% relations are sets (unordered), the specific elements returned are
-%% determined by the enumeration order.
-%%
-%% For finite relations smaller than N, returns all elements.
-%% For infinite relations, returns first N elements by generator order.
-%%
-%% == Example ==
-%% <pre>
-%% %% Take 100 naturals (returns {0, 1, 2, ..., 99})
-%% {DB1, Naturals100} = operations:take(DB, naturals, 100).
-%%
-%% %% Can compose with other operators
-%% Iterator = operations:get_tuples_iterator(DB1, naturals100).
-%% </pre>
-%%
-%% @param Database `#database_state{}' record
-%% @param RelationName Atom naming the source relation
-%% @param N Number of elements to take
-%% @returns `{UpdatedDatabase, TakeRelation}' where TakeRelation is finite
-%%
-%% @see get_tuples_iterator/3
-take(Database, RelationName, N) when is_record(Database, database_state), is_integer(N), N > 0 ->
-    case maps:get(RelationName, Database#database_state.relations, error) of
-        error ->
-            erlang:error({relation_not_found, RelationName});
-        RelationHash ->
-            [SourceRelation] = mnesia:dirty_read(relation, RelationHash),
-
-            %% Compute cardinality of result
-            ResultCardinality = case SourceRelation#relation.cardinality of
-                {finite, M} when M < N -> {finite, M};
-                {finite, _} -> {finite, N};
-                _ -> {finite, N}  % Taking from infinite yields finite
-            end,
-
-            %% Create take relation
-            TakeName = list_to_atom(atom_to_list(RelationName) ++ "_take_" ++ integer_to_list(N)),
-
-            TakeHash = hash({take, RelationName, N}),
-
-            TakeRelation = #relation{
-                hash = TakeHash,
-                name = TakeName,
-                tree = undefined,  % Generated on-demand
-                schema = SourceRelation#relation.schema,
-                constraints = SourceRelation#relation.constraints,
-                cardinality = ResultCardinality,
-                generator = {take, RelationName, N},
-                membership_criteria = #{},
-                mutability = immutable,  % Take relations are read-only
-                provenance = {take, SourceRelation#relation.provenance, N}
-            },
-
-            %% Register the take relation (ephemeral - not persisted to Mnesia disk)
-            %% This allows get_tuples_iterator to find it
-            UpdatedDatabase = Database#database_state{
-                relations = maps:put(TakeName, TakeHash, Database#database_state.relations)
-            },
-
-            %% Store in Mnesia (in-memory transaction)
-            mnesia:dirty_write(relation, TakeRelation),
-
-            {UpdatedDatabase, TakeRelation}
     end.
 
 %% @doc Create an iterator for streaming tuples from a relation with constraints.
@@ -818,83 +719,32 @@ take(Database, RelationName, N) when is_record(Database, database_state), is_int
 %%
 %% @param Database `#database_state{}' record
 %% @param RelationName Atom naming the relation to iterate
-%% @param Options Map of constraints (nested or flat format)
 %% @returns Pid of iterator process
 %%
 %% @see get_tuples_iterator/2
 %% @see take/3
-get_tuples_iterator(Database, RelationName, Options) when is_record(Database, database_state) ->
+get_tuples_iterator(Database, RelationName) when is_record(Database, database_state) ->
     case maps:get(RelationName, Database#database_state.relations, error) of
         error ->
-            erlang:error({error_tuple_iterator_init, RelationName});
+            erlang:error({error_tuple_iterator_init, relation_not_found, RelationName});
         RelationHash ->
             [Relation] = mnesia:dirty_read(relation, RelationHash),
-
-            %% Extract constraints from options (support both nested and flat format)
-            Constraints = case maps:is_key(constraints, Options) of
-                true -> maps:get(constraints, Options);
-                false -> Options  %% Flat format: entire map is constraints
-            end,
-
-            %% Metadata tracking is ALWAYS enabled
             case Relation#relation.cardinality of
                 {finite, _} when Relation#relation.tree =/= undefined ->
-                    %% Finite relation with materialized tuples: use tuple hashes
                     TupleHashes = hashes_from_tuple(RelationHash),
-                    spawn(fun() -> tuple_iterator_loop(TupleHashes, RelationName, true) end);
-
+                    spawn(fun() -> tuple_iterator_loop(TupleHashes) end);
                 _ ->
-                    %% Relation with generator (infinite or take) or empty finite relation
-                    case Relation#relation.generator of
-                        undefined ->
-                            %% Empty finite relation without materialized tuples
-                            spawn(fun() -> tuple_iterator_loop([], RelationName, true) end);
-
-                        {take, SourceRelName, N} ->
-                            %% Take relation: get source iterator and limit to N tuples
-                            SourceIter = get_tuples_iterator(Database, SourceRelName, Constraints),
-                            spawn(fun() -> take_iter_loop(SourceIter, N, 0, N) end);
-
-                        {GeneratorModule, GeneratorFunction} ->
-                            %% Normal generator (naturals, integers, etc.)
-                            Generator = erlang:apply(GeneratorModule, GeneratorFunction, [Constraints]),
-                            spawn(fun() -> generator_iterator_loop(Generator, RelationName, true) end)
-                    end
+                    get_iterator_from_generator(Relation#relation.name, Relation#relation.generator)
             end
     end.
 
-%% @doc Create an iterator for streaming tuples from a relation.
-%%
-%% Implements the Volcano Iterator Model: spawns an independent process that
-%% lazily streams tuples from the relation. This enables:
-%% <ul>
-%%   <li>Memory-bounded queries (tuples materialized on demand)</li>
-%%   <li>Composable query operators (future: select, project, join)</li>
-%%   <li>Process-based concurrency</li>
-%% </ul>
-%%
-%% The iterator process responds to `{next, Caller}' messages and sends back
-%% either `{tuple, Tuple}' or `done' when exhausted.
-%%
-%% <b>Note:</b> For infinite relations, use `get_tuples_iterator/3' with constraints.
-%%
-%% == Example ==
-%% <pre>
-%% Iterator = operations:get_tuples_iterator(DB, users),
-%% {ok, Tuple} = operations:next_tuple(Iterator),
-%% operations:close_iterator(Iterator).
-%% </pre>
-%%
-%% @param Database `#database_state{}' record
-%% @param RelationName Atom naming the relation to iterate
-%% @returns Pid of iterator process
-%%
-%% @see get_tuples_iterator/3
-%% @see next_tuple/1
-%% @see close_iterator/1
-%% @see collect_all/1
-get_tuples_iterator(Database, RelationName) when is_record(Database, database_state) ->
-    get_tuples_iterator(Database, RelationName, #{}).
+%% @doc Get an iterator out of a generator.
+get_iterator_from_generator(RelationName, GeneratorFun) ->
+    case GeneratorFun of
+	undefined -> spawn(fun() -> tuple_iterator_loop([]) end);
+	Generator when is_function(Generator) -> Generator();
+        _ -> erlang:error({error_tuple_iterator_init, non_function_generator, RelationName})
+    end.
 
 %% @doc Get next tuple from iterator.
 %%
@@ -946,24 +796,20 @@ close_iterator(IteratorPid) ->
 %% </ul>
 %%
 %% @param TupleHashes List of binary tuple hashes to stream
-%% @param RelationName Name of the source relation (for provenance)
-%% @param EnableProvenance Boolean flag to enable provenance tracking
-tuple_iterator_loop([], _RelationName, _EnableProvenance) ->
+tuple_iterator_loop([]) ->
     receive
         {next, Caller} ->
             Caller ! done;
         stop ->
             ok
     end;
-tuple_iterator_loop([TupleHash | Rest], RelationName, EnableProvenance) ->
+tuple_iterator_loop([TupleHash | Rest]) ->
     receive
         {next, Caller} ->
             %% Resolve tuple on demand
             ResolvedTuple = resolve_tuple(TupleHash),
-            %% Add provenance tracking (always enabled)
-            FinalTuple = add_base_provenance(ResolvedTuple, RelationName),
-            Caller ! {tuple, FinalTuple},
-            tuple_iterator_loop(Rest, RelationName, EnableProvenance);
+            Caller ! {tuple, ResolvedTuple},
+            tuple_iterator_loop(Rest);
         stop ->
             ok
     end.
@@ -1003,10 +849,6 @@ collect_all(IteratorPid, Acc) ->
             {error, Reason, lists:reverse(Acc)}
     end.
 
-%%% ============================================================================
-%%% Iterator Operators (Lazy - Volcano Model)
-%%% ============================================================================
-
 %% @doc Select iterator: Filters tuples based on a predicate.
 %%
 %% Lazy operator that wraps a child iterator and only emits tuples that
@@ -1032,12 +874,9 @@ select_loop(ChildPid, Predicate) ->
                 {ok, Tuple} ->
                     case Predicate(Tuple) of
                         true ->
-                            %% Wrap lineage with select operation
-                            TupleWithLineage = wrap_lineage(Tuple, {select, Predicate}),
-                            Caller ! {tuple, TupleWithLineage},
+                            Caller ! {tuple, Tuple},
                             select_loop(ChildPid, Predicate);
                         false ->
-                            %% Skip this tuple, get next
                             self() ! {next, Caller},
                             select_loop(ChildPid, Predicate)
                     end;
@@ -1076,30 +915,9 @@ project_loop(ChildPid, Attributes) ->
         {next, Caller} ->
             case next_tuple(ChildPid) of
                 {ok, Tuple} ->
-                    % Project data attributes
+                    % Project data attributes only - no metadata handling
                     ProjectedTuple = maps:with(Attributes, Tuple),
-
-                    % Preserve and update metadata
-                    case maps:get(meta, Tuple, undefined) of
-                        undefined ->
-                            % No metadata, just return projected tuple
-                            Caller ! {tuple, ProjectedTuple};
-                        Meta ->
-                            % Filter provenance to only projected attributes
-                            OldProv = maps:get(provenance, Meta, #{}),
-                            NewProv = maps:with(Attributes, OldProv),
-
-                            % Build new metadata
-                            UpdatedMeta = case NewProv of
-                                Empty when map_size(Empty) =:= 0 -> maps:remove(provenance, Meta);
-                                _ -> maps:put(provenance, NewProv, Meta)
-                            end,
-
-                            % Add metadata back and wrap lineage
-                            TupleWithMeta = maps:put(meta, UpdatedMeta, ProjectedTuple),
-                            TupleWithLineage = wrap_lineage(TupleWithMeta, {project, Attributes}),
-                            Caller ! {tuple, TupleWithLineage}
-                    end,
+                    Caller ! {tuple, ProjectedTuple},
                     project_loop(ChildPid, Attributes);
                 done ->
                     close_iterator(ChildPid),
@@ -1135,17 +953,11 @@ project_loop(ChildPid, Attributes) ->
 %% @returns Iterator process (Pid)
 sort_iterator(ChildIterator, CompareFun) when is_function(CompareFun, 2) ->
     spawn(fun() ->
-        %% Phase 1: Consume all tuples (blocking!)
+        %% Sync all state blocking the pipeline
         AllTuples = collect_all(ChildIterator),
-
-        %% Phase 2: Sort in memory
+        %% Sort in memory
         SortedTuples = lists:sort(CompareFun, AllTuples),
-
-        %% Phase 3: Wrap lineage for all tuples
-        TuplesWithLineage = [wrap_lineage(T, {sort, CompareFun}) || T <- SortedTuples],
-
-        %% Phase 4: Emit sorted tuples on demand
-        sorted_emit_loop(TuplesWithLineage)
+        sorted_emit_loop(SortedTuples)
     end).
 
 sorted_emit_loop([]) ->
@@ -1184,9 +996,8 @@ take_iter_loop(ChildPid, Limit, Count, OriginalN) when Count < Limit ->
         {next, Caller} ->
             case next_tuple(ChildPid) of
                 {ok, Tuple} ->
-                    %% Wrap lineage with take operation
-                    TupleWithLineage = wrap_lineage(Tuple, {take, OriginalN}),
-                    Caller ! {tuple, TupleWithLineage},
+                    %% Pass through tuple without metadata injection  
+                    Caller ! {tuple, Tuple},
                     take_iter_loop(ChildPid, Limit, Count + 1, OriginalN);
                 done ->
                     close_iterator(ChildPid),
@@ -1305,7 +1116,7 @@ materialize(Database, SourceIterator, ResultName) when is_record(Database, datab
             {DB1, _Relation} = create_relation(Database, ResultName, Schema),
 
             %% 4. Insert all tuples
-            {FinalDB, FinalRelation} = insert_all_tuples(DB1, ResultName, AllTuples),
+            {FinalDB, FinalRelation} = create_all_tuples(DB1, ResultName, AllTuples),
 
             {FinalDB, FinalRelation}
     end.
@@ -1327,7 +1138,7 @@ infer_type(_) -> term.
 
 %% @private
 %% Insert multiple tuples into a relation.
-insert_all_tuples(DB, RelationName, Tuples) ->
+create_all_tuples(DB, RelationName, Tuples) ->
     lists:foldl(
         fun(Tuple, {DBacc, _RelAcc}) ->
             create_tuple(DBacc, RelationName, Tuple)
@@ -1340,51 +1151,20 @@ insert_all_tuples(DB, RelationName, Tuples) ->
 %%% Generator Support Functions
 %%% ============================================================================
 
-%% Instantiate a generator from a generator specification (commented out).
-%% Converts a generator spec (stored in relation record) into an actual
-%% generator function that can produce tuples.
-%%
-%% @param GeneratorSpec Generator specification
-%% @param Constraints Boundedness constraints
-%% @returns Generator function
-%% instantiate_generator({primitive, naturals}, Constraints) ->
-%%     generators:naturals(Constraints);
-%% instantiate_generator({primitive, integers}, Constraints) ->
-%%     generators:integers(Constraints);
-%% instantiate_generator({primitive, rationals}, Constraints) ->
-%%     generators:rationals(Constraints);
-%% instantiate_generator({primitive, plus}, Constraints) ->
-%%     generators:plus(Constraints);
-%% instantiate_generator({primitive, times}, Constraints) ->
-%%     generators:times(Constraints);
-%% instantiate_generator({primitive, minus}, Constraints) ->
-%%     generators:minus(Constraints);
-%% instantiate_generator({primitive, divide}, Constraints) ->
-%%     generators:divide(Constraints);
-%% instantiate_generator({custom, GeneratorFun}, Constraints) ->
-%%     GeneratorFun(Constraints);
-%% instantiate_generator({take, RelationName, N}, Constraints) ->
-%%     %% Take generator: wrap another generator with limit
-%%     %% This is a simplified version - full implementation would look up the base relation
-%%     make_take_generator(RelationName, N, Constraints);
-%% instantiate_generator(Other, _) ->
-%%     erlang:error({unknown_generator, Other}).
 
 %% @private
 %% Generator iterator loop for infinite relations.
 %% Similar to tuple_iterator_loop but works with generator functions instead
 %% of tuple hashes.
-generator_iterator_loop(Generator, RelationName, EnableProvenance) ->
+generator_iterator_loop(Generator) ->
     receive
         {next, Caller} ->
             case Generator(next) of
                 done ->
                     Caller ! done;
-                {value, Tuple, NextGen} ->
-                    %% Add provenance tracking (always enabled)
-                    FinalTuple = add_base_provenance(Tuple, RelationName),
-                    Caller ! {tuple, FinalTuple},
-                    generator_iterator_loop(NextGen, RelationName, EnableProvenance);
+                {value, Tuple, NextGenerator} ->
+                    Caller ! {tuple, Tuple},
+                    generator_iterator_loop(NextGenerator);
                 {error, Reason} ->
                     Caller ! {error, Reason}
             end;
@@ -1423,7 +1203,7 @@ equijoin_emit_loop(LeftIter, RightTuples, JoinAttr) ->
                             equijoin_emit_loop(LeftIter, RightTuples, JoinAttr);
                         LeftValue ->
                             % Find matching right tuples
-                            Matches = [merge_tuples(LeftTuple, RightTuple, {equijoin, JoinAttr})
+                            Matches = [merge_tuples(LeftTuple, RightTuple)
                                       || RightTuple <- RightTuples,
                                          maps:get(JoinAttr, RightTuple, undefined) =:= LeftValue],
                             case Matches of
@@ -1478,7 +1258,7 @@ theta_join_emit_loop(LeftIter, RightTuples, Pred) ->
                     Caller ! done;
                 {ok, LeftTuple} ->
                     % Find all right tuples that satisfy predicate
-                    Matches = [merge_tuples(LeftTuple, RightTuple, {theta_join, Pred})
+                    Matches = [merge_tuples(LeftTuple, RightTuple)
                               || RightTuple <- RightTuples,
                                  Pred(LeftTuple, RightTuple)],
                     case Matches of
@@ -1512,133 +1292,64 @@ theta_join_emit_buffered(LeftIter, RightTuples, Pred, []) ->
     theta_join_emit_loop(LeftIter, RightTuples, Pred).
 
 %% @private
-%% Wrap existing lineage with a new operation.
-%% Takes a tuple with optional lineage and wraps it with a new operation node.
-%% If the tuple has no lineage, does nothing.
-%%
-%% @param Tuple Tuple potentially with meta.lineage
-%% @param OpInfo Operation info: {select, Pred} | {project, Attrs} | {sort, Cmp} | {take, N}
-wrap_lineage(Tuple, OpInfo) ->
-    case maps:get(meta, Tuple, undefined) of
-        undefined ->
-            % No metadata, return as-is
-            Tuple;
-        Meta ->
-            case maps:get(lineage, Meta, undefined) of
-                undefined ->
-                    % No lineage, return as-is
-                    Tuple;
-                ChildLineage ->
-                    % Wrap existing lineage with new operation
-                    NewLineage = case OpInfo of
-                        {select, Pred} -> {select, Pred, ChildLineage};
-                        {project, Attrs} -> {project, Attrs, ChildLineage};
-                        {sort, CmpFun} -> {sort, CmpFun, ChildLineage};
-                        {take, N} -> {take, N, ChildLineage}
-                    end,
-                    maps:put(meta, maps:put(lineage, NewLineage, Meta), Tuple)
-            end
-    end.
-
-%% @private
-%% Add base provenance and lineage to a tuple from a relation.
-%% Creates nested meta fields with both provenance and lineage.
-%% Example: add_base_provenance(#{id => 1, name => "Alice"}, employees)
-%%   => #{id => 1, name => "Alice",
-%%        meta => #{provenance => #{id => {employees, id}, name => {employees, name}},
-%%                  lineage => {base, employees}}}
-add_base_provenance(Tuple, RelationName) ->
-    % Build provenance map for all attributes (excluding existing meta)
-    DataAttrs = maps:remove(meta, Tuple),
-    Provenance = maps:fold(
-        fun(Key, _Value, Acc) ->
-            maps:put(Key, {RelationName, Key}, Acc)
-        end,
-        #{},
-        DataAttrs
-    ),
-    % Add metadata with provenance and lineage
-    maps:put(meta, #{
-        provenance => Provenance,
-        lineage => {base, RelationName}
-    }, Tuple).
-
-%% @private
-%% Merge two tuples for join result, including metadata.
-%% If attribute names conflict, right side attributes are prefixed with "right_".
-%% Metadata (including provenance and lineage) is also merged.
+%% @doc Simple tuple merge for joins
+%% Equally named and typed attributes are not repeated.
 %%
 %% @param LeftTuple Left side tuple
-%% @param RightTuple Right side tuple
-%% @param JoinInfo Join information: {equijoin, Attr} | {theta_join, Predicate}
-merge_tuples(LeftTuple, RightTuple, JoinInfo) ->
-    % Extract metadata from both sides (if present)
-    LeftMeta = maps:get(meta, LeftTuple, #{}),
-    RightMeta = maps:get(meta, RightTuple, #{}),
-
-    % Extract provenance and lineage from metadata
-    LeftProv = maps:get(provenance, LeftMeta, #{}),
-    RightProv = maps:get(provenance, RightMeta, #{}),
-    LeftLineage = maps:get(lineage, LeftMeta, undefined),
-    RightLineage = maps:get(lineage, RightMeta, undefined),
-
-    % Remove metadata from tuples for data merging
-    LeftData = maps:remove(meta, LeftTuple),
-    RightData = maps:remove(meta, RightTuple),
-
-    % Merge data attributes
-    MergedData = maps:fold(
-        fun(Key, Value, Acc) ->
-            case maps:is_key(Key, Acc) of
-                true ->
-                    % Conflict - prefix right attribute
-                    RightKey = list_to_atom("right_" ++ atom_to_list(Key)),
-                    maps:put(RightKey, Value, Acc);
-                false ->
-                    maps:put(Key, Value, Acc)
+%% @param RightTuple Right side tuple  
+merge_tuples(LeftTuple, RightTuple) ->
+    maps:fold(
+        fun(RightKey, RightValue, LeftTupleAcc) ->
+            case maps:get(RightKey, LeftTupleAcc, undefined) of
+                LeftValue when LeftValue =:= RightValue ->
+                    % Equal attributes, keep single value
+                    LeftTupleAcc;
+                undefined ->
+                    % No conflict, add right attribute
+                    maps:put(RightKey, RightValue, LeftTupleAcc);
+                _ ->
+                    % Different attributes
+                    maps:put(RightKey, RightValue, LeftTupleAcc)
             end
         end,
-        LeftData,
-        RightData
-    ),
+        LeftTuple,
+        RightTuple
+    ).
 
-    % Merge provenance (same conflict resolution)
-    MergedProv = maps:fold(
-        fun(Key, Source, Acc) ->
-            case maps:is_key(Key, Acc) of
-                true ->
-                    % Conflict - prefix right attribute provenance
-                    RightKey = list_to_atom("right_" ++ atom_to_list(Key)),
-                    maps:put(RightKey, Source, Acc);
-                false ->
-                    maps:put(Key, Source, Acc)
-            end
+%% @private
+%% Build base provenance mapping for a relation.
+%% Maps each attribute to its source relation and attribute name.
+%%
+%% @param Schema Map of attribute names to types
+%% @param RelationName Name of the source relation
+%% @returns Provenance map #{attr => {relation, attr}}
+build_base_provenance(Schema, RelationName) ->
+    maps:fold(
+        fun(AttrName, _Type, Acc) ->
+            maps:put(AttrName, {RelationName, AttrName}, Acc)
         end,
-        LeftProv,
-        RightProv
-    ),
+        #{},
+        Schema
+    ).
 
-    % Build merged lineage if both sides have lineage
-    MergedLineage = case {LeftLineage, RightLineage, JoinInfo} of
-        {undefined, undefined, _} -> undefined;
-        {L, R, {equijoin, Attr}} when L =/= undefined, R =/= undefined ->
-            {join, Attr, L, R};
-        {L, R, {theta_join, Pred}} when L =/= undefined, R =/= undefined ->
-            {theta_join, Pred, L, R};
-        _ -> undefined
-    end,
+%% The issue here is that the creation of a generator on the create_relation is wrong.
+%% I assume it was because of the fun(Constraints), which I believe should receive an
+%% optional database version, or just build from the current relation attributes as a factory.
 
-    % Build merged metadata
-    MergedMeta = case {maps:size(MergedProv), MergedLineage} of
-        {0, undefined} -> #{};
-        {0, Lineage} -> #{lineage => Lineage};
-        {_, undefined} -> #{provenance => MergedProv};
-        {_, Lineage} -> #{provenance => MergedProv, lineage => Lineage}
-    end,
-
-    % Add merged metadata to result (only if non-empty)
-    case maps:size(MergedMeta) of
-        0 -> MergedData;
-        _ -> maps:put(meta, MergedMeta, MergedData)
+%% @private
+%% @doc Create a generator function from a list of tuple hashes.
+%%
+%% Converts a list of tuple hashes into a generator function compatible
+%% with the generator protocol used by infinite relations. The generator
+%% reads tuples from Mnesia on demand.
+%%
+%% @param TupleHashes List of tuple hashes to iterate over
+%% @returns Generator function that accepts 'next' and returns {value, Tuple, NextGen} or done
+make_finite_generator([]) ->
+    fun(_) -> done end;
+make_finite_generator([Hash | Rest]) ->
+    fun(next) ->
+        ResolvedTuple = resolve_tuple(Hash),
+        NextGen = make_finite_generator(Rest),
+        {value, ResolvedTuple, NextGen}
     end.
-

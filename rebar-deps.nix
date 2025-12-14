@@ -14,5 +14,15 @@ let
       };
       beamDeps = [ ];
     };
+    uuid_erl = builder {
+      name = "uuid_erl";
+      version = "2.0.7";
+      src = fetchHex {
+        pkg = "uuid_erl";
+        version = "2.0.7";
+        sha256 = "sha256-Tkxco0YdxHxeFX7UKqOYGgU7ehhnkq+XKiexSpSJMk4=";
+      };
+      beamDeps = [ ];
+    };
   };
 in self

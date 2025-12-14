@@ -21,30 +21,27 @@
 %%%
 %%% == Query Syntax Examples ==
 %%% <pre>
-%%% % Scan relation
-%%% {scan, employees}
+%%% % Base relation (just use the name)
+%%% employees
 %%%
 %%% % Filter
-%%% {select, {scan, employees}, fun(T) -&gt; maps:get(age, T) &gt; 30 end}
+%%% {select, employees, fun(T) -&gt; maps:get(age, T) &gt; 30 end}
 %%%
 %%% % Project
-%%% {project, {scan, employees}, [name, age]}
+%%% {project, employees, [name, age]}
 %%%
 %%% % Join
-%%% {join, {scan, employees}, {scan, departments}, dept_id}
+%%% {join, employees, departments, dept_id}
 %%%
 %%% % Rename
-%%% {rename, age, years, {scan, employees}}
+%%% {rename, age, years, employees}
 %%%
 %%% % Complex pipeline
 %%% {take,
 %%%   {sort,
 %%%     {project,
 %%%       {select,
-%%%         {join,
-%%%           {scan, employees},
-%%%           {scan, departments},
-%%%           dept_id},
+%%%         {join, employees, departments, dept_id},
 %%%         fun(T) -&gt; maps:get(age, T) &gt; 30 end},
 %%%       [name, dept_name, age]},
 %%%     fun(A, B) -&gt; maps:get(age, A) =&lt; maps:get(age, B) end},
@@ -79,7 +76,7 @@
 %% @returns ok
 -spec start() -> ok.
 start() ->
-    operations:setup(),
+    main:setup(),
     io:format("~n~s~n", [banner()]),
     io:format("Domino REPL started. Type repl:help() for usage.~n~n"),
     ok.
@@ -250,10 +247,10 @@ help() ->
     io:format("Quick Start:~n"),
     io:format("  repl:start().                  %% Initialize system~n"),
     io:format("  DB = repl:example_db().        %% Create example database~n"),
-    io:format("  repl:q(DB, {scan, employees}). %% Run a query~n~n"),
+    io:format("  repl:q(DB, employees).         %% Run a query~n~n"),
 
     io:format("Query Operators (all lazy by default):~n"),
-    io:format("  {scan, Name}                              - Scan relation~n"),
+    io:format("  RelationName                              - Base relation~n"),
     io:format("  {select, Plan, Predicate}                 - Filter tuples~n"),
     io:format("  {project, Plan, [Attrs]}                  - Project attributes~n"),
     io:format("  {join, Left, Right, Attr}                 - Equijoin~n"),
@@ -281,39 +278,41 @@ help() ->
     io:format("  repl:modes() - List all available modes~n~n"),
 
     io:format("Examples:~n"),
+    io:format("  %% Query all employees~n"),
+    io:format("  repl:q(DB, employees).~n~n"),
+
     io:format("  %% Filter employees over 30~n"),
-    io:format("  repl:q(DB, {select, {scan, employees}, ~n"),
+    io:format("  repl:q(DB, {select, employees, ~n"),
     io:format("              fun(T) -> maps:get(age, T) > 30 end}).~n~n"),
 
     io:format("  %% Project name and age~n"),
-    io:format("  repl:q(DB, {project, {scan, employees}, [name, age]}).~n~n"),
+    io:format("  repl:q(DB, {project, employees, [name, age]}).~n~n"),
 
     io:format("  %% Join employees with departments~n"),
-    io:format("  repl:q(DB, {join, {scan, employees}, ~n"),
-    io:format("                    {scan, departments}, dept_id}).~n~n"),
+    io:format("  repl:q(DB, {join, employees, departments, dept_id}).~n~n"),
 
     io:format("  %% Rename age to years~n"),
-    io:format("  repl:q(DB, {rename, age, years, {scan, employees}}).~n~n"),
+    io:format("  repl:q(DB, {rename, age, years, employees}).~n~n"),
 
     io:format("  %% Materialize first 10 tuples (eager evaluation)~n"),
-    io:format("  repl:q(DB, {materialize, {scan, employees}, 10}).~n~n"),
+    io:format("  repl:q(DB, {materialize, employees, 10}).~n~n"),
 
     io:format("  %% Nested materialize - select from materialized data~n"),
-    io:format("  repl:q(DB, {select, {materialize, {scan, employees}},~n"),
+    io:format("  repl:q(DB, {select, {materialize, employees},~n"),
     io:format("              fun(T) -> maps:get(age, T) > 30 end}).~n~n"),
 
     io:format("  %% Use different visualization modes~n"),
-    io:format("  repl:q(DB, {scan, employees}, tree).~n"),
-    io:format("  repl:q(DB, {scan, employees}, nested_table).~n"),
-    io:format("  repl:q(DB, {scan, employees}, outline).~n~n"),
+    io:format("  repl:q(DB, employees, tree).~n"),
+    io:format("  repl:q(DB, employees, nested_table).~n"),
+    io:format("  repl:q(DB, employees, outline).~n~n"),
 
     io:format("  %% Query without printing, then show results~n"),
-    io:format("  Results = repl:query(DB, {scan, employees}).~n"),
+    io:format("  Results = repl:query(DB, employees).~n"),
     io:format("  Filtered = lists:filter(fun(T) -> maps:get(age, T) > 30 end, Results).~n"),
     io:format("  repl:show(Filtered, tree).~n~n"),
 
     io:format("  %% Explain a query plan~n"),
-    io:format("  repl:explain({select, {scan, employees}, ~n"),
+    io:format("  repl:explain({select, employees, ~n"),
     io:format("                fun(T) -> maps:get(age, T) > 30 end}).~n~n"),
 
     ok.

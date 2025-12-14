@@ -11,15 +11,15 @@
     cardinality,           % {finite, N} | aleph_zero | continuum
     generator,             % Generator function (immutable only), undefined for tree-based
     membership_criteria,   % #{attribute_name => constraint_spec()} - domain membership test
-    mutability,            % mutable | immutable
-    provenance             % Provenance tracking for updatable views (future)
+    provenance,            % attribute_provenance() - maps attribute to source relation
+    lineage                % lineage_op() - operation tree showing derivation
 }).
 
 -record(tuple, {hash, relation, attribute_map}).
 -record(attribute, {hash, value}).
 
 %% Specification record for creating immutable relations
--record(immutable_relation_spec, {
+-record(domain, {
     name,                  % Atom - relation name
     schema,                % #{attribute_name => relation_name}
     generator,             % {module, function} - tuple generator
@@ -32,11 +32,6 @@
 -type cardinality() :: {finite, non_neg_integer()}   % Finite set with N elements
                      | aleph_zero                    % Countably infinite (ℵ₀)
                      | continuum.                    % Uncountably infinite (2^ℵ₀)
-
-%%% Mutability Types
-
--type mutability() :: mutable                        % Supports insert/delete (tree-based)
-                    | immutable.                     % Read-only (generator-based or protected)
 
 %%% Constraint Types
 
@@ -108,16 +103,3 @@
   | {take, pos_integer(), lineage_op()}                 % Limit operation
   | {aggregate, atom(), atom(), lineage_op()}.          % Aggregation (future)
 
-%% Tuple metadata (contains provenance, lineage, and other system-managed fields)
--type tuple_metadata() :: #{
-    provenance => attribute_provenance(),
-    lineage => lineage_op()
-    % Future: timestamp, version, etc.
-}.
-
-%% Tuples with metadata use a nested 'meta' field:
-%% #{id => 1, name => "Alice",
-%%   meta => #{
-%%     provenance => #{id => {employees, id}, name => {employees, name}},
-%%     lineage => {select, fun(T) -> maps:get(age, T) > 30 end, {base, employees}}
-%%   }}

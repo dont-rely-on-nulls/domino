@@ -12,7 +12,7 @@ start() ->
 %% @doc Start XML server on specified port.
 start(Port) ->
     % Initialize Domino
-    operations:setup(),
+    main:setup(),
     io:format("~nDomino initialized~n"),
 
     % Create example database
