@@ -218,6 +218,10 @@
 
             # Development tools
             packages = [
+              # C libraries
+              legacyPackages.lmdb.dev
+              legacyPackages.lmdb
+              legacyPackages.pkg-config
               # Source file formatting
               legacyPackages.nixpkgs-fmt
               legacyPackages.ocamlformat
