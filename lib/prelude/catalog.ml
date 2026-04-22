@@ -148,4 +148,3 @@ let build_schema_tuple schema_name : Tuple.materialized =
       Tuple.AttributeMap.singleton "name"
         { Attribute.value = Obj.magic schema_name };
   }
-

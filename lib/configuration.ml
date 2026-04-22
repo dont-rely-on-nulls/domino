@@ -68,6 +68,21 @@ let extract_tagged_section (sexp : Sexplib.Sexp.t) :
   | List (Atom tag :: body) -> Ok (tag, List body)
   | _ -> errorf "Expected (tag ...) but got: %s" (to_string sexp)
 
+(** Parse a list of names from a sexp like [((name1) (name2) ...)].
+    Returns the list of name strings. *)
+let parse_name_list (sexp : Sexplib.Sexp.t) : (string list, string) result =
+  let open Sexplib.Sexp in
+  match sexp with
+  | List items ->
+      let rec go acc = function
+        | [] -> Ok (List.rev acc)
+        | List [ Atom name ] :: rest -> go (name :: acc) rest
+        | Atom name :: rest -> go (name :: acc) rest
+        | bad :: _ -> errorf "Expected (name) but got: %s" (to_string bad)
+      in
+      go [] items
+  | Atom name -> Ok [ name ]
+
 (** Look up a section by name, extract its tag, and check the tag is allowed. *)
 let require_section ~(name : string) ~(valid_tags : string list) (config : t) :
     (string * Sexplib.Sexp.t, string) result =
