@@ -82,6 +82,8 @@
             buildInputs = [ ppx_protocol_conv_xml_light
                             ppx_protocol_conv ]
             ++ (with ocamlPackages; [
+              ctypes
+              ctypes-foreign
               sha
               data-encoding
               ppx_inline_test
@@ -237,6 +239,8 @@
               ocamlPackages.utop
               # Libraries
               # ocamlPackages.menhir
+              ocamlPackages.ctypes
+              ocamlPackages.ctypes-foreign
               ocamlPackages.sha
               ocamlPackages.data-encoding
               ocamlPackages.ppx_inline_test

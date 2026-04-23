@@ -6,6 +6,8 @@
  (libraries
   dynlink
   sakura_prl_api
+  ctypes
+  ctypes-foreign
   sha
   data-encoding
   lwt
@@ -15,4 +17,5 @@
   ppx_protocol_conv_xml_light
   sexplib)
  (preprocess
-  (pps ppx_deriving.show ppx_sexp_conv ppx_protocol_conv)))
+  (pps ppx_deriving.show ppx_sexp_conv ppx_protocol_conv))
+ (flags :standard -cclib -llmdb))
