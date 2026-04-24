@@ -4,6 +4,8 @@
  (name relational_engine)
  (public_name sakura.relational_engine)
  (libraries
+  dynlink
+  sakura_prl_api
   sha
   data-encoding
   lwt

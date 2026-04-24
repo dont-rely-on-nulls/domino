@@ -2730,6 +2730,97 @@ let%test_unit "ddl: round-trip RegisterDomain" =
   | Error _ -> assert false
   | Ok parsed -> assert (parsed = src)
 
+let%test_unit "prl: round-trip DefineFunctionPredicate" =
+  let src =
+    Prl.Ast.DefineFunctionPredicate
+      {
+        name = "numbers:ones";
+        schema = [ ("x", "natural") ];
+        symbol = "test.ones";
+        purity = Prl.Ast.Pure;
+        cardinality = Prl.Ast.ConstrainedFinite;
+      }
+  in
+  match Prl.Parser.of_string (Prl.Parser.to_string src) with
+  | Error _ -> assert false
+  | Ok parsed -> assert (parsed = src)
+
+let%test_unit "prl: define predicate and query via DRL" =
+  with_storage (fun storage ->
+      let db =
+        match Memory.create_database storage ~name:"prl_db" with
+        | Error _ -> assert false
+        | Ok db -> db
+      in
+      Prl.Plugin_api.register "test.ones"
+        (Prl.Plugin_api.implementation_of_rows
+           ~check:(fun row ->
+             match List.assoc_opt "x" row with
+             | Some v -> Ok ((Obj.obj v : int) = 1)
+             | None -> Ok false)
+           [ [ ("x", Obj.repr 1) ] ]);
+      let stmt =
+        Prl.Ast.DefineFunctionPredicate
+          {
+            name = "ones";
+            schema = [ ("x", "natural") ];
+            symbol = "test.ones";
+            purity = Prl.Ast.Pure;
+            cardinality = Prl.Ast.ConstrainedFinite;
+          }
+      in
+      let db =
+        match Prl.Executor.Memory.execute storage db stmt with
+        | Error _ -> assert false
+        | Ok (db, _) -> db
+      in
+      let rel =
+        match Drl.Executor.Memory.execute storage db (Drl.Ast.Base "ones") with
+        | Error _ -> assert false
+        | Ok rel -> rel
+      in
+      let tuples =
+        match Algebra.Memory.materialize storage rel with
+        | Error _ -> assert false
+        | Ok tuples -> tuples
+      in
+      assert (List.length tuples = 1);
+      match tuples with
+      | [ tuple ] -> (
+          match Tuple.AttributeMap.find_opt "x" tuple.Tuple.attributes with
+          | None -> assert false
+          | Some attr -> assert ((Obj.obj attr.Attribute.value : int) = 1))
+      | _ -> assert false)
+
+let%test_unit "prl: io predicates are rejected in DRL" =
+  with_storage (fun storage ->
+      let db =
+        match Memory.create_database storage ~name:"prl_io_db" with
+        | Error _ -> assert false
+        | Ok db -> db
+      in
+      Prl.Plugin_api.register "test.io"
+        (Prl.Plugin_api.implementation_of_rows
+           ~check:(fun _ -> Ok true) [ [ ("x", Obj.repr 0) ] ]);
+      let stmt =
+        Prl.Ast.DefineFunctionPredicate
+          {
+            name = "io_rel";
+            schema = [ ("x", "natural") ];
+            symbol = "test.io";
+            purity = Prl.Ast.Io;
+            cardinality = Prl.Ast.ConstrainedFinite;
+          }
+      in
+      let db =
+        match Prl.Executor.Memory.execute storage db stmt with
+        | Error _ -> assert false
+        | Ok (db, _) -> db
+      in
+      match Drl.Executor.Memory.execute storage db (Drl.Ast.Base "io_rel") with
+      | Error (Drl.Executor.Memory.IoPredicateNotAllowed "io_rel") -> ()
+      | _ -> assert false)
+
 (* Executor tests construct AST directly, no dependency on sexp format *)
 
 let%test_unit "ddl: execute CreateDatabase" =

@@ -34,6 +34,7 @@ functor
           (module Dml.Sublanguage.Make (S) : SubS);
           (module Icl.Sublanguage.Make (S) : SubS);
           (module Dcl.Sublanguage.Make (S) : SubS);
+          (module Prl.Sublanguage.Make (S) : SubS);
           (module Scl.Sublanguage.Make (S) : SubS);
         ]
         Utilities.StringMap.empty

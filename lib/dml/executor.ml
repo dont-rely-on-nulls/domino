@@ -48,6 +48,8 @@ module Make (Storage : Management.Physical.S) = struct
     | Ok rel -> Ok rel
     | Error (DrlExec.ParseError s) -> Error (ParseError s)
     | Error (DrlExec.RelationNotFound s) -> Error (RelationNotFound s)
+    | Error (DrlExec.IoPredicateNotAllowed s) ->
+        Error (ParseError ("io predicate not allowed in DRL: " ^ s))
     | Error (DrlExec.AlgebraError e) -> Error (AlgebraError e)
 
   let materialize_tuples storage rel =

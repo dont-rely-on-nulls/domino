@@ -1,0 +1,5 @@
+(prl (LoadLibrary "C:/Users/mague/source/repos/plugin/_build/default/lib/plugin.cmxs"))
+(prl (DefineFunctionPredicate ((name "http_demo") (schema (("url" "string") ("status_code" "string") ("status_text" "string") ("body_snippet" "string"))) (symbol "demo.http_example") (purity Pure) (cardinality ConstrainedFinite))))
+(drl (Base "public:http_demo"))
+(drl (Select (Const (("url" (Str "https://example.com")))) (Base "public:http_demo")))
+(drl (Join (url) (Const (("url" (Str "https://json.org/example.html")))) (Base "public:http_demo")))

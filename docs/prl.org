@@ -1,0 +1,164 @@
+* PRL in Sakura (runtime-loaded procedural relations)
+
+This document explains the current PRL implementation: what modules exist,
+how dynamic plugins are loaded, how bindings flow from DRL into plugin code,
+and how to invoke procedural relations safely.
+
+* What PRL is in this codebase
+
+PRL lets you define predicates whose implementation is procedural OCaml code,
+while exposing a relational surface in DRL.
+
+- You load code at runtime from a =.cmxs= file.
+- Plugin code registers named symbols (for example ="demo.http_example"=).
+- PRL binds a relation name to one plugin symbol via metadata.
+- DRL queries treat it as a relation.
+
+Core files:
+
+- =prl_api/sakura_prl_api.ml= (plugin-facing API)
+- =lib/prl/runtime.ml= (Dynlink + binding registry + hydration)
+- =lib/prl/executor.ml= (PRL commands execution)
+- =lib/prl/ast.ml= (PRL command AST)
+- =lib/prl/parser.ml= (PRL parser)
+- =lib/prl/sublanguage.ml= (wires PRL into sublanguage dispatch)
+- =lib/drl/executor.ml= (DRL pushdown behavior for =Select/Join=)
+
+* Detached plugin API library
+
+The plugin-facing surface is now separated as public library =sakura.prl_api=
+(module =Sakura_prl_api=), defined in:
+
+- =prl_api/dune=
+- =prl_api/sakura_prl_api.ml=
+
+Plugin code no longer needs =sakura.relational_engine=. It can depend on
+=sakura.prl_api= plus its own runtime deps (for example =unix=).
+
+The API provides:
+
+- =type value = Obj.t=
+- =type row = (string * value) list=
+- =type implementation={ check; produce }=
+  - =check : row -> (bool, string) result= (optional membership test)
+  - =produce : row -> (row list, string) result= (optional row producer)
+- =register : string -> implementation -> unit=
+- helpers:
+  - =implementation_of_rows=
+  - =implementation_of_producer=
+  - =implementation_of_unit_producer=
+
+Compatibility note: =lib/prl/plugin_api.ml= currently re-exports
+=Sakura_prl_api= so in-engine call sites stay stable.
+
+* Cursor ownership model
+
+Plugins do *not* own cursor objects anymore.
+
+- Plugin returns rows (or computes rows from bound inputs).
+- Engine wraps those rows into a =Generator.t= in =lib/prl/runtime.ml=
+  (=make_generator=).
+- Session cursoring remains an engine concern (same path as normal DRL).
+
+This keeps plugin code simple and keeps execution semantics centralized.
+
+* PRL command flow
+
+** Load library
+
+=LoadLibrary= calls =Dynlink.loadfile= in =lib/prl/runtime.ml=. If successful,
+plugin top-level code runs and usually calls =Sakura_prl_api.register=.
+
+** Define function predicate
+
+=DefineFunctionPredicate= in =lib/prl/executor.ml=:
+
+1. Resolves symbol from plugin registry.
+2. Creates an immutable relation via
+   =Manipulation.create_immutable_relation=.
+3. Binds relation name -> plugin symbol in runtime registry.
+
+** Query through DRL
+
+When DRL touches a base relation, =lib/drl/executor.ml= checks whether it is a
+PRL-bound relation and hydrates it through =lib/prl/runtime.ml=.
+
+* Binding pushdown semantics (important)
+
+For non-enumerable/procedural relations, unconstrained base scans are often
+the wrong operation. This implementation now supports input binding pushdown.
+
+** Const select pushdown
+
+Pattern:
+
+#+begin_src lisp
+(drl (Select (Const (("url" (Str "https://example.com"))))
+             (Base "public:http_demo")))
+#+end_src
+
+Behavior:
+
+- Const pairs are converted to a binding row.
+- Engine calls =hydrate_relation_with_bindings=.
+- Plugin =produce= receives bound =url= and can return only relevant rows.
+
+** Join-based pushdown
+
+Pattern:
+
+#+begin_src lisp
+(drl (Join (url)
+           (Const (("url" (Str "https://json.org/example.html"))))
+           (Base "public:http_demo")))
+#+end_src
+
+Behavior:
+
+- Engine materializes binding-side tuples.
+- For each binding tuple, engine calls procedural relation with those bindings.
+- Produced rows are joined back through relational algebra.
+
+This is the intended style when you want “function arguments” in relational
+form.
+
+* Purity and DRL safety
+
+=purity= is declared at predicate definition time.
+
+- =Pure= predicates are allowed in DRL.
+- =Io= predicates are currently rejected by DRL base execution path
+  (=IoPredicateNotAllowed= in =lib/drl/executor.ml=).
+
+* Example plugin (HTTP demo)
+
+The demo plugin in =../plugin/lib/plugin.ml= registers:
+
+- =demo.ones= (simple finite relation)
+- =demo.http_example= (HTTP fetch via =curl= command)
+
+Quick run sequence (from =sakura/=):
+
+#+begin_src powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\run_tcp.ps1 `
+  -SkipBuild -NoInteractive -CommandsPath .\http_demo_commands.sexp
+#+end_src
+
+The demo command file includes:
+
+- =LoadLibrary=
+- =DefineFunctionPredicate=
+- base query
+- const-select query
+- join-bound query
+
+* Known limitations
+
+- =sakura.prl_api= is separated as a public library, but still distributed in
+  the same =sakura= package today. A fully independent opam package split is a
+  follow-up step.
+- Pushdown currently targets key patterns (=Select(Const, Base)= and
+  joins where one side is =Base procedural_relation= with explicit join attrs).
+- No advanced planner cost model for procedural predicates yet.
+- Plugin values are untyped at ABI boundary (=Obj.t=); schema discipline is
+  enforced by runtime row materialization checks.

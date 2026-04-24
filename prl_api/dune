@@ -1,0 +1,3 @@
+(library
+ (name sakura_prl_api)
+ (public_name sakura.prl_api))
