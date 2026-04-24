@@ -783,7 +783,7 @@ module Make (Storage : Management.Physical.S) = struct
     let* schema_rel = get_required db Prelude.Catalog.schema_rel_name in
     let* db, _, _ =
       create_tuples storage db schema_rel
-        [ Prelude.Catalog.build_schema_tuple "public" ]
+        [ Prelude.Catalog.build_schema_tuple Qualified_name.default_schema ]
     in
     Ok db
 
