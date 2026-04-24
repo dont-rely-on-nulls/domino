@@ -19,7 +19,6 @@
 (documentation https://url/to/documentation)
 
 (package
-  (allow_empty)
   (name sakura)
   (synopsis "A short synopsis")
   (description "A longer description")
