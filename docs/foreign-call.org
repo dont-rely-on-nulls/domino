@@ -1,0 +1,82 @@
+#+TITLE: Foreign Calls — Invoking OCaml from the Query Layer
+
+Foreign calls let you expose arbitrary OCaml functions as first-class
+relations that can be queried with DRL. The mechanism has two halves: a
+plugin (a ~.cmxs~ shared library that registers implementations) and PRL
+commands that load the library and bind a named relation to a specific
+symbol.
+
+* How it works
+
+1. An OCaml plugin is compiled as a shared library and linked against
+   ~sakura-prl-api~.  It registers one or more ~implementation~ values
+   under string keys via ~Sakura_prl_api.register~.
+
+2. ~(LoadLibrary "/path/to/plugin.cmxs")~ loads the shared library at
+   runtime via ~Dynlink~, executing the registration side-effects.
+
+3. ~(DefineFunctionPredicate ...)~ looks up a registered symbol, builds a
+   ~Generator.t~ and a membership-criteria function from it, and creates an
+   immutable relation in the database backed by those functions.
+
+4. The new relation is then queryable like any stored relation.  DRL
+   operators such as ~Base~, ~Select~, and ~Join~ drive the generator,
+   which calls into the OCaml implementation on demand.
+
+* PRL syntax reference
+
+#+begin_src sexp
+(prl (LoadLibrary "/abs/path/plugin.cmxs"))
+
+(prl (DefineFunctionPredicate
+       ((name   "ns:rel-name")
+        (schema ((attr1 "string") (attr2 "string")))
+        (symbol "registered-key")
+        (purity Pure)
+        (cardinality ConstrainedFinite))))
+
+(prl ListFunctionPredicates)
+#+end_src
+
+~purity~ is informational (~Pure~ / ~Impure~).  ~cardinality~ shapes
+planner behaviour: ~ConstrainedFinite~ signals the relation is finite when
+given bindings, ~AlephZero~ / ~Continuum~ for open-ended generators.
+
+* Plugin API
+
+An ~implementation~ exposes two optional hooks:
+
+| Field                | Type                                                            | Role                          |
+|----------------------+-----------------------------------------------------------------+-------------------------------|
+| ~produce~            | ~tuple list -> (tuple list, string) result~ (wrapped in option) | Generate rows given bindings  |
+| ~membership_criteria~| ~tuple -> (bool, string) result~ (wrapped in option)            | Test if a specific row holds  |
+
+Both receive and return ~Sakura_prl_api.tuple = (string * Obj.t) list~.
+The runtime bridges between these rows and ~Tuple.materialized~ values.
+
+* Example: HTTP relation
+
+#+begin_src sexp
+; Load the plugin
+(prl (LoadLibrary "/path/to/http_plugin.cmxs"))
+
+; Bind the symbol to a relation
+(prl (DefineFunctionPredicate
+       ((name "http.get")
+        (schema ((url "string") (status_code "string") (body "string")))
+        (symbol "http.get")
+        (purity Impure)
+        (cardinality ConstrainedFinite))))
+
+; Query it — binds url, fetches, returns status_code + body
+(drl (Join (url) (Const (("url" (Str "https://json.org/example.html"))))
+           (Base "public:http.get")))
+#+end_src
+
+* See also
+
+- ~lib/prl/~ — AST, parser, executor for PRL statements
+- ~lib/prl/runtime.ml~ — ~Dynlink~ loading and generator/membership bridges
+- ~lib/prl/ast.ml~ — ~function_predicate~ record definition
+- ~sakura-prl-api/~ — the plugin-facing registration API
+- ~http_demo_commands.sexp~ — worked example
