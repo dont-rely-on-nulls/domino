@@ -38,35 +38,6 @@ let registry : registry =
              let transport = Transport.TCP.create config in
              Ok (TransportParcel ((module Transport.TCP), transport))) }
 
-let initialize_multigroup create_immutable_relation storage multigroup =
-  List.fold_left
-    (fun multigroup (rel : Relation.t) ->
-      match
-        create_immutable_relation storage multigroup ~name:rel.name
-          ~schema:rel.schema ~generator:(Option.get rel.generator)
-          ~membership_criteria:rel.membership_criteria
-          ~cardinality:rel.cardinality
-      with
-      | Ok (new_multigroup, _) -> new_multigroup
-      | Error e ->
-          Printf.eprintf
-            "Warning: failed to register prelude relation %s: %s\n%!" rel.name
-            (Sexplib.Sexp.to_string (Error.sexp_of_error e));
-          multigroup)
-    multigroup
-    Prelude.Standard.prelude_relations
-
-(* multigroups - "sakura" is always present as the meta-multigroup *)
-let multigroup_names config =
-  let extra_multigroups =
-    match Configuration.find_section "multigroups" config with
-    | Some sexp -> (
-      match Configuration.parse_name_list sexp with
-      | Ok names -> List.filter (fun n -> n <> "sakura") names
-      | Error _ -> [])
-    | None -> []
-  in
-  "sakura" :: extra_multigroups
 
 let assemble (config : Configuration.t) : (unit -> unit, string) result =
   let open Utilities.Result in
@@ -96,12 +67,8 @@ let assemble (config : Configuration.t) : (unit -> unit, string) result =
   let (StorageParcel ((module S), storage)) = packed_storage in
   let (TransportParcel ((module T), transport)) = packed_transport in
   let module C = Catalog.Make (S) in
-  let module Manip = Manipulation.Make (S) in
   let* catalog =
-    C.create
-      storage
-      ~prelude_relations:Prelude.Standard.prelude_relations
-      (multigroup_names config)
+    C.create storage ~prelude_relations:Prelude.Standard.prelude_relations
   in
   let module L = Listener.Make (T) (S) in
   Ok (fun () -> Scl.Executor.set_sessions (Session.create ());
