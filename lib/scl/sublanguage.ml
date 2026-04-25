@@ -19,7 +19,7 @@ module Make (Storage : Management.Physical.S) = struct
     |> Result.map (function
       | Executor.Batch { cursor_id; rows; has_more } ->
           Sublanguage_types.Cursor { cursor_id; rows; has_more }
-      | Executor.Closed db -> Sublanguage_types.Transition (db, "cursor closed"))
+      | Executor.Closed db -> Sublanguage_types.Transition db)
 
   let sexp_of_error = Exec.sexp_of_error
 end

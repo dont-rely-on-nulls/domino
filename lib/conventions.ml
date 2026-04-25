@@ -16,7 +16,7 @@ module Cardinality = struct
   open Sexplib.Std
   
   type t = Finite of int | ConstrainedFinite | AlephZero | Continuum
-  [@@deriving sexp]
+  [@@deriving sexp,show]
 
   let sexp_of_t = function
     | Finite n -> Sexplib.Sexp.(List [ Atom "Finite"; Atom (string_of_int n) ])

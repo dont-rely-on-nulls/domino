@@ -64,7 +64,7 @@ functor
 
     let perform storage catalog ctx db_head old_db result =
       match result with
-      | Sublanguage.Transition (new_db, _) ->
+      | Sublanguage.Transition new_db ->
           if Atomic.compare_and_set db_head old_db new_db then (
             advance_head_branch storage new_db.hash;
             Ok result)
@@ -169,11 +169,11 @@ functor
               List [ Atom "db_name"; Atom db.name ];
               List [ Atom "branch"; Atom (get_branch storage) ];
             ]
-      | Ok (Sublanguage.Transition (new_db, message)) ->
+      | Ok (Sublanguage.Transition new_db) ->
           List
             [
               Atom "ok";
-              List [ Atom "message"; Atom message ];
+              (* List [ Atom "message"; Atom message ]; *)
               List [ Atom "db_hash"; Atom new_db.hash ];
               List [ Atom "db_name"; Atom new_db.name ];
               (* TODO: `serialize' shouldn't need access to the storage layer *)

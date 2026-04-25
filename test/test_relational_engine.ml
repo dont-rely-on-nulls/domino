@@ -2772,7 +2772,7 @@ let%test_unit "prl: define predicate and query via DRL" =
       let db =
         match Prl.Executor.Memory.execute storage db stmt with
         | Error _ -> assert false
-        | Ok (db, _) -> db
+        | Ok _ -> db
       in
       let rel =
         match Drl.Executor.Memory.execute storage db (Drl.Ast.Base "ones") with
@@ -2815,7 +2815,7 @@ let%test_unit "prl: io predicates are rejected in DRL" =
       let db =
         match Prl.Executor.Memory.execute storage db stmt with
         | Error _ -> assert false
-        | Ok (db, _) -> db
+        | Ok _ -> db
       in
       match Drl.Executor.Memory.execute storage db (Drl.Ast.Base "io_rel") with
       | Error (Drl.Executor.Memory.IoPredicateNotAllowed "io_rel") -> ()

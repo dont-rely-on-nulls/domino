@@ -12,6 +12,5 @@ type function_predicate = {
 type statement =
   | LoadLibrary of string
   | DefineFunctionPredicate of function_predicate
-  | RetractFunctionPredicate of string
   | ListFunctionPredicates
 [@@deriving sexp]

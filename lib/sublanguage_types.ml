@@ -6,7 +6,7 @@ type cursor_result = {
 
 type result =
   | Query of Relation.t
-  | Transition of Management.Database.t * string
+  | Transition of Management.Database.t
   | Cursor of cursor_result
   | SessionSwitch of string
   | CreateMultigroup of string

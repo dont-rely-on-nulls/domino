@@ -18,23 +18,75 @@ module Make (Storage : Management.Physical.S) = struct
     | RelationNotFound s -> List [ Atom "relation-not-found"; Atom s ]
 
   let list_names_msg () =
-    let names =
-      Runtime.list_bindings ()
-      |> List.map (fun b -> b.Runtime.relation_name)
-      |> List.sort String.compare
+    let rec generator (position : int option) : Generator.result =
+      let relation_data =
+        Runtime.list_bindings ()
+        |> Array.of_list
+      in
+      match position with
+      | Some n when n <= Array.length relation_data ->
+          let elem = relation_data.(n) in
+          let open Prelude.Standard in
+          let attributes =
+            Tuple.AttributeMap.of_list [ ("name",   mk elem.relation_name); 
+                                         ("cardinality",  mk elem.cardinality);
+                                         ("symbol", mk elem.symbol);
+                                         ("purity", mk elem.purity); ]
+          in
+          Generator.Value
+            ( Tuple.make_materialized ~relation:"less_than_or_equal" ~attributes,
+              generator )
+      | Some _ -> Generator.Done
+      | None -> Error "Cannot enumerate less_than_or_equal randomly."
     in
-    "Function predicates: "
-    ^
-    match names with [] -> "<none>" | _ -> String.concat ", " names
+    let name = "function_predicate_binding" in
+    let schema =
+      Schema.empty
+      |> Schema.add "name" "string"
+      |> Schema.add "cardinality" "string"
+      |> Schema.add "symbol" "string"
+      |> Schema.add "purity" "string"      
+    in
+    (* TODO: To determine the actual finite cardinality here, 
+       we gotta do a DB dirty read, which is just not worth it right now. *)
+    let cardinality = Conventions.Cardinality.ConstrainedFinite in
+    (* :  *)
+    let membership_criteria _: Tuple.t -> bool = function
+      | Tuple.Materialized {attributes; _} -> begin
+        (* TODO: Convert the runtime to be a list of string and values,
+           or add a hash to each binding with the contents of each elem.
+           The hash would be a simple operation and it's much more efficient. *)
+        (List.find_opt (fun (bindings: Runtime.binding) ->
+          let attr = (Tuple.AttributeMap.bindings attributes) in
+          List.for_all (function (attr_name, ({value;}: Attribute.materialized)) -> 
+            if attr_name = "cardinality" then Obj.magic (Conventions.Cardinality.show bindings.cardinality) = value
+            else if attr_name = "name" then Obj.magic bindings.relation_name = value
+            else if attr_name = "symbol" then Obj.magic bindings.symbol = value
+            else if attr_name = "purity" then Obj.magic bindings.purity = value
+            else false) attr
+        ) @@ Runtime.list_bindings ())
+        |> function Some _ -> true | None -> false
+      end
+      | Tuple.NonMaterialized _ -> false
+    in
+    Relation.make ~hash:None ~name ~schema ~tree:None ~constraints:None
+    ~cardinality ~generator:(Some generator) ~membership_criteria
+    ~provenance:(Relation.Provenance.Base name)
+    ~lineage:(Relation.Lineage.Base name)
+
+  type externality =
+  | Relation of Relation.t
+  | LibraryLoad
 
   let execute (storage : Storage.t) (db : Management.Database.t)
-      (stmt : Ast.statement) : (Management.Database.t * string, error) result =
+      (stmt : Ast.statement) : (externality, error) result =
     match stmt with
-    | Ast.LoadLibrary path -> (
+    | Ast.LoadLibrary path -> begin
         match Runtime.load_library path with
-        | Ok () -> Ok (db, "Library loaded: " ^ path)
-        | Error e -> Error (RuntimeError e))
-    | Ast.DefineFunctionPredicate spec -> (
+        | Ok () -> Ok LibraryLoad
+        | Error e -> Error (RuntimeError e)
+    end
+    | Ast.DefineFunctionPredicate spec -> begin
         match Plugin_api.find spec.symbol with
         | None -> Error (UnknownPluginSymbol spec.symbol)
         | Some impl ->
@@ -47,35 +99,15 @@ module Make (Storage : Management.Physical.S) = struct
             let cardinality = spec.cardinality in
             let generator = Runtime.make_generator name schema impl [] in
             let membership = Runtime.make_membership_criteria schema impl in
-            let relation_result =
-              Ops.create_immutable_relation storage db ~name ~schema
-                ~generator ~membership_criteria:membership ~cardinality
-            in
-            let db_result = Result.map_error (fun e -> RelationError e) relation_result in
             Result.map
-              (fun (new_db, _) ->
-                Runtime.bind
-                  {
-                    Runtime.relation_name = name;
-                    symbol = spec.symbol;
-                    purity = spec.purity;
-                    cardinality;
-                  };
-                (new_db, "Function predicate created: " ^ name))
-              db_result)
-    | Ast.RetractFunctionPredicate name ->
-        let name = Qualified_name.(parse name |> to_key) in
-        let relation = Ops.get_relation db ~name in
-        let relation = Option.to_result ~none:(RelationNotFound name) relation in
-        Result.bind relation (fun _ ->
-            let db' = Ops.retract_relation storage db ~name in
-            let db' = Result.map_error (fun e -> RelationError e) db' in
-            Result.map
-              (fun updated_db ->
-                Runtime.unbind name;
-                (updated_db, "Function predicate retracted: " ^ name))
-              db')
-    | Ast.ListFunctionPredicates -> Ok (db, list_names_msg ())
+              (fun (_, rel) -> Relation rel) 
+              (Ops.create_immutable_relation storage db ~name ~schema ~generator ~membership_criteria:membership ~cardinality)
+            |> Result.map_error (fun e -> RelationError e)
+            end
+    | Ast.ListFunctionPredicates -> begin
+      
+      Ok LibraryLoad
+    end
 end
 
 module Memory = Make (Management.Physical.Memory)
