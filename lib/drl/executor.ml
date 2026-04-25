@@ -49,7 +49,7 @@ module Make (Storage : Management.Physical.S) = struct
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base name)
 
-  let bindings_of_tuple attrs (tuple : Tuple.materialized) : Prl.Plugin_api.row option
+  let bindings_of_tuple attrs (tuple : Tuple.materialized) : Prl.Plugin_api.tuple option
       =
     let rec go acc = function
       | [] -> Some (List.rev acc)
@@ -87,7 +87,7 @@ module Make (Storage : Management.Physical.S) = struct
     match q with
     | Ast.Base name -> (
         match Prl.Runtime.find_binding name with
-        | Some { Prl.Runtime.purity = Prl.Runtime.Io; _ } ->
+        | Some { Prl.Runtime.purity = Conventions.Purity.IO; _ } ->
             Error (IoPredicateNotAllowed name)
         | _ ->
         match Ops.get_relation db ~name with
@@ -108,7 +108,7 @@ module Make (Storage : Management.Physical.S) = struct
           | None -> Error (RelationNotFound name)
           | Some rel -> (
               match Prl.Runtime.find_binding name with
-              | Some { Prl.Runtime.purity = Prl.Runtime.Io; _ } ->
+              | Some { Prl.Runtime.purity = Conventions.Purity.IO; _ } ->
                   Error (IoPredicateNotAllowed name)
               | Some _ -> Ok (Prl.Runtime.hydrate_relation_with_bindings rel bindings)
               | None -> Ok rel)
@@ -124,7 +124,7 @@ module Make (Storage : Management.Physical.S) = struct
           | None -> Error (RelationNotFound name)
           | Some rel -> (
               match Prl.Runtime.find_binding name with
-              | Some { Prl.Runtime.purity = Prl.Runtime.Io; _ } ->
+              | Some { Prl.Runtime.purity = Conventions.Purity.IO; _ } ->
                   Error (IoPredicateNotAllowed name)
               | None ->
                   execute storage db (Ast.Base name) >>= fun left_rel ->
@@ -146,7 +146,7 @@ module Make (Storage : Management.Physical.S) = struct
           | None -> Error (RelationNotFound name)
           | Some rel -> (
               match Prl.Runtime.find_binding name with
-              | Some { Prl.Runtime.purity = Prl.Runtime.Io; _ } ->
+              | Some { Prl.Runtime.purity = Conventions.Purity.IO; _ } ->
                   Error (IoPredicateNotAllowed name)
               | None ->
                   execute storage db other_q >>= fun left_rel ->

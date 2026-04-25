@@ -1,9 +1,7 @@
-type purity = Pure | Io
-
 type binding = {
   relation_name : string;
   symbol : string;
-  purity : purity;
+  purity : Conventions.Purity.t;
   cardinality : Conventions.Cardinality.t;
 }
 
@@ -50,7 +48,7 @@ let list_bindings () : binding list =
   with_lock (fun () -> Hashtbl.to_seq_values state.bindings |> List.of_seq)
 
 let relation_row_of_tuple (schema : Schema.t) (tuple : Tuple.materialized) :
-    Plugin_api.row option =
+    Plugin_api.tuple option =
   let rec go acc = function
     | [] -> Some (List.rev acc)
     | (attr_name, _) :: rest -> (
@@ -60,7 +58,7 @@ let relation_row_of_tuple (schema : Schema.t) (tuple : Tuple.materialized) :
   in
   go [] schema
 
-let materialized_of_row relation_name (schema : Schema.t) (row : Plugin_api.row) :
+let materialized_of_row relation_name (schema : Schema.t) (row : Plugin_api.tuple) :
     Tuple.materialized option =
   let rec go acc = function
     | [] -> Some { Tuple.relation = relation_name; attributes = acc }
@@ -76,7 +74,7 @@ let materialized_of_row relation_name (schema : Schema.t) (row : Plugin_api.row)
   go Tuple.AttributeMap.empty schema
 
 let make_generator relation_name schema (impl : Plugin_api.implementation)
-    (bindings : Plugin_api.row) : Generator.t =
+    (bindings : Plugin_api.tuple) : Generator.t =
   match impl.produce with
   | None -> fun _ -> Generator.Done
   | Some produce ->
@@ -100,7 +98,7 @@ let make_generator relation_name schema (impl : Plugin_api.implementation)
 
 let make_membership_criteria schema (impl : Plugin_api.implementation) :
     (string -> Merkle.t option) -> Tuple.t -> bool =
-  match impl.check with
+  match impl.membership_criteria with
   | None -> fun _ _ -> false
   | Some check ->
       fun _tree_of tuple ->
@@ -109,11 +107,11 @@ let make_membership_criteria schema (impl : Plugin_api.implementation) :
         | Tuple.Materialized m -> (
             match relation_row_of_tuple schema m with
             | None -> false
-            | Some row -> (
-                match check row with Ok b -> b | Error _ -> false))
+            | Some tuple -> (
+                match check tuple with Ok b -> b | Error _ -> false))
 
 let hydrate_relation (relation : Relation.t) : Relation.t =
-  let empty_bindings : Plugin_api.row = [] in
+  let empty_bindings : Plugin_api.tuple = [] in
   match find_binding relation.Relation.name with
   | None -> relation
   | Some binding -> (
@@ -132,7 +130,7 @@ let hydrate_relation (relation : Relation.t) : Relation.t =
           })
 
 let hydrate_relation_with_bindings (relation : Relation.t)
-    (bindings : Plugin_api.row) : Relation.t =
+    (bindings : Plugin_api.tuple) : Relation.t =
   match find_binding relation.Relation.name with
   | None -> relation
   | Some binding -> (

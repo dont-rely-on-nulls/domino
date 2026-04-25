@@ -17,17 +17,6 @@ module Make (Storage : Management.Physical.S) = struct
     | UnknownPluginSymbol s -> List [ Atom "unknown-plugin-symbol"; Atom s ]
     | RelationNotFound s -> List [ Atom "relation-not-found"; Atom s ]
 
-  let convert_cardinality : Ast.cardinality_spec -> Conventions.Cardinality.t =
-    function
-    | Ast.Finite n -> Conventions.Cardinality.Finite n
-    | Ast.AlephZero -> Conventions.Cardinality.AlephZero
-    | Ast.Continuum -> Conventions.Cardinality.Continuum
-    | Ast.ConstrainedFinite -> Conventions.Cardinality.ConstrainedFinite
-
-  let convert_purity : Ast.purity -> Runtime.purity = function
-    | Ast.Pure -> Runtime.Pure
-    | Ast.Io -> Runtime.Io
-
   let list_names_msg () =
     let names =
       Runtime.list_bindings ()
@@ -55,7 +44,7 @@ module Make (Storage : Management.Physical.S) = struct
                 Schema.empty spec.schema
             in
             let name = Qualified_name.(parse spec.name |> to_key) in
-            let cardinality = convert_cardinality spec.cardinality in
+            let cardinality = spec.cardinality in
             let generator = Runtime.make_generator name schema impl [] in
             let membership = Runtime.make_membership_criteria schema impl in
             let relation_result =
@@ -69,7 +58,7 @@ module Make (Storage : Management.Physical.S) = struct
                   {
                     Runtime.relation_name = name;
                     symbol = spec.symbol;
-                    purity = convert_purity spec.purity;
+                    purity = spec.purity;
                     cardinality;
                   };
                 (new_db, "Function predicate created: " ^ name))

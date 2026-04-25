@@ -13,13 +13,21 @@ module Name = struct
 end
 
 module Cardinality = struct
+  open Sexplib.Std
+  
   type t = Finite of int | ConstrainedFinite | AlephZero | Continuum
+  [@@deriving sexp]
 
   let sexp_of_t = function
     | Finite n -> Sexplib.Sexp.(List [ Atom "Finite"; Atom (string_of_int n) ])
     | ConstrainedFinite -> Sexplib.Sexp.Atom "ConstrainedFinite"
     | AlephZero -> Sexplib.Sexp.Atom "AlephZero"
     | Continuum -> Sexplib.Sexp.Atom "Continuum"
+end
+
+module Purity = struct
+  type t = Pure | IO
+  [@@deriving sexp]
 end
 
 module AbstractValue = struct

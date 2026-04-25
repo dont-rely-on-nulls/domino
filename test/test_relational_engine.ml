@@ -2737,8 +2737,8 @@ let%test_unit "prl: round-trip DefineFunctionPredicate" =
         name = "numbers:ones";
         schema = [ ("x", "natural") ];
         symbol = "test.ones";
-        purity = Prl.Ast.Pure;
-        cardinality = Prl.Ast.ConstrainedFinite;
+        purity = Conventions.Purity.Pure;
+        cardinality = Conventions.Cardinality.ConstrainedFinite;
       }
   in
   match Prl.Parser.of_string (Prl.Parser.to_string src) with
@@ -2754,8 +2754,8 @@ let%test_unit "prl: define predicate and query via DRL" =
       in
       Prl.Plugin_api.register "test.ones"
         (Prl.Plugin_api.implementation_of_rows
-           ~check:(fun row ->
-             match List.assoc_opt "x" row with
+           ~membership_criteria:(fun tuple ->
+             match List.assoc_opt "x" tuple with
              | Some v -> Ok ((Obj.obj v : int) = 1)
              | None -> Ok false)
            [ [ ("x", Obj.repr 1) ] ]);
@@ -2765,8 +2765,8 @@ let%test_unit "prl: define predicate and query via DRL" =
             name = "ones";
             schema = [ ("x", "natural") ];
             symbol = "test.ones";
-            purity = Prl.Ast.Pure;
-            cardinality = Prl.Ast.ConstrainedFinite;
+            purity = Conventions.Purity.Pure;
+            cardinality = Conventions.Cardinality.ConstrainedFinite;
           }
       in
       let db =
@@ -2801,15 +2801,15 @@ let%test_unit "prl: io predicates are rejected in DRL" =
       in
       Prl.Plugin_api.register "test.io"
         (Prl.Plugin_api.implementation_of_rows
-           ~check:(fun _ -> Ok true) [ [ ("x", Obj.repr 0) ] ]);
+           ~membership_criteria:(fun _ -> Ok true) [ [ ("x", Obj.repr 0) ] ]);
       let stmt =
         Prl.Ast.DefineFunctionPredicate
           {
             name = "io_rel";
             schema = [ ("x", "natural") ];
             symbol = "test.io";
-            purity = Prl.Ast.Io;
-            cardinality = Prl.Ast.ConstrainedFinite;
+            purity = Conventions.Purity.IO;
+            cardinality = Conventions.Cardinality.ConstrainedFinite;
           }
       in
       let db =
