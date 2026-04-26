@@ -246,7 +246,7 @@ module Make (Storage : Management.Physical.S) = struct
             Merkle.empty stored.tree_keys
         in
         let relation =
-          Relation.make ~hash:(Some rel_hash) ~name:stored.name
+          Relation.make ~producer:None ~hash:(Some rel_hash) ~name:stored.name
             ~schema:stored.schema ~tree:(Some tree) ~constraints:None
             ~cardinality:stored.cardinality ~generator:None
             ~membership_criteria:
@@ -313,7 +313,7 @@ module Make (Storage : Management.Physical.S) = struct
       let tree = Merkle.empty in
       let relation_hash = Hashing.hash_relation ~name ~schema ~tree in
       let relation =
-        Relation.make ~hash:(Some relation_hash) ~name ~schema ~tree:(Some tree)
+        Relation.make ~producer:None ~hash:(Some relation_hash) ~name ~schema ~tree:(Some tree)
           ~constraints:None ~cardinality:(Conventions.Cardinality.Finite 0)
           ~generator:None
           ~membership_criteria:(build_membership_criteria ~name schema)
@@ -839,7 +839,7 @@ module Make (Storage : Management.Physical.S) = struct
       let tree = Merkle.empty in
       let relation_hash = Hashing.hash_relation ~name ~schema ~tree in
       let relation =
-        Relation.make ~hash:(Some relation_hash) ~name ~schema ~tree:(Some tree)
+        Relation.make ~producer:None ~hash:(Some relation_hash) ~name ~schema ~tree:(Some tree)
           ~constraints:None ~cardinality:(Conventions.Cardinality.Finite 0)
           ~generator:None
           ~membership_criteria:(build_membership_criteria ~name schema)
@@ -856,7 +856,8 @@ module Make (Storage : Management.Physical.S) = struct
   let create_immutable_relation (storage : storage) (db : Management.Database.t)
       ~(name : string) ~(schema : Schema.t) ~(generator : Generator.t)
       ~(membership_criteria : (string -> Merkle.t option) -> Tuple.t -> bool)
-      ~(cardinality : Conventions.Cardinality.t) :
+      ~(cardinality : Conventions.Cardinality.t)
+      ~(producer : Relation.producer option) :
       (Management.Database.t * Relation.t, error) Result.t =
     let name = normalize_name name in
     if Management.Database.has_relation db name then
@@ -869,7 +870,7 @@ module Make (Storage : Management.Physical.S) = struct
         Relation.make ~hash:(Some relation_hash) ~name ~schema
           ~tree:None (* No tree for generator-based relations *)
           ~constraints:None ~cardinality ~generator:(Some generator)
-          ~membership_criteria ~provenance:(Relation.Provenance.Base name)
+          ~producer ~membership_criteria ~provenance:(Relation.Provenance.Base name)
           ~lineage:(Relation.Lineage.Base name)
       in
       let new_db = Management.Database.add_relation db ~relation in

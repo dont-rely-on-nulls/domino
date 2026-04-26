@@ -96,7 +96,7 @@ module Make (Storage : Physical.S with type error = string) = struct
                       ~relation:Prelude.Catalog.branch_rel_name ~attributes,
                     generator ))
     in
-    Relation.make ~hash:None ~name:Prelude.Catalog.branch_rel_name ~schema
+    Relation.make ~producer:None ~hash:None ~name:Prelude.Catalog.branch_rel_name ~schema
       ~tree:None ~constraints:None
       ~cardinality:Conventions.Cardinality.ConstrainedFinite
       ~generator:(Some generator)
@@ -123,7 +123,7 @@ module Make (Storage : Physical.S with type error = string) = struct
                   fun _ -> Generator.Done ))
       | Some _ -> Generator.Done
     in
-    Relation.make ~hash:None ~name:Prelude.Catalog.head_rel_name ~schema
+    Relation.make ~producer:None ~hash:None ~name:Prelude.Catalog.head_rel_name ~schema
       ~tree:None ~constraints:None
       ~cardinality:Conventions.Cardinality.ConstrainedFinite
       ~generator:(Some generator)

@@ -27,7 +27,7 @@ let make_comparison ~name ~domain_name ~pred ~cardinality ~generator =
         | _ -> false)
     | Tuple.NonMaterialized _ -> false
   in
-  Relation.make ~hash:None ~name ~schema ~tree:None ~constraints:None
+  Relation.make ~producer:None ~hash:None ~name ~schema ~tree:None ~constraints:None
     ~cardinality ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base name)
     ~lineage:(Relation.Lineage.Base name)
@@ -192,7 +192,7 @@ let plus_natural : Relation.t =
         | _ -> false)
     | Tuple.NonMaterialized _ -> false
   in
-  Relation.make ~hash:None ~name:"natural_plus" ~schema ~tree:None
+  Relation.make ~producer:None ~hash:None ~name:"natural_plus" ~schema ~tree:None
     ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
     ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base "plus")
@@ -231,7 +231,7 @@ let times_natural : Relation.t =
         | _ -> false)
     | Tuple.NonMaterialized _ -> false
   in
-  Relation.make ~hash:None ~name:"natural_times" ~schema ~tree:None
+  Relation.make ~producer:None ~hash:None ~name:"natural_times" ~schema ~tree:None
     ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
     ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base "times")
@@ -272,7 +272,7 @@ let minus_natural : Relation.t =
         | _ -> false)
     | Tuple.NonMaterialized _ -> false
   in
-  Relation.make ~hash:None ~name:"natural_minus" ~schema ~tree:None
+  Relation.make ~producer:None ~hash:None ~name:"natural_minus" ~schema ~tree:None
     ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
     ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base "minus")
@@ -323,7 +323,7 @@ let divide_natural : Relation.t =
         | _ -> false)
     | Tuple.NonMaterialized _ -> false
   in
-  Relation.make ~hash:None ~name:"natural_divide" ~schema ~tree:None
+  Relation.make ~producer:None ~hash:None ~name:"natural_divide" ~schema ~tree:None
     ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
     ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base "divide")

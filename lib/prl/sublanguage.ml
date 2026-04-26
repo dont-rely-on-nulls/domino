@@ -14,12 +14,7 @@ module Make (Storage : Management.Physical.S) = struct
     | Ok r -> Ok r
     | Error (Parser.ParseError s) -> Error (Exec.ParseError s)
 
-  let execute storage db ast =
-    match Exec.execute storage db ast with
-    | Ok (Relation rel) -> Ok (Sublanguage_types.Query rel)
-    | Ok LibraryLoad -> Ok (Sublanguage_types.Transition db)
-    | Error e -> Error e
-    
+  let execute = Exec.execute
   let sexp_of_error = Exec.sexp_of_error
 end
 

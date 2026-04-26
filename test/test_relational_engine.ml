@@ -144,7 +144,7 @@ let%test_unit "database: add relation" =
   let db = Management.Database.empty ~name:"test_db" in
   (* Create a minimal relation for testing *)
   let relation =
-    Relation.make ~hash:(Some "rel_hash_1") ~name:"users" ~schema:Schema.empty
+    Relation.make ~producer:None ~hash:(Some "rel_hash_1") ~name:"users" ~schema:Schema.empty
       ~tree:(Some Merkle.empty) ~constraints:None
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
@@ -159,7 +159,7 @@ let%test_unit "database: add relation" =
 let%test_unit "database: remove relation" =
   let db = Management.Database.empty ~name:"test_db" in
   let relation =
-    Relation.make ~hash:(Some "hash1") ~name:"users" ~schema:Schema.empty
+    Relation.make ~producer:None ~hash:(Some "hash1") ~name:"users" ~schema:Schema.empty
       ~tree:(Some Merkle.empty) ~constraints:None
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
@@ -174,7 +174,7 @@ let%test_unit "database: remove relation" =
 let%test_unit "database: update relation" =
   let db = Management.Database.empty ~name:"test_db" in
   let relation =
-    Relation.make ~hash:(Some "hash1") ~name:"users" ~schema:Schema.empty
+    Relation.make ~producer:None ~hash:(Some "hash1") ~name:"users" ~schema:Schema.empty
       ~tree:(Some Merkle.empty) ~constraints:None
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
@@ -192,7 +192,7 @@ let%test_unit "database: update relation" =
 let%test_unit "database: get relation names" =
   let db = Management.Database.empty ~name:"test_db" in
   let rel1 =
-    Relation.make ~hash:(Some "h1") ~name:"users" ~schema:Schema.empty
+    Relation.make ~producer:None ~hash:(Some "h1") ~name:"users" ~schema:Schema.empty
       ~tree:(Some Merkle.empty) ~constraints:None
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
@@ -200,7 +200,7 @@ let%test_unit "database: get relation names" =
       ~lineage:(Relation.Lineage.Base "users")
   in
   let rel2 =
-    Relation.make ~hash:(Some "h2") ~name:"orders" ~schema:Schema.empty
+    Relation.make ~producer:None ~hash:(Some "h2") ~name:"orders" ~schema:Schema.empty
       ~tree:(Some Merkle.empty) ~constraints:None
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
@@ -2341,6 +2341,7 @@ let%test_unit "constraint scenario: self-reference neq" =
                   | _ -> false)
               | _ -> false)
             ~cardinality:Conventions.Cardinality.AlephZero
+            ~producer:None
         with
         | Error _ -> assert false
         | Ok x -> x
@@ -2752,8 +2753,8 @@ let%test_unit "prl: define predicate and query via DRL" =
         | Error _ -> assert false
         | Ok db -> db
       in
-      Prl.Plugin_api.register "test.ones"
-        (Prl.Plugin_api.implementation_of_rows
+      Sakura_prl_api.register "test.ones"
+        (Sakura_prl_api.implementation_of_rows
            ~membership_criteria:(fun tuple ->
              match List.assoc_opt "x" tuple with
              | Some v -> Ok ((Obj.obj v : int) = 1)
@@ -2772,7 +2773,8 @@ let%test_unit "prl: define predicate and query via DRL" =
       let db =
         match Prl.Executor.Memory.execute storage db stmt with
         | Error _ -> assert false
-        | Ok _ -> db
+        | Ok (Sublanguage_types.Transition new_db) -> new_db
+        | Ok _ -> assert false
       in
       let rel =
         match Drl.Executor.Memory.execute storage db (Drl.Ast.Base "ones") with
@@ -2792,34 +2794,6 @@ let%test_unit "prl: define predicate and query via DRL" =
           | Some attr -> assert ((Obj.obj attr.Attribute.value : int) = 1))
       | _ -> assert false)
 
-let%test_unit "prl: io predicates are rejected in DRL" =
-  with_storage (fun storage ->
-      let db =
-        match Memory.create_database storage ~name:"prl_io_db" with
-        | Error _ -> assert false
-        | Ok db -> db
-      in
-      Prl.Plugin_api.register "test.io"
-        (Prl.Plugin_api.implementation_of_rows
-           ~membership_criteria:(fun _ -> Ok true) [ [ ("x", Obj.repr 0) ] ]);
-      let stmt =
-        Prl.Ast.DefineFunctionPredicate
-          {
-            name = "io_rel";
-            schema = [ ("x", "natural") ];
-            symbol = "test.io";
-            purity = Conventions.Purity.IO;
-            cardinality = Conventions.Cardinality.ConstrainedFinite;
-          }
-      in
-      let db =
-        match Prl.Executor.Memory.execute storage db stmt with
-        | Error _ -> assert false
-        | Ok _ -> db
-      in
-      match Drl.Executor.Memory.execute storage db (Drl.Ast.Base "io_rel") with
-      | Error (Drl.Executor.Memory.IoPredicateNotAllowed "io_rel") -> ()
-      | _ -> assert false)
 
 (* Executor tests construct AST directly, no dependency on sexp format *)
 

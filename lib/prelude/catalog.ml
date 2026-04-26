@@ -18,6 +18,8 @@ let branch_rel_name = catalog_prefix ^ "branch"
 let head_rel_name = catalog_prefix ^ "head"
 let multigroup_rel_name = catalog_prefix ^ "multigroup"
 let schema_rel_name = catalog_prefix ^ "schema"
+let function_predicate_rel_name = catalog_prefix ^ "function_predicate"
+let loaded_library_rel_name = catalog_prefix ^ "loaded_library"
 
 (** Relations present in every multigroup's catalog. *)
 let catalog_relation_names =
@@ -29,6 +31,8 @@ let catalog_relation_names =
     on_rel_name;
     timing_rel_name;
     schema_rel_name;
+    function_predicate_rel_name;
+    loaded_library_rel_name;
   ]
 
 (** Relations exclusive to the sakura meta-multigroup. *)
@@ -56,6 +60,16 @@ let timing_schema : Schema.t = Schema.empty |> Schema.add "timing" "string"
 let multigroup_schema : Schema.t = Schema.empty |> Schema.add "name" "string"
 let schema_schema : Schema.t = Schema.empty |> Schema.add "name" "string"
 
+let function_predicate_schema : Schema.t =
+  Schema.empty
+  |> Schema.add "name" "string"
+  |> Schema.add "symbol" "string"
+  |> Schema.add "cardinality" "string"
+  |> Schema.add "purity" "string"
+
+let loaded_library_schema : Schema.t =
+  Schema.empty |> Schema.add "path" "string"
+
 (** Definitions seeded into every multigroup. *)
 let catalog_definitions =
   [
@@ -66,6 +80,8 @@ let catalog_definitions =
     (on_rel_name, on_schema);
     (timing_rel_name, timing_schema);
     (schema_rel_name, schema_schema);
+    (function_predicate_rel_name, function_predicate_schema);
+    (loaded_library_rel_name, loaded_library_schema);
   ]
 
 (** Extra definitions seeded only into the sakura meta-multigroup. *)
@@ -147,5 +163,45 @@ let build_schema_tuple schema_name : Tuple.materialized =
     attributes =
       Tuple.AttributeMap.singleton "name"
         { Attribute.value = Obj.magic schema_name };
+  }
+
+let purity_to_string p =
+  Sexplib.Sexp.to_string (Conventions.Purity.sexp_of_t p)
+
+let purity_of_string s =
+  match Conventions.Purity.t_of_sexp (Sexplib.Sexp.of_string s) with
+  | p -> Some p
+  | exception _ -> None
+
+let cardinality_to_string c =
+  Sexplib.Sexp.to_string (Conventions.Cardinality.sexp_of_t c)
+
+let cardinality_of_string s =
+  match Conventions.Cardinality.t_of_sexp (Sexplib.Sexp.of_string s) with
+  | c -> Some c
+  | exception _ -> None
+
+let build_function_predicate_tuple ~name ~symbol ~cardinality ~purity :
+    Tuple.materialized =
+  {
+    Tuple.relation = function_predicate_rel_name;
+    attributes =
+      Tuple.AttributeMap.of_list
+        [
+          ("name", { Attribute.value = Obj.magic name });
+          ("symbol", { Attribute.value = Obj.magic symbol });
+          ("cardinality",
+           { Attribute.value = Obj.magic (cardinality_to_string cardinality) });
+          ("purity",
+           { Attribute.value = Obj.magic (purity_to_string purity) });
+        ];
+  }
+
+let build_loaded_library_tuple path : Tuple.materialized =
+  {
+    Tuple.relation = loaded_library_rel_name;
+    attributes =
+      Tuple.AttributeMap.singleton "path"
+        { Attribute.value = Obj.magic path };
   }
 

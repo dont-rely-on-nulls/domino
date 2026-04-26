@@ -42,7 +42,7 @@ module Make (Storage : Management.Physical.S) = struct
       | Some c -> c
       | None -> Conventions.Cardinality.AlephZero
     in
-    Relation.make ~hash:None ~name ~schema ~tree:None ~constraints ~cardinality
+    Relation.make ~producer:None ~hash:None ~name ~schema ~tree:None ~constraints ~cardinality
       ~generator:(Some gen)
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
