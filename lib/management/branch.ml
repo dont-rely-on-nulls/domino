@@ -78,7 +78,7 @@ module Make (Storage : Physical.S with type error = string) = struct
     let mk v = { Attribute.value = Obj.repr v } in
     let rec generator position =
       match position with
-      | None -> Generator.Error "random access not supported for sakura:branch"
+      | None -> Generator.Error "random access not supported for public:branch"
       | Some pos -> (
           match list storage with
           | Error _ -> Generator.Done
@@ -109,7 +109,7 @@ module Make (Storage : Physical.S with type error = string) = struct
     let mk v = { Attribute.value = Obj.repr v } in
     let generator position =
       match position with
-      | None -> Generator.Error "random access not supported for sakura:head"
+      | None -> Generator.Error "random access not supported for public:head"
       | Some 0 -> (
           match get_head storage with
           | Ok None | Error _ -> Generator.Done

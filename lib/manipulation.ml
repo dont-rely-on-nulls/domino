@@ -14,9 +14,9 @@
 
 module RelationMap = Management.Database.RelationMap
 
-(** Build membership criteria from schema (validates type membership).
-    Returns a function that takes a tree-lookup function and a tuple, checking
-    schema conformance and tree membership at call time. *)
+(** Build membership criteria from schema (validates type membership). Returns a
+    function that takes a tree-lookup function and a tuple, checking schema
+    conformance and tree membership at call time. *)
 let build_membership_criteria ~name schema :
     (string -> Merkle.t option) -> Tuple.t -> bool =
   let value_conforms_to_domain domain_name (value : Conventions.AbstractValue.t)
@@ -55,7 +55,8 @@ let build_membership_criteria ~name schema :
              schema
 
 let tree_of_db (db : Management.Database.t) name =
-  Option.bind (Management.Database.get_relation db name) (fun r -> r.Relation.tree)
+  Option.bind (Management.Database.get_relation db name) (fun r ->
+      r.Relation.tree)
 
 module Constraint = struct
   include Constraint
@@ -78,6 +79,35 @@ module Make (Storage : Management.Physical.S) = struct
 
   let of_string_error s = Error.StorageError s
   let ( let* ) = Result.bind
+
+  let normalize_name n = Qualified_name.(parse n |> to_key)
+
+  let rec normalize_constraint_body c =
+    match c with
+    | Constraint.MemberOf { target; binding } ->
+        Constraint.MemberOf { target = normalize_name target; binding }
+    | Constraint.Not { body; universe } ->
+        Constraint.Not
+          {
+            body = normalize_constraint_body body;
+            universe = normalize_name universe;
+          }
+    | Constraint.And cs -> Constraint.And (List.map normalize_constraint_body cs)
+    | Constraint.Or cs -> Constraint.Or (List.map normalize_constraint_body cs)
+    | Constraint.Exists { variable; quantifier; body } ->
+        Constraint.Exists
+          {
+            variable;
+            quantifier = normalize_name quantifier;
+            body = normalize_constraint_body body;
+          }
+    | Constraint.Forall { variable; quantifier; body } ->
+        Constraint.Forall
+          {
+            variable;
+            quantifier = normalize_name quantifier;
+            body = normalize_constraint_body body;
+          }
 
   let fold_result (f : 'a -> 'b -> ('a, error) Result.t) (init : 'a)
       (xs : 'b list) : ('a, error) Result.t =
@@ -108,7 +138,8 @@ module Make (Storage : Management.Physical.S) = struct
       match Storage.load_raw storage hash with
       | Error _ | Ok None -> None
       | Ok (Some bytes) ->
-          load_attrs [] (Storable.Tuple.of_bytes bytes).Storable.Tuple.attributes
+          load_attrs []
+            (Storable.Tuple.of_bytes bytes).Storable.Tuple.attributes
     in
     let rec load_all acc = function
       | [] -> Some (List.rev acc)
@@ -218,7 +249,8 @@ module Make (Storage : Management.Physical.S) = struct
           Relation.make ~hash:(Some rel_hash) ~name:stored.name
             ~schema:stored.schema ~tree:(Some tree) ~constraints:None
             ~cardinality:stored.cardinality ~generator:None
-            ~membership_criteria:(build_membership_criteria ~name:stored.name stored.schema)
+            ~membership_criteria:
+              (build_membership_criteria ~name:stored.name stored.schema)
             ~provenance:(Relation.Provenance.Base stored.name)
             ~lineage:(Relation.Lineage.Base stored.name)
         in
@@ -527,7 +559,10 @@ module Make (Storage : Management.Physical.S) = struct
       =
     let name = relation.name in
     let* () = ensure_relation_exists db name in
-    if not (relation.membership_criteria (tree_of_db db) (Tuple.Materialized tuple)) then
+    if
+      not
+        (relation.membership_criteria (tree_of_db db) (Tuple.Materialized tuple))
+    then
       Error
         (Error.ConstraintViolation "Tuple does not satisfy membership criteria")
     else
@@ -623,7 +658,7 @@ module Make (Storage : Management.Physical.S) = struct
       (relation : Relation.t) : (Management.Database.t, error) Result.t =
     if Prelude.Catalog.is_catalog_relation relation.name then Ok db
     else
-      (* Insert into sakura:relation *)
+      (* Insert into public:relation *)
       match
         Management.Database.get_relation db Prelude.Catalog.relation_rel_name
       with
@@ -631,7 +666,7 @@ module Make (Storage : Management.Physical.S) = struct
       | Some rel_cat -> (
           let rel_tuple = Prelude.Catalog.build_relation_tuple relation.name in
           let* db, _, _ = create_tuple storage db rel_cat rel_tuple in
-          (* Insert into sakura:attribute for each schema entry *)
+          (* Insert into public:attribute for each schema entry *)
           match
             Management.Database.get_relation db
               Prelude.Catalog.attribute_rel_name
@@ -671,7 +706,7 @@ module Make (Storage : Management.Physical.S) = struct
               Ok new_db
             else Ok db
       in
-      (* Remove attribute tuples for this relation from sakura:attribute *)
+      (* Remove attribute tuples for this relation from public:attribute *)
       let attr_tuples =
         Prelude.Catalog.build_attribute_tuples ~relation_name:relation.name
           relation.schema
@@ -745,6 +780,11 @@ module Make (Storage : Management.Physical.S) = struct
         (List.map Prelude.Catalog.build_domain_tuple
            [ "integer"; "natural"; "rational"; "string" ])
     in
+    let* schema_rel = get_required db Prelude.Catalog.schema_rel_name in
+    let* db, _, _ =
+      create_tuples storage db schema_rel
+        [ Prelude.Catalog.build_schema_tuple Qualified_name.default_schema ]
+    in
     Ok db
 
   (*
@@ -753,7 +793,7 @@ module Make (Storage : Management.Physical.S) = struct
 
   (** Register a domain in the database. Can be called after [create_database]
       to add user-defined domains (e.g. [money], [email], [uuid]). Also inserts
-      a tuple into [sakura:domain] if the catalog is live. *)
+      a tuple into [public:domain] if the catalog is live. *)
   let register_domain (storage : storage) (db : Management.Database.t)
       (domain : Domain.t) : (Management.Database.t, error) Result.t =
     let db = Management.Database.add_domain db domain in
@@ -788,10 +828,11 @@ module Make (Storage : Management.Physical.S) = struct
       *)
 
   (** Create a new empty relation with the given schema. Also updates
-      [sakura:relation] and [sakura:attribute] in the system catalog. *)
+      [public:relation] and [public:attribute] in the system catalog. *)
   let create_relation (storage : storage) (db : Management.Database.t)
       ~(name : string) ~(schema : Schema.t) :
       (Management.Database.t * Relation.t, error) Result.t =
+    let name = normalize_name name in
     if Management.Database.has_relation db name then
       Error (Error.RelationAlreadyExists name)
     else
@@ -817,6 +858,7 @@ module Make (Storage : Management.Physical.S) = struct
       ~(membership_criteria : (string -> Merkle.t option) -> Tuple.t -> bool)
       ~(cardinality : Conventions.Cardinality.t) :
       (Management.Database.t * Relation.t, error) Result.t =
+    let name = normalize_name name in
     if Management.Database.has_relation db name then
       Error (Error.RelationAlreadyExists name)
     else
@@ -837,9 +879,10 @@ module Make (Storage : Management.Physical.S) = struct
       Ok (final_db, relation)
 
   (** Remove a relation from the database. Also removes its entries from
-      [sakura:relation] and [sakura:attribute]. *)
+      [public:relation] and [public:attribute]. *)
   let retract_relation (storage : storage) (db : Management.Database.t)
       ~(name : string) : (Management.Database.t, error) Result.t =
+    let name = normalize_name name in
     match Management.Database.get_relation db name with
     | None -> Error (Error.RelationNotFound name)
     | Some relation ->
@@ -884,6 +927,7 @@ module Make (Storage : Management.Physical.S) = struct
       (db : Management.Database.t) ~(relation_name : string)
       ~(constraints : Relation.RelationConstraint.t) :
       (Management.Database.t * Relation.t, error) Result.t =
+    let relation_name = normalize_name relation_name in
     match Management.Database.get_relation db relation_name with
     | None -> Error (Error.RelationNotFound relation_name)
     | Some relation ->
@@ -917,10 +961,12 @@ module Make (Storage : Management.Physical.S) = struct
         Ok (new_db, new_relation)
 
   (** Register a named constraint on a relation. Attaches the constraint body to
-      the relation AND records it in [sakura:constraint]. *)
+      the relation AND records it in [public:constraint]. *)
   let register_constraint (storage : storage) (db : Management.Database.t)
       ~(constraint_name : string) ~(relation_name : string)
       ~(body : Constraint.t) : (Management.Database.t, error) Result.t =
+    let relation_name = normalize_name relation_name in
+    let body = normalize_constraint_body body in
     let* db, _ =
       update_relation_constraints storage db ~relation_name
         ~constraints:[ (constraint_name, body) ]
@@ -945,7 +991,7 @@ module Make (Storage : Management.Physical.S) = struct
   (** Get relation by name from database *)
   let get_relation (db : Management.Database.t) ~(name : string) :
       Relation.t option =
-    Management.Database.get_relation db name
+    Management.Database.get_relation db (normalize_name name)
 
   (** Count tuples in a relation *)
   let tuple_count (relation : Relation.t) : int =
@@ -966,6 +1012,8 @@ module Make (Storage : Management.Physical.S) = struct
       ~(constraint_name : string) ~(relation_name : string)
       ~(body : Constraint.t) ~(timing : Constraint.timing) :
       (Management.Database.t, error) Result.t =
+    let relation_name = normalize_name relation_name in
+    let body = normalize_constraint_body body in
     let* db, _ =
       update_relation_constraints storage db ~relation_name
         ~constraints:[ (constraint_name, body) ]

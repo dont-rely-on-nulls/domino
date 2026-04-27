@@ -13,6 +13,7 @@ type t =
   | SublanguageError of Sexplib.Sexp.t
   | Conflict of { old_db : Management.Database.t; new_db : Management.Database.t}
   | SyntaxError of string
+  | MultigroupNotFound of string
 
 let sexp_of_error e =
   let open Sexplib.Sexp in
@@ -30,5 +31,6 @@ let sexp_of_error e =
   | MalformedExpression s       -> error "malformed-expression"     ["expression" <+> s]
   | SublanguageError s          -> error "sublanguage-error"        ["error"      <+> s]
   | SyntaxError s               -> error "syntax-error"             ["message"    <+> (Atom s)]
+  | MultigroupNotFound s        -> error "multigroup-not-found"     ["name"       <+> (Atom s)]
   | Conflict { old_db; new_db } -> error "conflict"                 ["old-hash"   <+> (Atom old_db.hash);
                                                                      "new-hash"   <+> (Atom new_db.hash)]

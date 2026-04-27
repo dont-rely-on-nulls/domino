@@ -58,19 +58,21 @@ module Make (Storage : Management.Physical.S) = struct
     match stmt with
     | Ast.InsertTuple { relation; attributes } ->
         let* rel = get_rel db relation in
-        let tuple = build_tuple ~relation attributes in
+        let tuple = build_tuple ~relation:rel.Relation.name attributes in
         let* db, _, _ = Ops.create_tuple storage db rel tuple |> wrap_manip in
         Ok db
     | Ast.InsertTuples { relation; tuples } ->
         let* rel = get_rel db relation in
-        let tuple_list = List.map (build_tuple ~relation) tuples in
+        let tuple_list =
+          List.map (build_tuple ~relation:rel.Relation.name) tuples
+        in
         let* db, _, _ =
           Ops.create_tuples storage db rel tuple_list |> wrap_manip
         in
         Ok db
     | Ast.DeleteTuple { relation; attributes } ->
         let* rel = get_rel db relation in
-        let tuple = build_tuple ~relation attributes in
+        let tuple = build_tuple ~relation:rel.Relation.name attributes in
         let tuple_hash = Hashing.hash_tuple tuple in
         let* db, _ =
           Ops.retract_tuple storage db rel ~tuple_hash |> wrap_manip
@@ -82,7 +84,8 @@ module Make (Storage : Management.Physical.S) = struct
         let* tuples = materialize_tuples storage result_rel in
         let* db, rel = Ops.clear_relation storage db rel |> wrap_manip in
         let* db, _, _ =
-          Ops.create_tuples storage db rel (List.map (retarget target) tuples)
+          Ops.create_tuples storage db rel
+            (List.map (retarget rel.Relation.name) tuples)
           |> wrap_manip
         in
         Ok db
@@ -91,7 +94,8 @@ module Make (Storage : Management.Physical.S) = struct
         let* result_rel = eval_query storage db source in
         let* tuples = materialize_tuples storage result_rel in
         let* db, _, _ =
-          Ops.create_tuples storage db rel (List.map (retarget target) tuples)
+          Ops.create_tuples storage db rel
+            (List.map (retarget rel.Relation.name) tuples)
           |> wrap_manip
         in
         Ok db
@@ -118,7 +122,7 @@ module Make (Storage : Management.Physical.S) = struct
           (fun acc t ->
             let* db = acc in
             let* rel = get_rel db target in
-            let tuple_hash = Hashing.hash_tuple (retarget target t) in
+            let tuple_hash = Hashing.hash_tuple (retarget rel.Relation.name t) in
             let* db, _ =
               Ops.retract_tuple storage db rel ~tuple_hash |> wrap_manip
             in

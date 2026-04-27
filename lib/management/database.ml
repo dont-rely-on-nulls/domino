@@ -6,6 +6,9 @@
    reconstruct a past state from a hash alone without a separate snapshot
    store. Either cap the history or make it actually useful. *)
 
+(* TODO: refactor RelationMap keying from composite "schema:relation" strings
+   to nested maps (schema -> relation -> Relation.t) for cleaner semantics.
+   Currently, callers are responsible for passing composite keys. *)
 module RelationMap = Map.Make (String)
 
 type deferred_entry = {

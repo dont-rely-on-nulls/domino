@@ -8,3 +8,5 @@ result-*
 # OCaml editor/tooling artifacts
 *.merlin
 .ocamlformat-lock
+
+settings.json

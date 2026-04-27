@@ -328,3 +328,15 @@ let divide_natural : Relation.t =
     ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base "divide")
     ~lineage:(Relation.Lineage.Base "divide")
+
+let prelude_relations =
+  [ less_than_natural
+  ; less_than_or_equal_natural
+  ; greater_than_natural
+  ; greater_than_or_equal_natural
+  ; equal_natural
+  ; not_equal_natural
+  ; plus_natural
+  ; times_natural
+  ; minus_natural
+  ; divide_natural ]
