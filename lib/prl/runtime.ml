@@ -63,6 +63,10 @@ let make_generator relation_name schema (impl : Sakura_prl_api.implementation)
       in
       gen
 
+let make_producer relation_name schema (impl : Sakura_prl_api.implementation) :
+    Relation.producer =
+  fun bindings -> make_generator relation_name schema impl bindings
+
 let make_membership_criteria schema (impl : Sakura_prl_api.implementation) :
     (string -> Merkle.t option) -> Tuple.t -> bool =
   match impl.membership_criteria with

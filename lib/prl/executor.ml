@@ -47,10 +47,12 @@ module Make (Storage : Management.Physical.S) = struct
         in
         let name = Qualified_name.(parse spec.name |> to_key) in
         let generator = Runtime.make_generator name schema impl [] in
+        let producer = Runtime.make_producer name schema impl in
         let membership_criteria = Runtime.make_membership_criteria schema impl in
         let* new_db, _ =
           Ops.create_immutable_relation storage db ~name ~schema ~generator
-            ~membership_criteria ~cardinality:spec.cardinality ~producer:None
+            ~membership_criteria ~cardinality:spec.cardinality
+            ~producer:(Some producer)
           |> map_rel_error
         in
         let* fp_rel =
