@@ -26,9 +26,11 @@ let insert_section ~expected acc key body =
   in
   match body with
   | [ subtree ] -> Ok (Utilities.StringMap.add key subtree acc)
-  | [] -> errorf "Configuration section %s is empty (expected a tagged value)" key
+  | [] ->
+      errorf "Configuration section %s is empty (expected a tagged value)" key
   | _ ->
-      errorf "Configuration section %s has multiple values (expected exactly one)"
+      errorf
+        "Configuration section %s has multiple values (expected exactly one)"
         key
 
 (** [(server ...)] sexp -> section map. Rejects unknown/duplicate keys. *)

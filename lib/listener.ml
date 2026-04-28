@@ -182,7 +182,10 @@ functor
           List
             [
               Atom "ok";
-              List [ Atom "message"; Atom ("Switched to multigroup " ^ multigroup) ];
+              List
+                [
+                  Atom "message"; Atom ("Switched to multigroup " ^ multigroup);
+                ];
             ]
       | Ok (Sublanguage.CreateMultigroup name) ->
           List

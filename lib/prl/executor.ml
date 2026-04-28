@@ -28,15 +28,18 @@ module Make (Storage : Management.Physical.S) = struct
   let execute_load_library storage db path =
     match Runtime.load_library path with
     | Error e -> Error (RuntimeError e)
-    | Ok () ->
-        let* ll_rel = require_relation db Prelude.Catalog.loaded_library_rel_name in
+    | Ok () -> (
+        let* ll_rel =
+          require_relation db Prelude.Catalog.loaded_library_rel_name
+        in
         let tuple = Prelude.Catalog.build_loaded_library_tuple path in
-        (match Ops.create_tuple storage db ll_rel tuple with
+        match Ops.create_tuple storage db ll_rel tuple with
         | Ok (new_db, _, _) -> Ok (Sublanguage_types.Transition new_db)
         | Error (Error.DuplicateTuple _) -> Ok (Sublanguage_types.Transition db)
         | Error e -> Error (RelationError e))
 
-  let execute_define_function_predicate storage db (spec : Ast.function_predicate) =
+  let execute_define_function_predicate storage db
+      (spec : Ast.function_predicate) =
     match Sakura_prl_api.find spec.symbol with
     | None -> Error (UnknownPluginSymbol spec.symbol)
     | Some impl ->
@@ -48,7 +51,9 @@ module Make (Storage : Management.Physical.S) = struct
         let name = Qualified_name.(parse spec.name |> to_key) in
         let generator = Runtime.make_generator name schema impl [] in
         let producer = Runtime.make_producer name schema impl in
-        let membership_criteria = Runtime.make_membership_criteria schema impl in
+        let membership_criteria =
+          Runtime.make_membership_criteria schema impl
+        in
         let* new_db, _ =
           Ops.create_immutable_relation storage db ~name ~schema ~generator
             ~membership_criteria ~cardinality:spec.cardinality
@@ -60,7 +65,8 @@ module Make (Storage : Management.Physical.S) = struct
         in
         let fp_tuple =
           Prelude.Catalog.build_function_predicate_tuple ~name
-            ~symbol:spec.symbol ~cardinality:spec.cardinality ~purity:spec.purity
+            ~symbol:spec.symbol ~cardinality:spec.cardinality
+            ~purity:spec.purity
         in
         let* final_db =
           Ops.create_tuple storage new_db fp_rel fp_tuple

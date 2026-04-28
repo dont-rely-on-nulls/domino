@@ -46,8 +46,7 @@ module Make (Storage : Management.Physical.S) = struct
       ~generator:(Some gen)
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
-      ~lineage:(Relation.Lineage.Base "derived")
-      ()
+      ~lineage:(Relation.Lineage.Base "derived") ()
 
   let const_relation (pairs : (string * Conventions.AbstractValue.t) list) :
       Relation.t =
@@ -224,8 +223,7 @@ module Make (Storage : Management.Physical.S) = struct
             let matches =
               List.filter_map
                 (fun rt ->
-                  if get_vals attrs rt = lv then Some (merge lt rt)
-                  else None)
+                  if get_vals attrs rt = lv then Some (merge lt rt) else None)
                 right_tuples
             in
             match matches with
@@ -254,15 +252,15 @@ module Make (Storage : Management.Physical.S) = struct
         let left_gen = to_generator storage left in
         let make_right_producer_join_gen lgen =
           let rec from_left lgen lpos =
-            fun _pos ->
+           fun _pos ->
             match lgen (Some lpos) with
             | Generator.Done -> Generator.Done
             | Generator.Error e -> Generator.Error e
-            | Generator.Value (lt, next_left) ->
+            | Generator.Value (lt, next_left) -> (
                 let bindings = bindings_of_tuple attrs lt in
-                (match drain (right_producer bindings) with
+                match drain (right_producer bindings) with
                 | Error (GeneratorError e | StorageError e) -> Generator.Error e
-                | Ok right_tuples ->
+                | Ok right_tuples -> (
                     let lv = get_vals attrs lt in
                     let matches =
                       List.filter_map
@@ -271,7 +269,7 @@ module Make (Storage : Management.Physical.S) = struct
                           else None)
                         right_tuples
                     in
-                    (match matches with
+                    match matches with
                     | [] -> from_left next_left (lpos + 1) _pos
                     | _ ->
                         chain_with_cont (list_generator matches)
@@ -284,9 +282,9 @@ module Make (Storage : Management.Physical.S) = struct
           (of_generator ~name ~schema:merged_schema
              ?constraints:merged_constraints
              (make_right_producer_join_gen left_gen))
-    | _ ->
+    | _ -> (
         let right_gen = to_generator storage right in
-        (match drain right_gen with
+        match drain right_gen with
         | Error e -> Error e
         | Ok right_tuples ->
             let left_gen_result =
@@ -297,9 +295,9 @@ module Make (Storage : Management.Physical.S) = struct
                   let unique_bindings =
                     right_tuples
                     |> List.filter_map (fun rt ->
-                           let b = bindings_of_tuple attrs rt in
-                           if List.length b = List.length attrs then Some b
-                           else None)
+                        let b = bindings_of_tuple attrs rt in
+                        if List.length b = List.length attrs then Some b
+                        else None)
                     |> List.sort_uniq compare
                   in
                   List.fold_left
@@ -308,8 +306,7 @@ module Make (Storage : Management.Physical.S) = struct
                           match drain (left_producer bindings) with
                           | Ok new_ts -> Ok (ts @ new_ts)
                           | Error e -> Error e))
-                    (Ok [])
-                    unique_bindings
+                    (Ok []) unique_bindings
                   |> Result.map list_generator
               | _ -> Ok (to_generator storage left)
             in

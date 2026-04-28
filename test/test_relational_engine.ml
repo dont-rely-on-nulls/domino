@@ -1,7 +1,6 @@
 (** Tests for the relational engine *)
 
 open Relational_engine
-
 module Memory = Manipulation.Make (Management.Physical.Memory)
 
 let%test_unit "merkle: empty tree" =
@@ -149,8 +148,7 @@ let%test_unit "database: add relation" =
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
-      ~lineage:(Relation.Lineage.Base "users")
-      ()
+      ~lineage:(Relation.Lineage.Base "users") ()
   in
   let db = Management.Database.add_relation db ~relation in
   assert (Management.Database.has_relation db "users");
@@ -165,8 +163,7 @@ let%test_unit "database: remove relation" =
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
-      ~lineage:(Relation.Lineage.Base "users")
-      ()
+      ~lineage:(Relation.Lineage.Base "users") ()
   in
   let db = Management.Database.add_relation db ~relation in
   assert (Management.Database.has_relation db "users");
@@ -181,8 +178,7 @@ let%test_unit "database: update relation" =
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
-      ~lineage:(Relation.Lineage.Base "users")
-      ()
+      ~lineage:(Relation.Lineage.Base "users") ()
   in
   let db = Management.Database.add_relation db ~relation in
   let old_db_hash = db.hash in
@@ -200,8 +196,7 @@ let%test_unit "database: get relation names" =
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
-      ~lineage:(Relation.Lineage.Base "users")
-      ()
+      ~lineage:(Relation.Lineage.Base "users") ()
   in
   let rel2 =
     Relation.make ~hash:(Some "h2") ~name:"orders" ~schema:Schema.empty
@@ -209,8 +204,7 @@ let%test_unit "database: get relation names" =
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
-      ~lineage:(Relation.Lineage.Base "orders")
-      ()
+      ~lineage:(Relation.Lineage.Base "orders") ()
   in
   let db = Management.Database.add_relation db ~relation:rel1 in
   let db = Management.Database.add_relation db ~relation:rel2 in
@@ -244,9 +238,7 @@ let%test_unit "manipulation: create relation" =
       let schema =
         Schema.empty |> Schema.add "name" "string" |> Schema.add "age" "integer"
       in
-      match
-        Memory.create_relation storage db ~name:"users" ~schema
-      with
+      match Memory.create_relation storage db ~name:"users" ~schema with
       | Error _ -> assert false
       | Ok (db, relation) ->
           assert (relation.name = "users");
@@ -261,14 +253,10 @@ let%test_unit "manipulation: create relation already exists" =
         | Ok db -> db
       in
       let schema = Schema.empty in
-      match
-        Memory.create_relation storage db ~name:"users" ~schema
-      with
+      match Memory.create_relation storage db ~name:"users" ~schema with
       | Error _ -> assert false
       | Ok (db, _) -> (
-          match
-            Memory.create_relation storage db ~name:"users" ~schema
-          with
+          match Memory.create_relation storage db ~name:"users" ~schema with
           | Error (Error.RelationAlreadyExists _) -> ()
           | _ -> assert false))
 
@@ -280,15 +268,11 @@ let%test_unit "manipulation: retract relation" =
         | Ok db -> db
       in
       let schema = Schema.empty in
-      match
-        Memory.create_relation storage db ~name:"users" ~schema
-      with
+      match Memory.create_relation storage db ~name:"users" ~schema with
       | Error _ -> assert false
       | Ok (db, _) -> (
           assert (Management.Database.has_relation db "users");
-          match
-            Memory.retract_relation storage db ~name:"users"
-          with
+          match Memory.retract_relation storage db ~name:"users" with
           | Error _ -> assert false
           | Ok db -> assert (not (Management.Database.has_relation db "users"))))
 
@@ -300,9 +284,7 @@ let%test_unit "manipulation: create tuple with storage" =
         | Ok db -> db
       in
       let schema = Schema.empty |> Schema.add "name" "string" in
-      match
-        Memory.create_relation storage db ~name:"users" ~schema
-      with
+      match Memory.create_relation storage db ~name:"users" ~schema with
       | Error _ -> assert false
       | Ok (db, relation) -> (
           let attrs =
@@ -326,9 +308,7 @@ let%test_unit "manipulation: create and load tuple" =
         | Ok db -> db
       in
       let schema = Schema.empty |> Schema.add "value" "integer" in
-      match
-        Memory.create_relation storage db ~name:"numbers" ~schema
-      with
+      match Memory.create_relation storage db ~name:"numbers" ~schema with
       | Error _ -> assert false
       | Ok (db, relation) -> (
           let attrs =
@@ -360,9 +340,7 @@ let%test_unit "manipulation: create multiple tuples with storage" =
         | Ok db -> db
       in
       let schema = Schema.empty |> Schema.add "id" "integer" in
-      match
-        Memory.create_relation storage db ~name:"items" ~schema
-      with
+      match Memory.create_relation storage db ~name:"items" ~schema with
       | Error _ -> assert false
       | Ok (db, relation) -> (
           let make_tuple id =
@@ -374,9 +352,7 @@ let%test_unit "manipulation: create multiple tuples with storage" =
               : Tuple.materialized)
           in
           let tuples = [ make_tuple 1; make_tuple 2; make_tuple 3 ] in
-          match
-            Memory.create_tuples storage db relation tuples
-          with
+          match Memory.create_tuples storage db relation tuples with
           | Error _ -> assert false
           | Ok (_db, new_relation, hashes) ->
               assert (Memory.tuple_count new_relation = 3);
@@ -390,9 +366,7 @@ let%test_unit "manipulation: load multiple tuples" =
         | Ok db -> db
       in
       let schema = Schema.empty |> Schema.add "n" "integer" in
-      match
-        Memory.create_relation storage db ~name:"test" ~schema
-      with
+      match Memory.create_relation storage db ~name:"test" ~schema with
       | Error _ -> assert false
       | Ok (db, relation) -> (
           let make_tuple n =
@@ -433,9 +407,7 @@ let%test_unit "manipulation: retract tuple" =
         | Ok db -> db
       in
       let schema = Schema.empty |> Schema.add "value" "integer" in
-      match
-        Memory.create_relation storage db ~name:"numbers" ~schema
-      with
+      match Memory.create_relation storage db ~name:"numbers" ~schema with
       | Error _ -> assert false
       | Ok (db, relation) -> (
           let attrs =
@@ -449,10 +421,7 @@ let%test_unit "manipulation: retract tuple" =
           | Error _ -> assert false
           | Ok (db, relation, tuple_hash) -> (
               assert (Memory.tuple_count relation = 1);
-              match
-                Memory.retract_tuple storage db relation
-                  ~tuple_hash
-              with
+              match Memory.retract_tuple storage db relation ~tuple_hash with
               | Error _ -> assert false
               | Ok (_db, relation) -> (
                   assert (Memory.tuple_count relation = 0);
@@ -470,9 +439,7 @@ let%test_unit "manipulation: tuple hashes" =
         | Ok db -> db
       in
       let schema = Schema.empty in
-      match
-        Memory.create_relation storage db ~name:"test" ~schema
-      with
+      match Memory.create_relation storage db ~name:"test" ~schema with
       | Error _ -> assert false
       | Ok (db, relation) -> (
           let make_tuple n =
@@ -500,9 +467,7 @@ let%test_unit "manipulation: clear relation" =
         | Ok db -> db
       in
       let schema = Schema.empty in
-      match
-        Memory.create_relation storage db ~name:"test" ~schema
-      with
+      match Memory.create_relation storage db ~name:"test" ~schema with
       | Error _ -> assert false
       | Ok (db, relation) -> (
           let make_tuple n =
@@ -522,8 +487,7 @@ let%test_unit "manipulation: clear relation" =
               assert (Memory.tuple_count relation = 3);
               match Memory.clear_relation storage db relation with
               | Error _ -> assert false
-              | Ok (_db, relation) ->
-                  assert (Memory.tuple_count relation = 0))))
+              | Ok (_db, relation) -> assert (Memory.tuple_count relation = 0))))
 
 let%test_unit "manipulation: duplicate tuple rejected" =
   with_storage (fun storage ->
@@ -533,9 +497,7 @@ let%test_unit "manipulation: duplicate tuple rejected" =
         | Ok db -> db
       in
       let schema = Schema.empty |> Schema.add "x" "integer" in
-      match
-        Memory.create_relation storage db ~name:"test" ~schema
-      with
+      match Memory.create_relation storage db ~name:"test" ~schema with
       | Error _ -> assert false
       | Ok (db, relation) -> (
           let attrs =
@@ -549,9 +511,7 @@ let%test_unit "manipulation: duplicate tuple rejected" =
           | Error _ -> assert false
           | Ok (db, relation, _) -> (
               (* Try to insert the same tuple again *)
-              match
-                Memory.create_tuple storage db relation tuple
-              with
+              match Memory.create_tuple storage db relation tuple with
               | Error (Error.DuplicateTuple _) -> ()
               | _ -> assert false)))
 
@@ -563,9 +523,7 @@ let%test_unit "manipulation: tuple_exists check" =
         | Ok db -> db
       in
       let schema = Schema.empty in
-      match
-        Memory.create_relation storage db ~name:"test" ~schema
-      with
+      match Memory.create_relation storage db ~name:"test" ~schema with
       | Error _ -> assert false
       | Ok (db, relation) -> (
           let attrs =
@@ -621,9 +579,7 @@ let%test_unit "manipulation: get_relation from database" =
         | Ok db -> db
       in
       let schema = Schema.empty |> Schema.add "id" "integer" in
-      match
-        Memory.create_relation storage db ~name:"items" ~schema
-      with
+      match Memory.create_relation storage db ~name:"items" ~schema with
       | Error _ -> assert false
       | Ok (db, _relation) -> (
           (* Now get the relation from the database *)
@@ -644,9 +600,7 @@ let%test_unit "schema: persisted and loaded correctly" =
         Schema.empty |> Schema.add "id" "integer" |> Schema.add "name" "string"
         |> Schema.add "email" "string"
       in
-      match
-        Memory.create_relation storage db ~name:"users" ~schema
-      with
+      match Memory.create_relation storage db ~name:"users" ~schema with
       | Error _ -> assert false
       | Ok (db, _relation) -> (
           (* Get the relation hash *)
@@ -680,9 +634,7 @@ let%test_unit "catalog: sakura:relation contains all 6 catalog names" =
       | Error _ -> assert false
       | Ok db ->
           let rel =
-            match
-              Memory.get_relation db ~name:"sakura:relation"
-            with
+            match Memory.get_relation db ~name:"sakura:relation" with
             | None -> assert false
             | Some r -> r
           in
@@ -732,16 +684,13 @@ let%test_unit "catalog: create_relation updates sakura:relation" =
           let schema = Schema.empty |> Schema.add "id" "natural" in
           let db =
             match
-              Memory.create_relation storage db ~name:"employees"
-                ~schema
+              Memory.create_relation storage db ~name:"employees" ~schema
             with
             | Error _ -> assert false
             | Ok (db, _) -> db
           in
           let rel =
-            match
-              Memory.get_relation db ~name:"sakura:relation"
-            with
+            match Memory.get_relation db ~name:"sakura:relation" with
             | None -> assert false
             | Some r -> r
           in
@@ -756,16 +705,13 @@ let%test_unit "catalog: create_relation updates sakura:attribute" =
           let schema = Schema.empty |> Schema.add "id" "natural" in
           let db =
             match
-              Memory.create_relation storage db ~name:"employees"
-                ~schema
+              Memory.create_relation storage db ~name:"employees" ~schema
             with
             | Error _ -> assert false
             | Ok (db, _) -> db
           in
           let attr_rel =
-            match
-              Memory.get_relation db ~name:"sakura:attribute"
-            with
+            match Memory.get_relation db ~name:"sakura:attribute" with
             | None -> assert false
             | Some r -> r
           in
@@ -783,23 +729,18 @@ let%test_unit "catalog: retract_relation removes from sakura:relation" =
           let schema = Schema.empty |> Schema.add "id" "natural" in
           let db =
             match
-              Memory.create_relation storage db ~name:"employees"
-                ~schema
+              Memory.create_relation storage db ~name:"employees" ~schema
             with
             | Error _ -> assert false
             | Ok (db, _) -> db
           in
           let db =
-            match
-              Memory.retract_relation storage db ~name:"employees"
-            with
+            match Memory.retract_relation storage db ~name:"employees" with
             | Error _ -> assert false
             | Ok db -> db
           in
           let rel =
-            match
-              Memory.get_relation db ~name:"sakura:relation"
-            with
+            match Memory.get_relation db ~name:"sakura:relation" with
             | None -> assert false
             | Some r -> r
           in
@@ -813,10 +754,7 @@ let%test_unit "catalog: register_constraint inserts into sakura:constraint" =
       | Ok db ->
           let schema = Schema.empty |> Schema.add "id" "natural" in
           let db =
-            match
-              Memory.create_relation storage db ~name:"orders"
-                ~schema
-            with
+            match Memory.create_relation storage db ~name:"orders" ~schema with
             | Error _ -> assert false
             | Ok (db, _) -> db
           in
@@ -830,9 +768,7 @@ let%test_unit "catalog: register_constraint inserts into sakura:constraint" =
             | Ok db -> db
           in
           let con_rel =
-            match
-              Memory.get_relation db ~name:"sakura:constraint"
-            with
+            match Memory.get_relation db ~name:"sakura:constraint" with
             | None -> assert false
             | Some r -> r
           in
@@ -854,10 +790,7 @@ let%test_unit "integration: full workflow with storage" =
       in
 
       let db, products =
-        match
-          Memory.create_relation storage db ~name:"products"
-            ~schema
-        with
+        match Memory.create_relation storage db ~name:"products" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -901,8 +834,7 @@ let%test_unit "integration: full workflow with storage" =
       let banana_hash = Hashing.hash_tuple (make_product 2 "Banana" 50) in
       let _db, products =
         match
-          Memory.retract_tuple storage db products
-            ~tuple_hash:banana_hash
+          Memory.retract_tuple storage db products ~tuple_hash:banana_hash
         with
         | Error _ -> assert false
         | Ok x -> x
@@ -934,9 +866,7 @@ let%test_unit "integration: database history tracking" =
 
       let schema = Schema.empty in
       let db, _ =
-        match
-          Memory.create_relation storage db ~name:"rel1" ~schema
-        with
+        match Memory.create_relation storage db ~name:"rel1" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -947,9 +877,7 @@ let%test_unit "integration: database history tracking" =
       let hash_after_rel1 = db.hash in
 
       let db, _ =
-        match
-          Memory.create_relation storage db ~name:"rel2" ~schema
-        with
+        match Memory.create_relation storage db ~name:"rel2" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -968,9 +896,7 @@ let%test_unit "integration: hash bubbles up correctly" =
       let schema = Schema.empty in
 
       let db, relation =
-        match
-          Memory.create_relation storage db ~name:"items" ~schema
-        with
+        match Memory.create_relation storage db ~name:"items" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -1018,9 +944,7 @@ let%test_unit "branching: load database from historical hash" =
 
       (* Create relation and add a tuple *)
       let db, relation =
-        match
-          Memory.create_relation storage db ~name:"items" ~schema
-        with
+        match Memory.create_relation storage db ~name:"items" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -1092,9 +1016,7 @@ let%test_unit "branching: branch from historical state" =
 
       (* Create relation *)
       let db, relation =
-        match
-          Memory.create_relation storage db ~name:"data" ~schema
-        with
+        match Memory.create_relation storage db ~name:"data" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -1153,10 +1075,7 @@ let%test_unit "branching: branch from historical state" =
         }
       in
       let db_branch, _relation_branch, _ =
-        match
-          Memory.create_tuple storage db_branch relation_branch
-            tuple_c
-        with
+        match Memory.create_tuple storage db_branch relation_branch tuple_c with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -1190,10 +1109,7 @@ let%test_unit "branching: full reconstruction from hash" =
 
       (* Create relation *)
       let db, relation =
-        match
-          Memory.create_relation storage db ~name:"products"
-            ~schema
-        with
+        match Memory.create_relation storage db ~name:"products" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -1350,9 +1266,7 @@ let%test_unit "algebra: project restricts schema" =
         Schema.empty |> Schema.add "a" "integer" |> Schema.add "b" "integer"
       in
       let db, rel =
-        match
-          Memory.create_relation storage db ~name:"ab" ~schema
-        with
+        match Memory.create_relation storage db ~name:"ab" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -1417,10 +1331,7 @@ let%test_unit "algebra: equijoin merges matching tuples" =
         Schema.empty |> Schema.add "id" "integer" |> Schema.add "name" "string"
       in
       let db, left =
-        match
-          Memory.create_relation storage db ~name:"L"
-            ~schema:schema_l
-        with
+        match Memory.create_relation storage db ~name:"L" ~schema:schema_l with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -1448,10 +1359,7 @@ let%test_unit "algebra: equijoin merges matching tuples" =
         |> Schema.add "score" "integer"
       in
       let db, right =
-        match
-          Memory.create_relation storage db ~name:"R"
-            ~schema:schema_r
-        with
+        match Memory.create_relation storage db ~name:"R" ~schema:schema_r with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -1644,9 +1552,7 @@ let%test_unit "drl: execute Select+Const" =
         Schema.empty |> Schema.add "age" "integer" |> Schema.add "name" "string"
       in
       let db, users =
-        match
-          Memory.create_relation storage db ~name:"users" ~schema
-        with
+        match Memory.create_relation storage db ~name:"users" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -2026,19 +1932,15 @@ let%test_unit "constraint: create_tuple with passing constraint" =
       in
       let schema = Schema.empty |> Schema.add "value" "natural" in
       let db, _rel =
-        match
-          Memory.create_relation storage db ~name:"positives"
-            ~schema
-        with
+        match Memory.create_relation storage db ~name:"positives" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
       (* Register a constraint: value must be member of natural (always true for naturals) *)
       let db =
         match
-          Memory.register_constraint storage db
-            ~constraint_name:"is_natural" ~relation_name:"positives"
-            ~body:(Constraint.And [])
+          Memory.register_constraint storage db ~constraint_name:"is_natural"
+            ~relation_name:"positives" ~body:(Constraint.And [])
         with
         | Error _ -> assert false
         | Ok db -> db
@@ -2069,17 +1971,15 @@ let%test_unit "constraint: create_tuple with failing constraint" =
       in
       let schema = Schema.empty |> Schema.add "value" "natural" in
       let db, _rel =
-        match
-          Memory.create_relation storage db ~name:"checked" ~schema
-        with
+        match Memory.create_relation storage db ~name:"checked" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
       (* Register a constraint that always fails: MemberOf a nonexistent relation *)
       let db =
         match
-          Memory.register_constraint storage db
-            ~constraint_name:"impossible" ~relation_name:"checked"
+          Memory.register_constraint storage db ~constraint_name:"impossible"
+            ~relation_name:"checked"
             ~body:
               (Constraint.MemberOf
                  {
@@ -2121,17 +2021,12 @@ let%test_unit "constraint scenario: mutual exclusion subtypes" =
       in
       let schema = Schema.empty |> Schema.add "id" "natural" in
       let db, _employee =
-        match
-          Memory.create_relation storage db ~name:"employee"
-            ~schema
-        with
+        match Memory.create_relation storage db ~name:"employee" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
       let db, _manager =
-        match
-          Memory.create_relation storage db ~name:"manager" ~schema
-        with
+        match Memory.create_relation storage db ~name:"manager" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -2151,8 +2046,8 @@ let%test_unit "constraint scenario: mutual exclusion subtypes" =
       in
       let db =
         match
-          Memory.register_constraint storage db
-            ~constraint_name:"not_employee" ~relation_name:"manager" ~body
+          Memory.register_constraint storage db ~constraint_name:"not_employee"
+            ~relation_name:"manager" ~body
         with
         | Error _ -> assert false
         | Ok db -> db
@@ -2171,9 +2066,7 @@ let%test_unit "constraint scenario: mutual exclusion subtypes" =
         }
       in
       let db, _employee, _ =
-        match
-          Memory.create_tuple storage db employee emp_tuple
-        with
+        match Memory.create_tuple storage db employee emp_tuple with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -2205,8 +2098,7 @@ let%test_unit "constraint scenario: foreign key" =
       let order_schema = Schema.empty |> Schema.add "order_id" "natural" in
       let db, _orders =
         match
-          Memory.create_relation storage db ~name:"orders"
-            ~schema:order_schema
+          Memory.create_relation storage db ~name:"orders" ~schema:order_schema
         with
         | Error _ -> assert false
         | Ok x -> x
@@ -2236,9 +2128,8 @@ let%test_unit "constraint scenario: foreign key" =
       in
       let db =
         match
-          Memory.register_constraint storage db
-            ~constraint_name:"fk_order" ~relation_name:"order_items"
-            ~body:fk_body
+          Memory.register_constraint storage db ~constraint_name:"fk_order"
+            ~relation_name:"order_items" ~body:fk_body
         with
         | Error _ -> assert false
         | Ok db -> db
@@ -2258,9 +2149,7 @@ let%test_unit "constraint scenario: foreign key" =
         }
       in
       let db, _orders, _ =
-        match
-          Memory.create_tuple storage db orders order_tuple
-        with
+        match Memory.create_tuple storage db orders order_tuple with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -2316,18 +2205,14 @@ let%test_unit "constraint scenario: self-reference neq" =
         |> Schema.add "mgr_id" "natural"
       in
       let db, _rel =
-        match
-          Memory.create_relation storage db ~name:"reports_to"
-            ~schema
-        with
+        match Memory.create_relation storage db ~name:"reports_to" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
       (* Register the not_equal comparison relation *)
       let db, _ =
         match
-          Memory.create_immutable_relation storage db
-            ~name:"not_equal"
+          Memory.create_immutable_relation storage db ~name:"not_equal"
             ~schema:
               (Schema.empty
               |> Schema.add "left" "natural"
@@ -2345,8 +2230,7 @@ let%test_unit "constraint scenario: self-reference neq" =
                       <> (Obj.obj r.Attribute.value : int)
                   | _ -> false)
               | _ -> false)
-            ~cardinality:Conventions.Cardinality.AlephZero
-            ~producer:None
+            ~cardinality:Conventions.Cardinality.AlephZero ~producer:None
         with
         | Error _ -> assert false
         | Ok x -> x
@@ -2412,17 +2296,13 @@ let%test_unit "constraint scenario: open vs closed ticket" =
       in
       let schema = Schema.empty |> Schema.add "ticket_id" "natural" in
       let db, _ =
-        match
-          Memory.create_relation storage db ~name:"open_ticket"
-            ~schema
-        with
+        match Memory.create_relation storage db ~name:"open_ticket" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
       let db, _ =
         match
-          Memory.create_relation storage db ~name:"closed_ticket"
-            ~schema
+          Memory.create_relation storage db ~name:"closed_ticket" ~schema
         with
         | Error _ -> assert false
         | Ok x -> x
@@ -2430,8 +2310,8 @@ let%test_unit "constraint scenario: open vs closed ticket" =
       (* open_ticket must not be in closed_ticket *)
       let db =
         match
-          Memory.register_constraint storage db
-            ~constraint_name:"not_closed" ~relation_name:"open_ticket"
+          Memory.register_constraint storage db ~constraint_name:"not_closed"
+            ~relation_name:"open_ticket"
             ~body:
               (Constraint.Not
                  {
@@ -2497,8 +2377,7 @@ let%test_unit "constraint scenario: weak entity dependency" =
       let parent_schema = Schema.empty |> Schema.add "parent_id" "natural" in
       let db, _ =
         match
-          Memory.create_relation storage db ~name:"parent"
-            ~schema:parent_schema
+          Memory.create_relation storage db ~name:"parent" ~schema:parent_schema
         with
         | Error _ -> assert false
         | Ok x -> x
@@ -2510,8 +2389,7 @@ let%test_unit "constraint scenario: weak entity dependency" =
       in
       let db, _ =
         match
-          Memory.create_relation storage db ~name:"dependent"
-            ~schema:dep_schema
+          Memory.create_relation storage db ~name:"dependent" ~schema:dep_schema
         with
         | Error _ -> assert false
         | Ok x -> x
@@ -2519,8 +2397,8 @@ let%test_unit "constraint scenario: weak entity dependency" =
       (* dependent.parent_id must exist in parent *)
       let db =
         match
-          Memory.register_constraint storage db
-            ~constraint_name:"parent_exists" ~relation_name:"dependent"
+          Memory.register_constraint storage db ~constraint_name:"parent_exists"
+            ~relation_name:"dependent"
             ~body:
               (Constraint.MemberOf
                  {
@@ -2600,18 +2478,14 @@ let%test_unit "constraint propagation: select preserves constraints" =
       in
       let schema = Schema.empty |> Schema.add "x" "natural" in
       let db, _rel =
-        match
-          Memory.create_relation storage db ~name:"constrained"
-            ~schema
-        with
+        match Memory.create_relation storage db ~name:"constrained" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
       let db =
         match
-          Memory.register_constraint storage db
-            ~constraint_name:"c1" ~relation_name:"constrained"
-            ~body:(Constraint.And [])
+          Memory.register_constraint storage db ~constraint_name:"c1"
+            ~relation_name:"constrained" ~body:(Constraint.And [])
         with
         | Error _ -> assert false
         | Ok db -> db
@@ -2637,9 +2511,7 @@ let%test_unit "constraint propagation: project filters constraints" =
         Schema.empty |> Schema.add "x" "natural" |> Schema.add "y" "natural"
       in
       let db, _rel =
-        match
-          Memory.create_relation storage db ~name:"xy" ~schema
-        with
+        match Memory.create_relation storage db ~name:"xy" ~schema with
         | Error _ -> assert false
         | Ok x -> x
       in
@@ -2654,8 +2526,8 @@ let%test_unit "constraint propagation: project filters constraints" =
       in
       let db =
         match
-          Memory.register_constraint storage db
-            ~constraint_name:"x_only" ~relation_name:"xy" ~body:c_on_x
+          Memory.register_constraint storage db ~constraint_name:"x_only"
+            ~relation_name:"xy" ~body:c_on_x
         with
         | Error _ -> assert false
         | Ok db -> db
@@ -2799,7 +2671,6 @@ let%test_unit "prl: define predicate and query via DRL" =
           | Some attr -> assert ((Obj.obj attr.Attribute.value : int) = 1))
       | _ -> assert false)
 
-
 (* Executor tests construct AST directly, no dependency on sexp format *)
 
 let%test_unit "ddl: execute CreateDatabase" =
@@ -2837,9 +2708,7 @@ let%test_unit "dml: execute InsertTuple" =
       in
       let schema = Schema.empty |> Schema.add "name" "string" in
       let db =
-        match
-          Memory.create_relation storage db ~name:"users" ~schema
-        with
+        match Memory.create_relation storage db ~name:"users" ~schema with
         | Error _ -> assert false
         | Ok (db, _) -> db
       in
@@ -2866,9 +2735,7 @@ let%test_unit "dml: execute InsertTuples" =
       in
       let schema = Schema.empty |> Schema.add "name" "string" in
       let db =
-        match
-          Memory.create_relation storage db ~name:"users" ~schema
-        with
+        match Memory.create_relation storage db ~name:"users" ~schema with
         | Error _ -> assert false
         | Ok (db, _) -> db
       in
@@ -2902,9 +2769,7 @@ let%test_unit "dml: execute DeleteTuple" =
       in
       let schema = Schema.empty |> Schema.add "name" "string" in
       let db =
-        match
-          Memory.create_relation storage db ~name:"users" ~schema
-        with
+        match Memory.create_relation storage db ~name:"users" ~schema with
         | Error _ -> assert false
         | Ok (db, _) -> db
       in
@@ -2943,9 +2808,7 @@ let%test_unit "ddl: execute RetractRelation" =
       in
       let schema = Schema.empty in
       let db =
-        match
-          Memory.create_relation storage db ~name:"users" ~schema
-        with
+        match Memory.create_relation storage db ~name:"users" ~schema with
         | Error _ -> assert false
         | Ok (db, _) -> db
       in
@@ -2965,9 +2828,7 @@ let%test_unit "ddl: execute ClearRelation" =
       in
       let schema = Schema.empty |> Schema.add "name" "string" in
       let db =
-        match
-          Memory.create_relation storage db ~name:"users" ~schema
-        with
+        match Memory.create_relation storage db ~name:"users" ~schema with
         | Error _ -> assert false
         | Ok (db, _) -> db
       in
@@ -3113,10 +2974,7 @@ let%test_unit "dcl: execute RegisterConstraint attaches constraint" =
       in
       let schema = Schema.empty |> Schema.add "order_id" "natural" in
       let db =
-        match
-          Memory.create_relation storage db ~name:"order_items"
-            ~schema
-        with
+        match Memory.create_relation storage db ~name:"order_items" ~schema with
         | Error _ -> assert false
         | Ok (db, _) -> db
       in
@@ -3224,8 +3082,8 @@ let%test_unit "dcl: FK constraint enforced on insert" =
              })
       with
       | Error
-          (Dml.Executor.Memory.ManipulationError
-             (Error.ConstraintViolation _)) ->
+          (Dml.Executor.Memory.ManipulationError (Error.ConstraintViolation _))
+        ->
           ()
       | _ -> assert false)
 
@@ -3332,8 +3190,7 @@ let%test_unit "diff: added relation detected" =
       let schema = Schema.empty |> Schema.add "x" "natural" in
       let target, _ =
         match
-          Memory.create_relation storage ancestor ~name:"new_rel"
-            ~schema
+          Memory.create_relation storage ancestor ~name:"new_rel" ~schema
         with
         | Error _ -> assert false
         | Ok p -> p
@@ -3355,17 +3212,12 @@ let%test_unit "diff: removed relation detected" =
         | Ok db -> db
       in
       let ancestor, _ =
-        match
-          Memory.create_relation storage ancestor ~name:"gone"
-            ~schema
-        with
+        match Memory.create_relation storage ancestor ~name:"gone" ~schema with
         | Error _ -> assert false
         | Ok p -> p
       in
       let target =
-        match
-          Memory.retract_relation storage ancestor ~name:"gone"
-        with
+        match Memory.retract_relation storage ancestor ~name:"gone" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -3386,9 +3238,7 @@ let%test_unit "diff: modified relation detected with added tuple" =
         | Ok db -> db
       in
       let ancestor, _ =
-        match
-          Memory.create_relation storage ancestor ~name:"r" ~schema
-        with
+        match Memory.create_relation storage ancestor ~name:"r" ~schema with
         | Error _ -> assert false
         | Ok p -> p
       in
@@ -3417,8 +3267,7 @@ let%test_unit "diff: modified relation detected with added tuple" =
           assert (removed_tuples = [])
       | _ -> assert false)
 
-module MergeMemory =
-  Management.Merge.Make (Management.Physical.Memory) (Memory)
+module MergeMemory = Management.Merge.Make (Management.Physical.Memory) (Memory)
 
 let%test_unit "merge: fast-forward when only one side changed" =
   with_storage (fun storage ->
@@ -3429,9 +3278,7 @@ let%test_unit "merge: fast-forward when only one side changed" =
         | Ok db -> db
       in
       let base_db, _ =
-        match
-          Memory.create_relation storage base_db ~name:"r" ~schema
-        with
+        match Memory.create_relation storage base_db ~name:"r" ~schema with
         | Error _ -> assert false
         | Ok p -> p
       in
@@ -3476,9 +3323,7 @@ let%test_unit "merge: independent tuple additions produce union" =
         | Ok db -> db
       in
       let base_db, _ =
-        match
-          Memory.create_relation storage base_db ~name:"r" ~schema
-        with
+        match Memory.create_relation storage base_db ~name:"r" ~schema with
         | Error _ -> assert false
         | Ok p -> p
       in
@@ -3999,8 +3844,8 @@ let setup_fk_db storage =
   in
   let db =
     match
-      Memory.register_constraint storage db
-        ~constraint_name:"fk_dept" ~relation_name:"Employee" ~body:fk_body
+      Memory.register_constraint storage db ~constraint_name:"fk_dept"
+        ~relation_name:"Employee" ~body:fk_body
     with
     | Error _ -> assert false
     | Ok db -> db
@@ -4087,13 +3932,9 @@ let%test_unit "cascade: delete referenced row violates FK and is rejected" =
           }
       in
       (* Deleting Dept 1 while Employee references it must fail *)
-      match
-        Memory.retract_tuple storage db dept_rel
-          ~tuple_hash:dept_hash
-      with
+      match Memory.retract_tuple storage db dept_rel ~tuple_hash:dept_hash with
       | Ok _ -> assert false (* should have been rejected *)
-      | Error (Error.ConstraintViolation msg) ->
-          assert (String.length msg > 0)
+      | Error (Error.ConstraintViolation msg) -> assert (String.length msg > 0)
       | Error _ -> assert false)
 
 let%test_unit "cascade: delete unreferenced row succeeds" =
@@ -4152,16 +3993,11 @@ let%test_unit "cascade: delete unreferenced row succeeds" =
           }
       in
       (* Deleting unreferenced Dept 2 must succeed *)
-      match
-        Memory.retract_tuple storage db dept_rel
-          ~tuple_hash:dept2_hash
-      with
+      match Memory.retract_tuple storage db dept_rel ~tuple_hash:dept2_hash with
       | Error _ -> assert false
       | Ok (new_db, _) ->
           let dept =
-            match
-              Memory.get_relation new_db ~name:"Department"
-            with
+            match Memory.get_relation new_db ~name:"Department" with
             | None -> assert false
             | Some r -> r
           in
@@ -4252,9 +4088,7 @@ let%test_unit "cascade: Negative-polarity relation deletion is not checked" =
           }
       in
       (* Deleting from Blacklist (negative polarity) must not trigger cascade check *)
-      match
-        Memory.retract_tuple storage db bl_rel ~tuple_hash:bl_hash
-      with
+      match Memory.retract_tuple storage db bl_rel ~tuple_hash:bl_hash with
       | Error _ -> assert false
       | Ok _ -> ())
 
@@ -4345,16 +4179,11 @@ let%test_unit "cascade: deferred constraint not checked during retract_tuple" =
           }
       in
       (* Deferred: retract_tuple itself should NOT reject the deletion *)
-      match
-        Memory.retract_tuple storage db dept_rel
-          ~tuple_hash:dept_hash
-      with
+      match Memory.retract_tuple storage db dept_rel ~tuple_hash:dept_hash with
       | Error _ -> assert false (* deferred: must pass here *)
       | Ok (new_db, _) -> (
           (* But check_deferred_constraints must catch the violation *)
-          match
-            Memory.check_deferred_constraints storage new_db
-          with
+          match Memory.check_deferred_constraints storage new_db with
           | Ok () -> assert false (* should have caught the violation *)
           | Error (Error.ConstraintViolation _) -> ()
           | Error _ -> assert false))
@@ -4407,9 +4236,8 @@ let setup_blacklist_db storage =
       }
   in
   match
-    Memory.register_constraint storage db
-      ~constraint_name:"not_blacklisted" ~relation_name:"Employee"
-      ~body:not_body
+    Memory.register_constraint storage db ~constraint_name:"not_blacklisted"
+      ~relation_name:"Employee" ~body:not_body
   with
   | Error _ -> assert false
   | Ok db -> db
@@ -4605,8 +4433,7 @@ let%test_unit "commit: deferred violation is caught at commit boundary" =
       (* Delete the referenced department. Deferred, so retract succeeds *)
       let db =
         match
-          Memory.retract_tuple storage db dept_rel
-            ~tuple_hash:dept_hash
+          Memory.retract_tuple storage db dept_rel ~tuple_hash:dept_hash
         with
         | Error _ -> assert false
         | Ok (db, _) -> db

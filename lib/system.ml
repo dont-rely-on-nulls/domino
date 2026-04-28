@@ -23,21 +23,22 @@ type registry = {
 
 let registry : registry =
   let open Utilities.StringMap in
-  { storage =
+  {
+    storage =
       empty
       |> add "memory" (fun sexp ->
-             let ( let* ) = Result.bind in
-             let* config = Management.Physical.MemoryBackend.parse sexp in
-             let* storage = Management.Physical.Memory.create config in
-             Ok (StorageParcel ((module Management.Physical.Memory), storage)))
-  ; transport =
+          let ( let* ) = Result.bind in
+          let* config = Management.Physical.MemoryBackend.parse sexp in
+          let* storage = Management.Physical.Memory.create config in
+          Ok (StorageParcel ((module Management.Physical.Memory), storage)));
+    transport =
       empty
       |> add "tcp" (fun sexp ->
-             let ( let* ) = Result.bind in
-             let* config = Transport.TCP.parse sexp in
-             let transport = Transport.TCP.create config in
-             Ok (TransportParcel ((module Transport.TCP), transport))) }
-
+          let ( let* ) = Result.bind in
+          let* config = Transport.TCP.parse sexp in
+          let transport = Transport.TCP.create config in
+          Ok (TransportParcel ((module Transport.TCP), transport)));
+  }
 
 let assemble (config : Configuration.t) : (unit -> unit, string) result =
   let open Utilities.Result in
@@ -71,8 +72,10 @@ let assemble (config : Configuration.t) : (unit -> unit, string) result =
     C.create storage ~prelude_relations:Prelude.Standard.prelude_relations
   in
   let module L = Listener.Make (T) (S) in
-  Ok (fun () -> Scl.Executor.set_sessions (Session.create ());
-                L.run transport catalog storage)
+  Ok
+    (fun () ->
+      Scl.Executor.set_sessions (Session.create ());
+      L.run transport catalog storage)
 
 let run_from_config (path : string) : (unit -> unit, string) result =
   let ( let* ) = Result.bind in

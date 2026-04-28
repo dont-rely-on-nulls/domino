@@ -54,11 +54,11 @@ let fetch (reg : t) ~(id : string) ~(limit : int) :
            abnormally. When fetch gains a richer return type this arm
            should surface the error message instead. *)
           | Generator.Error _ -> (List.rev acc, gen, pos, false)
-          | Generator.Value (t, next) -> begin
-              match t with
+          | Generator.Value (t, next) ->
+              begin match t with
               | Tuple.Materialized m -> go next (pos + 1) (m :: acc) (count + 1)
               | Tuple.NonMaterialized _ -> go next (pos + 1) acc count
-            end
+              end
       in
       let rows, gen', pos', has_more = go cur.generator cur.position [] 0 in
       cur.generator <- gen';

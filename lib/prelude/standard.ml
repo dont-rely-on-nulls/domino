@@ -17,21 +17,20 @@ let make_comparison ~name ~domain_name ~pred ~cardinality ~generator =
   in
   let membership_criteria : (string -> Merkle.t option) -> Tuple.t -> bool =
    fun _tree_of -> function
-    | Tuple.Materialized m -> (
-        match
-          ( Tuple.AttributeMap.find_opt "left" m.attributes,
-            Tuple.AttributeMap.find_opt "right" m.attributes )
-        with
-        | Some l, Some r ->
-            pred (Stdlib.compare l.Attribute.value r.Attribute.value)
-        | _ -> false)
-    | Tuple.NonMaterialized _ -> false
+     | Tuple.Materialized m -> (
+         match
+           ( Tuple.AttributeMap.find_opt "left" m.attributes,
+             Tuple.AttributeMap.find_opt "right" m.attributes )
+         with
+         | Some l, Some r ->
+             pred (Stdlib.compare l.Attribute.value r.Attribute.value)
+         | _ -> false)
+     | Tuple.NonMaterialized _ -> false
   in
   Relation.make ~hash:None ~name ~schema ~tree:None ~constraints:None
     ~cardinality ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base name)
-    ~lineage:(Relation.Lineage.Base name)
-    ()
+    ~lineage:(Relation.Lineage.Base name) ()
 
 (** Enumerate pairs (a, b) where a < b using triangular indexing. *)
 let pair_of_nat_lt n =
@@ -180,25 +179,24 @@ let plus_natural : Relation.t =
   in
   let membership_criteria : (string -> Merkle.t option) -> Tuple.t -> bool =
    fun _tree_of -> function
-    | Tuple.Materialized m -> (
-        match
-          ( Tuple.AttributeMap.find_opt "a" m.attributes,
-            Tuple.AttributeMap.find_opt "b" m.attributes,
-            Tuple.AttributeMap.find_opt "sum" m.attributes )
-        with
-        | Some a, Some b, Some s ->
-            (Obj.magic a.Attribute.value : int)
-            + (Obj.magic b.Attribute.value : int)
-            = (Obj.magic s.Attribute.value : int)
-        | _ -> false)
-    | Tuple.NonMaterialized _ -> false
+     | Tuple.Materialized m -> (
+         match
+           ( Tuple.AttributeMap.find_opt "a" m.attributes,
+             Tuple.AttributeMap.find_opt "b" m.attributes,
+             Tuple.AttributeMap.find_opt "sum" m.attributes )
+         with
+         | Some a, Some b, Some s ->
+             (Obj.magic a.Attribute.value : int)
+             + (Obj.magic b.Attribute.value : int)
+             = (Obj.magic s.Attribute.value : int)
+         | _ -> false)
+     | Tuple.NonMaterialized _ -> false
   in
   Relation.make ~hash:None ~name:"natural_plus" ~schema ~tree:None
     ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
     ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base "plus")
-    ~lineage:(Relation.Lineage.Base "plus")
-    ()
+    ~lineage:(Relation.Lineage.Base "plus") ()
 
 let times_natural : Relation.t =
   let schema =
@@ -220,25 +218,24 @@ let times_natural : Relation.t =
   in
   let membership_criteria : (string -> Merkle.t option) -> Tuple.t -> bool =
    fun _tree_of -> function
-    | Tuple.Materialized m -> (
-        match
-          ( Tuple.AttributeMap.find_opt "a" m.attributes,
-            Tuple.AttributeMap.find_opt "b" m.attributes,
-            Tuple.AttributeMap.find_opt "product" m.attributes )
-        with
-        | Some a, Some b, Some p ->
-            (Obj.magic a.Attribute.value : int)
-            * (Obj.magic b.Attribute.value : int)
-            = (Obj.magic p.Attribute.value : int)
-        | _ -> false)
-    | Tuple.NonMaterialized _ -> false
+     | Tuple.Materialized m -> (
+         match
+           ( Tuple.AttributeMap.find_opt "a" m.attributes,
+             Tuple.AttributeMap.find_opt "b" m.attributes,
+             Tuple.AttributeMap.find_opt "product" m.attributes )
+         with
+         | Some a, Some b, Some p ->
+             (Obj.magic a.Attribute.value : int)
+             * (Obj.magic b.Attribute.value : int)
+             = (Obj.magic p.Attribute.value : int)
+         | _ -> false)
+     | Tuple.NonMaterialized _ -> false
   in
   Relation.make ~hash:None ~name:"natural_times" ~schema ~tree:None
     ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
     ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base "times")
-    ~lineage:(Relation.Lineage.Base "times")
-    ()
+    ~lineage:(Relation.Lineage.Base "times") ()
 
 let minus_natural : Relation.t =
   let schema =
@@ -261,26 +258,25 @@ let minus_natural : Relation.t =
   in
   let membership_criteria : (string -> Merkle.t option) -> Tuple.t -> bool =
    fun _tree_of -> function
-    | Tuple.Materialized m -> (
-        match
-          ( Tuple.AttributeMap.find_opt "a" m.attributes,
-            Tuple.AttributeMap.find_opt "b" m.attributes,
-            Tuple.AttributeMap.find_opt "difference" m.attributes )
-        with
-        | Some a, Some b, Some d ->
-            let av = (Obj.magic a.Attribute.value : int) in
-            let bv = (Obj.magic b.Attribute.value : int) in
-            let dv = (Obj.magic d.Attribute.value : int) in
-            av - bv = dv && dv >= 0
-        | _ -> false)
-    | Tuple.NonMaterialized _ -> false
+     | Tuple.Materialized m -> (
+         match
+           ( Tuple.AttributeMap.find_opt "a" m.attributes,
+             Tuple.AttributeMap.find_opt "b" m.attributes,
+             Tuple.AttributeMap.find_opt "difference" m.attributes )
+         with
+         | Some a, Some b, Some d ->
+             let av = (Obj.magic a.Attribute.value : int) in
+             let bv = (Obj.magic b.Attribute.value : int) in
+             let dv = (Obj.magic d.Attribute.value : int) in
+             av - bv = dv && dv >= 0
+         | _ -> false)
+     | Tuple.NonMaterialized _ -> false
   in
   Relation.make ~hash:None ~name:"natural_minus" ~schema ~tree:None
     ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
     ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base "minus")
-    ~lineage:(Relation.Lineage.Base "minus")
-    ()
+    ~lineage:(Relation.Lineage.Base "minus") ()
 
 let divide_natural : Relation.t =
   let schema =
@@ -311,37 +307,38 @@ let divide_natural : Relation.t =
   in
   let membership_criteria : (string -> Merkle.t option) -> Tuple.t -> bool =
    fun _tree_of -> function
-    | Tuple.Materialized m -> (
-        match
-          ( Tuple.AttributeMap.find_opt "a" m.attributes,
-            Tuple.AttributeMap.find_opt "b" m.attributes,
-            Tuple.AttributeMap.find_opt "quotient" m.attributes,
-            Tuple.AttributeMap.find_opt "remainder" m.attributes )
-        with
-        | Some a, Some b, Some q, Some r ->
-            let av = (Obj.magic a.Attribute.value : int) in
-            let bv = (Obj.magic b.Attribute.value : int) in
-            let qv = (Obj.magic q.Attribute.value : int) in
-            let rv = (Obj.magic r.Attribute.value : int) in
-            bv > 0 && av = (bv * qv) + rv && rv >= 0 && rv < bv
-        | _ -> false)
-    | Tuple.NonMaterialized _ -> false
+     | Tuple.Materialized m -> (
+         match
+           ( Tuple.AttributeMap.find_opt "a" m.attributes,
+             Tuple.AttributeMap.find_opt "b" m.attributes,
+             Tuple.AttributeMap.find_opt "quotient" m.attributes,
+             Tuple.AttributeMap.find_opt "remainder" m.attributes )
+         with
+         | Some a, Some b, Some q, Some r ->
+             let av = (Obj.magic a.Attribute.value : int) in
+             let bv = (Obj.magic b.Attribute.value : int) in
+             let qv = (Obj.magic q.Attribute.value : int) in
+             let rv = (Obj.magic r.Attribute.value : int) in
+             bv > 0 && av = (bv * qv) + rv && rv >= 0 && rv < bv
+         | _ -> false)
+     | Tuple.NonMaterialized _ -> false
   in
   Relation.make ~hash:None ~name:"natural_divide" ~schema ~tree:None
     ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
     ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base "divide")
-    ~lineage:(Relation.Lineage.Base "divide")
-    ()
+    ~lineage:(Relation.Lineage.Base "divide") ()
 
 let prelude_relations =
-  [ less_than_natural
-  ; less_than_or_equal_natural
-  ; greater_than_natural
-  ; greater_than_or_equal_natural
-  ; equal_natural
-  ; not_equal_natural
-  ; plus_natural
-  ; times_natural
-  ; minus_natural
-  ; divide_natural ]
+  [
+    less_than_natural;
+    less_than_or_equal_natural;
+    greater_than_natural;
+    greater_than_or_equal_natural;
+    equal_natural;
+    not_equal_natural;
+    plus_natural;
+    times_natural;
+    minus_natural;
+    divide_natural;
+  ]

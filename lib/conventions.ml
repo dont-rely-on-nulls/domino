@@ -20,8 +20,7 @@ module Cardinality = struct
 end
 
 module Purity = struct
-  type t = Pure | IO
-  [@@deriving sexp]
+  type t = Pure | IO [@@deriving sexp]
 end
 
 module AbstractValue = struct

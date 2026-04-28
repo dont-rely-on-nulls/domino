@@ -9,9 +9,9 @@ module Make (Storage : Management.Physical.S) = struct
   let sexp_of_error e =
     let open Sexplib.Sexp in
     match e with
-    | ParseError s        -> List [Atom "parse-error";      Atom s]
+    | ParseError s -> List [ Atom "parse-error"; Atom s ]
     | ManipulationError e -> Error.sexp_of_error e
-    | ConversionError s   -> List [Atom "conversion-error"; Atom s]
+    | ConversionError s -> List [ Atom "conversion-error"; Atom s ]
 
   let wrap_manip = Result.map_error (fun e -> ManipulationError e)
 

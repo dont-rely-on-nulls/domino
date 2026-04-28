@@ -9,9 +9,8 @@ type tagged = { tag : string; payload : Sexplib.Sexp.t }
 let parse (input : Sexplib.Sexp.t) : (tagged, Error.t) Result.t =
   match input with
   | Sexplib.Sexp.List (Sexplib.Sexp.Atom tag :: rest) ->
-    let payload = match rest with
-      | [single] -> single
-      | many -> Sexplib.Sexp.List many
-    in
-    Ok { tag; payload }
+      let payload =
+        match rest with [ single ] -> single | many -> Sexplib.Sexp.List many
+      in
+      Ok { tag; payload }
   | s -> Error (Error.MalformedExpression s)

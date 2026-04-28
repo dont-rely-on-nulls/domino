@@ -61,8 +61,7 @@ let multigroup_schema : Schema.t = Schema.empty |> Schema.add "name" "string"
 let schema_schema : Schema.t = Schema.empty |> Schema.add "name" "string"
 
 let function_predicate_schema : Schema.t =
-  Schema.empty
-  |> Schema.add "name" "string"
+  Schema.empty |> Schema.add "name" "string"
   |> Schema.add "symbol" "string"
   |> Schema.add "cardinality" "string"
   |> Schema.add "purity" "string"
@@ -165,8 +164,7 @@ let build_schema_tuple schema_name : Tuple.materialized =
         { Attribute.value = Obj.magic schema_name };
   }
 
-let purity_to_string p =
-  Sexplib.Sexp.to_string (Conventions.Purity.sexp_of_t p)
+let purity_to_string p = Sexplib.Sexp.to_string (Conventions.Purity.sexp_of_t p)
 
 let purity_of_string s =
   match Conventions.Purity.t_of_sexp (Sexplib.Sexp.of_string s) with
@@ -190,10 +188,10 @@ let build_function_predicate_tuple ~name ~symbol ~cardinality ~purity :
         [
           ("name", { Attribute.value = Obj.magic name });
           ("symbol", { Attribute.value = Obj.magic symbol });
-          ("cardinality",
-           { Attribute.value = Obj.magic (cardinality_to_string cardinality) });
-          ("purity",
-           { Attribute.value = Obj.magic (purity_to_string purity) });
+          ( "cardinality",
+            { Attribute.value = Obj.magic (cardinality_to_string cardinality) }
+          );
+          ("purity", { Attribute.value = Obj.magic (purity_to_string purity) });
         ];
   }
 
@@ -201,7 +199,5 @@ let build_loaded_library_tuple path : Tuple.materialized =
   {
     Tuple.relation = loaded_library_rel_name;
     attributes =
-      Tuple.AttributeMap.singleton "path"
-        { Attribute.value = Obj.magic path };
+      Tuple.AttributeMap.singleton "path" { Attribute.value = Obj.magic path };
   }
-

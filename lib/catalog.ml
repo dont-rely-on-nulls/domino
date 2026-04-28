@@ -1,9 +1,9 @@
 (** Multi-multigroup catalog.
 
     Each multigroup gets its own [Atomic.t], so mutations to independent
-    multigroups never contend.  The [sakura] multigroup is auto-bootstrapped,
-    undeletable, and self-referential: it carries a [public:multigroup]
-    relation listing every registered multigroup. *)
+    multigroups never contend. The [sakura] multigroup is auto-bootstrapped,
+    undeletable, and self-referential: it carries a [public:multigroup] relation
+    listing every registered multigroup. *)
 
 type t = {
   multigroups : Management.Database.t Atomic.t Utilities.StringMap.t Atomic.t;
@@ -19,8 +19,8 @@ module Make (S : Management.Physical.S with type error = string) = struct
 
   type nonrec t = t
 
-  let map_error r = Result.map_error
-    (fun e -> Sexplib.Sexp.to_string (Error.sexp_of_error e)) r
+  let map_error r =
+    Result.map_error (fun e -> Sexplib.Sexp.to_string (Error.sexp_of_error e)) r
 
   let get catalog name =
     Utilities.StringMap.find_opt name (Atomic.get catalog.multigroups)
@@ -42,14 +42,15 @@ module Make (S : Management.Physical.S with type error = string) = struct
       DB; effective when loading a previously persisted multigroup. *)
   let hydrate_prl_libraries storage (db : Management.Database.t) =
     match
-      Management.Database.get_relation db Prelude.Catalog.loaded_library_rel_name
+      Management.Database.get_relation db
+        Prelude.Catalog.loaded_library_rel_name
     with
     | None -> ()
-    | Some rel ->
+    | Some rel -> (
         let hashes =
           match rel.Relation.tree with None -> [] | Some t -> Merkle.keys t
         in
-        (match Manip.load_tuples storage hashes with
+        match Manip.load_tuples storage hashes with
         | Error _ -> ()
         | Ok tuples ->
             List.iter
@@ -69,19 +70,21 @@ module Make (S : Management.Physical.S with type error = string) = struct
     with
     | Ok (new_db, _) -> new_db
     | Error e ->
-        Printf.eprintf "Warning: prelude relation %s: %s\n%!"
-          rel.name (Sexplib.Sexp.to_string (Error.sexp_of_error e));
+        Printf.eprintf "Warning: prelude relation %s: %s\n%!" rel.name
+          (Sexplib.Sexp.to_string (Error.sexp_of_error e));
         db
 
   (** Create DB + seed catalog + fold in [prelude_relations] + hydrate PRL. *)
   let bootstrap_multigroup storage ~prelude_relations ~name =
     let* db = Manip.create_database storage ~name |> map_error in
-    let db = List.fold_left (register_prelude_relation storage) db prelude_relations in
+    let db =
+      List.fold_left (register_prelude_relation storage) db prelude_relations
+    in
     hydrate_prl_libraries storage db;
     Ok db
 
-  (** Create additional catalog relations beyond the base six.
-      Used to seed [public:multigroup] into the sakura multigroup only. *)
+  (** Create additional catalog relations beyond the base six. Used to seed
+      [public:multigroup] into the sakura multigroup only. *)
   let seed_extra_catalog storage ~definitions db =
     List.fold_left
       (fun acc (name, schema) ->
@@ -92,13 +95,14 @@ module Make (S : Management.Physical.S with type error = string) = struct
         Ok new_db)
       (Ok db) definitions
 
-  (** Write a tuple into sakura's [public:multigroup] and update the ref.
-      No-op if the relation doesn't exist yet (bootstrap ordering). *)
+  (** Write a tuple into sakura's [public:multigroup] and update the ref. No-op
+      if the relation doesn't exist yet (bootstrap ordering). *)
   let register_in_sakura storage sakura_ref mg_name =
     let rec go () =
       let sakura = Atomic.get sakura_ref in
       match
-        Management.Database.get_relation sakura Prelude.Catalog.multigroup_rel_name
+        Management.Database.get_relation sakura
+          Prelude.Catalog.multigroup_rel_name
       with
       | None -> Ok ()
       | Some mg_rel ->
@@ -122,29 +126,39 @@ module Make (S : Management.Physical.S with type error = string) = struct
     let sakura_ref = Atomic.make sakura_db in
     let* () = register_in_sakura storage sakura_ref sakura_name in
     let map = Utilities.StringMap.singleton sakura_name sakura_ref in
-    Ok { multigroups = Atomic.make map; default_multigroup = sakura_name; mutex = Mutex.create () }
+    Ok
+      {
+        multigroups = Atomic.make map;
+        default_multigroup = sakura_name;
+        mutex = Mutex.create ();
+      }
 
   let add catalog storage ~prelude_relations name =
     Mutex.protect catalog.mutex (fun () ->
-      let map = Atomic.get catalog.multigroups in
-      if Utilities.StringMap.mem name map then
-        Error (Printf.sprintf "Multigroup %s already exists" name)
-      else
-        let* db = bootstrap_multigroup storage ~prelude_relations ~name in
-        let db_ref = Atomic.make db in
-        let* () =
-          match Utilities.StringMap.find_opt sakura_name map with
-          | Some sakura_ref -> register_in_sakura storage sakura_ref name
-          | None -> Ok ()
-        in
-        let new_map = Utilities.StringMap.add name db_ref map in
-        let* () = publish_multigroups catalog ~expected:map ~updated:new_map in
-        Ok db_ref)
+        let map = Atomic.get catalog.multigroups in
+        if Utilities.StringMap.mem name map then
+          Error (Printf.sprintf "Multigroup %s already exists" name)
+        else
+          let* db = bootstrap_multigroup storage ~prelude_relations ~name in
+          let db_ref = Atomic.make db in
+          let* () =
+            match Utilities.StringMap.find_opt sakura_name map with
+            | Some sakura_ref -> register_in_sakura storage sakura_ref name
+            | None -> Ok ()
+          in
+          let new_map = Utilities.StringMap.add name db_ref map in
+          let* () =
+            publish_multigroups catalog ~expected:map ~updated:new_map
+          in
+          Ok db_ref)
 
   let unregister_from_sakura storage sakura_ref mg_name =
     let rec go () =
       let sakura = Atomic.get sakura_ref in
-      match Management.Database.get_relation sakura Prelude.Catalog.multigroup_rel_name with
+      match
+        Management.Database.get_relation sakura
+          Prelude.Catalog.multigroup_rel_name
+      with
       | None -> Ok ()
       | Some mg_rel ->
           let tuple_hash =
@@ -159,22 +173,22 @@ module Make (S : Management.Physical.S with type error = string) = struct
     go ()
 
   let remove catalog storage name =
-    if name = sakura_name then
-      Error "Cannot remove the sakura system catalog"
+    if name = sakura_name then Error "Cannot remove the sakura system catalog"
     else
       Mutex.protect catalog.mutex (fun () ->
-        let map = Atomic.get catalog.multigroups in
-        if not (Utilities.StringMap.mem name map) then
-          Error (Printf.sprintf "Multigroup %s does not exist" name)
-        else
-          let* () =
-            match Utilities.StringMap.find_opt sakura_name map with
-            | None -> Ok ()
-            | Some sakura_ref -> unregister_from_sakura storage sakura_ref name
-          in
-          let new_map = Utilities.StringMap.remove name map in
-          let* () =
-            publish_multigroups catalog ~expected:map ~updated:new_map
-          in
-          Ok ())
+          let map = Atomic.get catalog.multigroups in
+          if not (Utilities.StringMap.mem name map) then
+            Error (Printf.sprintf "Multigroup %s does not exist" name)
+          else
+            let* () =
+              match Utilities.StringMap.find_opt sakura_name map with
+              | None -> Ok ()
+              | Some sakura_ref ->
+                  unregister_from_sakura storage sakura_ref name
+            in
+            let new_map = Utilities.StringMap.remove name map in
+            let* () =
+              publish_multigroups catalog ~expected:map ~updated:new_map
+            in
+            Ok ())
 end

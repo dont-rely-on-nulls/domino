@@ -79,7 +79,6 @@ module Make (Storage : Management.Physical.S) = struct
 
   let of_string_error s = Error.StorageError s
   let ( let* ) = Result.bind
-
   let normalize_name n = Qualified_name.(parse n |> to_key)
 
   let rec normalize_constraint_body c =
@@ -92,7 +91,8 @@ module Make (Storage : Management.Physical.S) = struct
             body = normalize_constraint_body body;
             universe = normalize_name universe;
           }
-    | Constraint.And cs -> Constraint.And (List.map normalize_constraint_body cs)
+    | Constraint.And cs ->
+        Constraint.And (List.map normalize_constraint_body cs)
     | Constraint.Or cs -> Constraint.Or (List.map normalize_constraint_body cs)
     | Constraint.Exists { variable; quantifier; body } ->
         Constraint.Exists
@@ -252,8 +252,7 @@ module Make (Storage : Management.Physical.S) = struct
             ~membership_criteria:
               (build_membership_criteria ~name:stored.name stored.schema)
             ~provenance:(Relation.Provenance.Base stored.name)
-            ~lineage:(Relation.Lineage.Base stored.name)
-            ()
+            ~lineage:(Relation.Lineage.Base stored.name) ()
         in
         Ok (Some relation)
 
@@ -319,8 +318,7 @@ module Make (Storage : Management.Physical.S) = struct
           ~generator:None
           ~membership_criteria:(build_membership_criteria ~name schema)
           ~provenance:(Relation.Provenance.Base name)
-          ~lineage:(Relation.Lineage.Base name)
-          ()
+          ~lineage:(Relation.Lineage.Base name) ()
       in
       let new_db = Management.Database.add_relation db ~relation in
       let* () = store_relation storage relation in
@@ -846,8 +844,7 @@ module Make (Storage : Management.Physical.S) = struct
           ~generator:None
           ~membership_criteria:(build_membership_criteria ~name schema)
           ~provenance:(Relation.Provenance.Base name)
-          ~lineage:(Relation.Lineage.Base name)
-          ()
+          ~lineage:(Relation.Lineage.Base name) ()
       in
       let new_db = Management.Database.add_relation db ~relation in
       let* () = store_relation storage relation in
@@ -872,10 +869,9 @@ module Make (Storage : Management.Physical.S) = struct
       let relation =
         Relation.make ~hash:(Some relation_hash) ~name ~schema
           ~tree:None (* No tree for generator-based relations *)
-          ~constraints:None ~cardinality ~generator:(Some generator)
-          ~producer ~membership_criteria ~provenance:(Relation.Provenance.Base name)
-          ~lineage:(Relation.Lineage.Base name)
-          ()
+          ~constraints:None ~cardinality ~generator:(Some generator) ~producer
+          ~membership_criteria ~provenance:(Relation.Provenance.Base name)
+          ~lineage:(Relation.Lineage.Base name) ()
       in
       let new_db = Management.Database.add_relation db ~relation in
       let* () = store_relation storage relation in

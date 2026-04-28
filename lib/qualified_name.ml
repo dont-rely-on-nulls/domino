@@ -6,11 +6,7 @@
     - ["mg:schema:relation"]   -> { multigroup=mg; schema; relation }
 *)
 
-type t = {
-  multigroup : string;
-  schema : string;
-  relation : string;
-}
+type t = { multigroup : string; schema : string; relation : string }
 
 let default_schema = "public"
 

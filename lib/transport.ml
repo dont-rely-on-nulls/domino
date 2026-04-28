@@ -22,27 +22,30 @@ module TCP : TRANSPORT = struct
 
   let sockaddr_of_fields = function
     | `Inet (addr, port) ->
-        Ok { address_family = Unix.PF_INET;
-             sockaddr = Unix.ADDR_INET (Unix.inet_addr_of_string addr, port) }
+        Ok
+          {
+            address_family = Unix.PF_INET;
+            sockaddr = Unix.ADDR_INET (Unix.inet_addr_of_string addr, port);
+          }
     | `Unix path ->
-        Ok { address_family = Unix.PF_UNIX;
-             sockaddr = Unix.ADDR_UNIX path }
+        Ok { address_family = Unix.PF_UNIX; sockaddr = Unix.ADDR_UNIX path }
 
   let parse sexp =
     let open Sexplib.Sexp in
     let errorf fmt = Printf.ksprintf (fun s -> Error s) fmt in
     let rec go addr port path = function
-      | [] ->
-          (match addr, port, path with
-           | Some a, Some p, None -> sockaddr_of_fields (`Inet (a, p))
-           | None, None, Some s -> sockaddr_of_fields (`Unix s)
-           | None, None, None -> errorf "transport/tcp: no address fields"
-           | _ -> errorf "transport/tcp: use (address + port) or (path), not both")
+      | [] -> (
+          match (addr, port, path) with
+          | Some a, Some p, None -> sockaddr_of_fields (`Inet (a, p))
+          | None, None, Some s -> sockaddr_of_fields (`Unix s)
+          | None, None, None -> errorf "transport/tcp: no address fields"
+          | _ ->
+              errorf "transport/tcp: use (address + port) or (path), not both")
       | List [ Atom "address"; Atom a ] :: rest -> go (Some a) port path rest
-      | List [ Atom "port"; Atom p ] :: rest ->
-          (match int_of_string_opt p with
-           | Some n -> go addr (Some n) path rest
-           | None -> errorf "transport/tcp: invalid port: %s" p)
+      | List [ Atom "port"; Atom p ] :: rest -> (
+          match int_of_string_opt p with
+          | Some n -> go addr (Some n) path rest
+          | None -> errorf "transport/tcp: invalid port: %s" p)
       | List [ Atom "path"; Atom p ] :: rest -> go addr port (Some p) rest
       | bad :: _ -> errorf "transport/tcp: unexpected: %s" (to_string bad)
     in
@@ -63,7 +66,8 @@ module TCP : TRANSPORT = struct
 
   let listen fd =
     Unix.listen fd 5;
-    Printf.printf "Listening on %s\n%!" (string_of_sockaddr (Unix.getsockname fd))
+    Printf.printf "Listening on %s\n%!"
+      (string_of_sockaddr (Unix.getsockname fd))
 
   let accept fd =
     let conn, _ = Unix.accept fd in
