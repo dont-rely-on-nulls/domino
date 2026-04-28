@@ -33,13 +33,39 @@ module Make (S : Management.Physical.S with type error = string) = struct
     if Atomic.compare_and_set catalog.multigroups expected updated then Ok ()
     else Error "Concurrent multigroup map update detected"
 
+  let get_string_attr attr (t : Tuple.materialized) =
+    Option.map
+      (fun a -> (Obj.magic a.Attribute.value : string))
+      (Tuple.AttributeMap.find_opt attr t.attributes)
+
+  (** Dynlink every library recorded in public:loaded_library. No-op on a fresh
+      DB; effective when loading a previously persisted multigroup. *)
+  let hydrate_prl_libraries storage (db : Management.Database.t) =
+    match
+      Management.Database.get_relation db Prelude.Catalog.loaded_library_rel_name
+    with
+    | None -> ()
+    | Some rel ->
+        let hashes =
+          match rel.Relation.tree with None -> [] | Some t -> Merkle.keys t
+        in
+        (match Manip.load_tuples storage hashes with
+        | Error _ -> ()
+        | Ok tuples ->
+            List.iter
+              (fun t ->
+                match get_string_attr "path" t with
+                | None -> ()
+                | Some path -> ignore (Prl.Runtime.load_library path))
+              tuples)
+
   (** Swallow errors: a missing prelude relation is non-fatal. *)
   let register_prelude_relation storage db (rel : Relation.t) =
     match
       Manip.create_immutable_relation storage db ~name:rel.name
         ~schema:rel.schema ~generator:(Option.get rel.generator)
         ~membership_criteria:rel.membership_criteria
-        ~cardinality:rel.cardinality
+        ~cardinality:rel.cardinality ~producer:None
     with
     | Ok (new_db, _) -> new_db
     | Error e ->
@@ -47,10 +73,12 @@ module Make (S : Management.Physical.S with type error = string) = struct
           rel.name (Sexplib.Sexp.to_string (Error.sexp_of_error e));
         db
 
-  (** Create DB + seed catalog + fold in [prelude_relations]. *)
+  (** Create DB + seed catalog + fold in [prelude_relations] + hydrate PRL. *)
   let bootstrap_multigroup storage ~prelude_relations ~name =
     let* db = Manip.create_database storage ~name |> map_error in
-    Ok (List.fold_left (register_prelude_relation storage) db prelude_relations)
+    let db = List.fold_left (register_prelude_relation storage) db prelude_relations in
+    hydrate_prl_libraries storage db;
+    Ok db
 
   (** Create additional catalog relations beyond the base six.
       Used to seed [public:multigroup] into the sakura multigroup only. *)

@@ -28,6 +28,8 @@ module Lineage = struct
     | Aggregate of string * string * t
 end
 
+type producer = (string * Conventions.AbstractValue.t) list -> Generator.t
+
 type t = {
   hash : Conventions.Hash.t option;
   name : Conventions.Name.t;
@@ -36,13 +38,13 @@ type t = {
   constraints : RelationConstraint.t option;
   cardinality : Conventions.Cardinality.t;
   generator : Generator.t option;
+  producer : producer option;
   membership_criteria : (string -> Tree.t option) -> Tuple.t -> bool;
   provenance : Provenance.t;
   lineage : Lineage.t;
 }
 
-let make ~hash ~name ~schema ~tree ~constraints ~cardinality ~generator
-    ~membership_criteria ~provenance ~lineage =
+let make ?(producer = None) ~hash ~name ~schema ~tree ~constraints ~cardinality ~generator ~membership_criteria ~provenance ~lineage () =
   {
     hash;
     name;
@@ -51,6 +53,7 @@ let make ~hash ~name ~schema ~tree ~constraints ~cardinality ~generator
     constraints;
     cardinality;
     generator;
+    producer;
     membership_criteria;
     provenance;
     lineage;

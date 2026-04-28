@@ -16,7 +16,7 @@ module Make (Storage : Management.Physical.S) = struct
 
   let execute storage db ast =
     match Exec.execute storage db ast with
-    | Ok (db, msg) -> Ok (Sublanguage_types.Transition (db, msg))
+    | Ok (db, _) -> Ok (Sublanguage_types.Transition db)
     | Error e -> Error e
 
   let sexp_of_error = Exec.sexp_of_error

@@ -253,6 +253,7 @@ module Make (Storage : Management.Physical.S) = struct
               (build_membership_criteria ~name:stored.name stored.schema)
             ~provenance:(Relation.Provenance.Base stored.name)
             ~lineage:(Relation.Lineage.Base stored.name)
+            ()
         in
         Ok (Some relation)
 
@@ -319,6 +320,7 @@ module Make (Storage : Management.Physical.S) = struct
           ~membership_criteria:(build_membership_criteria ~name schema)
           ~provenance:(Relation.Provenance.Base name)
           ~lineage:(Relation.Lineage.Base name)
+          ()
       in
       let new_db = Management.Database.add_relation db ~relation in
       let* () = store_relation storage relation in
@@ -845,6 +847,7 @@ module Make (Storage : Management.Physical.S) = struct
           ~membership_criteria:(build_membership_criteria ~name schema)
           ~provenance:(Relation.Provenance.Base name)
           ~lineage:(Relation.Lineage.Base name)
+          ()
       in
       let new_db = Management.Database.add_relation db ~relation in
       let* () = store_relation storage relation in
@@ -856,7 +859,8 @@ module Make (Storage : Management.Physical.S) = struct
   let create_immutable_relation (storage : storage) (db : Management.Database.t)
       ~(name : string) ~(schema : Schema.t) ~(generator : Generator.t)
       ~(membership_criteria : (string -> Merkle.t option) -> Tuple.t -> bool)
-      ~(cardinality : Conventions.Cardinality.t) :
+      ~(cardinality : Conventions.Cardinality.t)
+      ~(producer : Relation.producer option) :
       (Management.Database.t * Relation.t, error) Result.t =
     let name = normalize_name name in
     if Management.Database.has_relation db name then
@@ -869,8 +873,9 @@ module Make (Storage : Management.Physical.S) = struct
         Relation.make ~hash:(Some relation_hash) ~name ~schema
           ~tree:None (* No tree for generator-based relations *)
           ~constraints:None ~cardinality ~generator:(Some generator)
-          ~membership_criteria ~provenance:(Relation.Provenance.Base name)
+          ~producer ~membership_criteria ~provenance:(Relation.Provenance.Base name)
           ~lineage:(Relation.Lineage.Base name)
+          ()
       in
       let new_db = Management.Database.add_relation db ~relation in
       let* () = store_relation storage relation in

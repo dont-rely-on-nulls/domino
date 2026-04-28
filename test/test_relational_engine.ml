@@ -150,6 +150,7 @@ let%test_unit "database: add relation" =
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "users")
+      ()
   in
   let db = Management.Database.add_relation db ~relation in
   assert (Management.Database.has_relation db "users");
@@ -165,6 +166,7 @@ let%test_unit "database: remove relation" =
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "users")
+      ()
   in
   let db = Management.Database.add_relation db ~relation in
   assert (Management.Database.has_relation db "users");
@@ -180,6 +182,7 @@ let%test_unit "database: update relation" =
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "users")
+      ()
   in
   let db = Management.Database.add_relation db ~relation in
   let old_db_hash = db.hash in
@@ -198,6 +201,7 @@ let%test_unit "database: get relation names" =
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "users")
+      ()
   in
   let rel2 =
     Relation.make ~hash:(Some "h2") ~name:"orders" ~schema:Schema.empty
@@ -206,6 +210,7 @@ let%test_unit "database: get relation names" =
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "orders")
+      ()
   in
   let db = Management.Database.add_relation db ~relation:rel1 in
   let db = Management.Database.add_relation db ~relation:rel2 in
@@ -2341,6 +2346,7 @@ let%test_unit "constraint scenario: self-reference neq" =
                   | _ -> false)
               | _ -> false)
             ~cardinality:Conventions.Cardinality.AlephZero
+            ~producer:None
         with
         | Error _ -> assert false
         | Ok x -> x
@@ -2729,6 +2735,70 @@ let%test_unit "ddl: round-trip RegisterDomain" =
   match Ddl.Parser.of_string (Ddl.Parser.to_string src) with
   | Error _ -> assert false
   | Ok parsed -> assert (parsed = src)
+
+let%test_unit "prl: round-trip DefineFunctionPredicate" =
+  let src =
+    Prl.Ast.DefineFunctionPredicate
+      {
+        name = "numbers:ones";
+        schema = [ ("x", "natural") ];
+        symbol = "test.ones";
+        purity = Conventions.Purity.Pure;
+        cardinality = Conventions.Cardinality.ConstrainedFinite;
+      }
+  in
+  match Prl.Parser.of_string (Prl.Parser.to_string src) with
+  | Error _ -> assert false
+  | Ok parsed -> assert (parsed = src)
+
+let%test_unit "prl: define predicate and query via DRL" =
+  with_storage (fun storage ->
+      let db =
+        match Memory.create_database storage ~name:"prl_db" with
+        | Error _ -> assert false
+        | Ok db -> db
+      in
+      Sakura_prl_api.register "test.ones"
+        (Sakura_prl_api.implementation_of_rows
+           ~membership_criteria:(fun tuple ->
+             match List.assoc_opt "x" tuple with
+             | Some v -> Ok ((Obj.obj v : int) = 1)
+             | None -> Ok false)
+           [ [ ("x", Obj.repr 1) ] ]);
+      let stmt =
+        Prl.Ast.DefineFunctionPredicate
+          {
+            name = "ones";
+            schema = [ ("x", "natural") ];
+            symbol = "test.ones";
+            purity = Conventions.Purity.Pure;
+            cardinality = Conventions.Cardinality.ConstrainedFinite;
+          }
+      in
+      let db =
+        match Prl.Executor.Memory.execute storage db stmt with
+        | Error _ -> assert false
+        | Ok (Sublanguage_types.Transition new_db) -> new_db
+        | Ok _ -> assert false
+      in
+      let rel =
+        match Drl.Executor.Memory.execute storage db (Drl.Ast.Base "ones") with
+        | Error _ -> assert false
+        | Ok rel -> rel
+      in
+      let tuples =
+        match Algebra.Memory.materialize storage rel with
+        | Error _ -> assert false
+        | Ok tuples -> tuples
+      in
+      assert (List.length tuples = 1);
+      match tuples with
+      | [ tuple ] -> (
+          match Tuple.AttributeMap.find_opt "x" tuple.Tuple.attributes with
+          | None -> assert false
+          | Some attr -> assert ((Obj.obj attr.Attribute.value : int) = 1))
+      | _ -> assert false)
+
 
 (* Executor tests construct AST directly, no dependency on sexp format *)
 

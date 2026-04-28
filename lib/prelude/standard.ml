@@ -31,6 +31,7 @@ let make_comparison ~name ~domain_name ~pred ~cardinality ~generator =
     ~cardinality ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base name)
     ~lineage:(Relation.Lineage.Base name)
+    ()
 
 (** Enumerate pairs (a, b) where a < b using triangular indexing. *)
 let pair_of_nat_lt n =
@@ -197,6 +198,7 @@ let plus_natural : Relation.t =
     ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base "plus")
     ~lineage:(Relation.Lineage.Base "plus")
+    ()
 
 let times_natural : Relation.t =
   let schema =
@@ -236,6 +238,7 @@ let times_natural : Relation.t =
     ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base "times")
     ~lineage:(Relation.Lineage.Base "times")
+    ()
 
 let minus_natural : Relation.t =
   let schema =
@@ -277,6 +280,7 @@ let minus_natural : Relation.t =
     ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base "minus")
     ~lineage:(Relation.Lineage.Base "minus")
+    ()
 
 let divide_natural : Relation.t =
   let schema =
@@ -328,6 +332,7 @@ let divide_natural : Relation.t =
     ~generator:(Some generator) ~membership_criteria
     ~provenance:(Relation.Provenance.Base "divide")
     ~lineage:(Relation.Lineage.Base "divide")
+    ()
 
 let prelude_relations =
   [ less_than_natural
