@@ -5,7 +5,7 @@ param(
   [string[]]$Command,
   [string]$CommandsPath,
   [switch]$UseExistingServer,
-  [bool]$UseOpamInstalledServer = $true,
+  [switch]$UseLocalServer,
   [switch]$SkipBuild,
   [switch]$NoInteractive
 )
@@ -29,14 +29,14 @@ function Start-SakuraServer {
 
   Write-Host "Starting Sakura server with config $Config ..."
   $filePath = "dune"
-  $args = @("exec", "sakura-server", "--", $Config)
+  $serverArgs = @("exec", "sakura-server", "--", $Config)
   if ($UseOpam) {
     $filePath = "opam"
-    $args = @("exec", "--", "sakura-server", $Config)
+    $serverArgs = @("exec", "--", "sakura-server", $Config)
   }
 
   $proc = Start-Process -FilePath $filePath `
-    -ArgumentList $args `
+    -ArgumentList $serverArgs `
     -WorkingDirectory $WorkingDirectory `
     -PassThru
 
@@ -117,12 +117,12 @@ try {
   }
 
   if (-not $UseExistingServer) {
-    if ($UseOpamInstalledServer) {
-      Write-Host "Server mode: opam-installed sakura-server"
-    } else {
+    if ($UseLocalServer) {
       Write-Host "Server mode: local dune exec sakura-server"
+    } else {
+      Write-Host "Server mode: opam-installed sakura-server"
     }
-    $serverProcess = Start-SakuraServer -Config $ConfigPath -WorkingDirectory $repoRoot -UseOpam:$UseOpamInstalledServer
+    $serverProcess = Start-SakuraServer -Config $ConfigPath -WorkingDirectory $repoRoot -UseOpam:(-not $UseLocalServer)
     Wait-ForTcp -TargetHost $ServerHost -TargetPort $Port
     Write-Host "Server is ready on $ServerHost`:$Port"
   }

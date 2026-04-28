@@ -173,7 +173,6 @@ functor
           List
             [
               Atom "ok";
-              (* List [ Atom "message"; Atom message ]; *)
               List [ Atom "db_hash"; Atom new_db.hash ];
               List [ Atom "db_name"; Atom new_db.name ];
               (* TODO: `serialize' shouldn't need access to the storage layer *)

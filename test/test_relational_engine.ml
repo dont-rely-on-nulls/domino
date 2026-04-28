@@ -144,12 +144,13 @@ let%test_unit "database: add relation" =
   let db = Management.Database.empty ~name:"test_db" in
   (* Create a minimal relation for testing *)
   let relation =
-    Relation.make ~producer:None ~hash:(Some "rel_hash_1") ~name:"users" ~schema:Schema.empty
+    Relation.make ~hash:(Some "rel_hash_1") ~name:"users" ~schema:Schema.empty
       ~tree:(Some Merkle.empty) ~constraints:None
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "users")
+      ()
   in
   let db = Management.Database.add_relation db ~relation in
   assert (Management.Database.has_relation db "users");
@@ -159,12 +160,13 @@ let%test_unit "database: add relation" =
 let%test_unit "database: remove relation" =
   let db = Management.Database.empty ~name:"test_db" in
   let relation =
-    Relation.make ~producer:None ~hash:(Some "hash1") ~name:"users" ~schema:Schema.empty
+    Relation.make ~hash:(Some "hash1") ~name:"users" ~schema:Schema.empty
       ~tree:(Some Merkle.empty) ~constraints:None
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "users")
+      ()
   in
   let db = Management.Database.add_relation db ~relation in
   assert (Management.Database.has_relation db "users");
@@ -174,12 +176,13 @@ let%test_unit "database: remove relation" =
 let%test_unit "database: update relation" =
   let db = Management.Database.empty ~name:"test_db" in
   let relation =
-    Relation.make ~producer:None ~hash:(Some "hash1") ~name:"users" ~schema:Schema.empty
+    Relation.make ~hash:(Some "hash1") ~name:"users" ~schema:Schema.empty
       ~tree:(Some Merkle.empty) ~constraints:None
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "users")
+      ()
   in
   let db = Management.Database.add_relation db ~relation in
   let old_db_hash = db.hash in
@@ -192,20 +195,22 @@ let%test_unit "database: update relation" =
 let%test_unit "database: get relation names" =
   let db = Management.Database.empty ~name:"test_db" in
   let rel1 =
-    Relation.make ~producer:None ~hash:(Some "h1") ~name:"users" ~schema:Schema.empty
+    Relation.make ~hash:(Some "h1") ~name:"users" ~schema:Schema.empty
       ~tree:(Some Merkle.empty) ~constraints:None
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "users")
+      ()
   in
   let rel2 =
-    Relation.make ~producer:None ~hash:(Some "h2") ~name:"orders" ~schema:Schema.empty
+    Relation.make ~hash:(Some "h2") ~name:"orders" ~schema:Schema.empty
       ~tree:(Some Merkle.empty) ~constraints:None
       ~cardinality:(Conventions.Cardinality.Finite 0) ~generator:None
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "orders")
+      ()
   in
   let db = Management.Database.add_relation db ~relation:rel1 in
   let db = Management.Database.add_relation db ~relation:rel2 in

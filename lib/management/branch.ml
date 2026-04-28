@@ -96,13 +96,14 @@ module Make (Storage : Physical.S with type error = string) = struct
                       ~relation:Prelude.Catalog.branch_rel_name ~attributes,
                     generator ))
     in
-    Relation.make ~producer:None ~hash:None ~name:Prelude.Catalog.branch_rel_name ~schema
+    Relation.make ~hash:None ~name:Prelude.Catalog.branch_rel_name ~schema
       ~tree:None ~constraints:None
       ~cardinality:Conventions.Cardinality.ConstrainedFinite
       ~generator:(Some generator)
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:(Relation.Provenance.Base Prelude.Catalog.branch_rel_name)
       ~lineage:(Relation.Lineage.Base Prelude.Catalog.branch_rel_name)
+      ()
 
   let head_relation storage : Relation.t =
     let schema = Schema.empty |> Schema.add "branch" "string" in
@@ -123,11 +124,12 @@ module Make (Storage : Physical.S with type error = string) = struct
                   fun _ -> Generator.Done ))
       | Some _ -> Generator.Done
     in
-    Relation.make ~producer:None ~hash:None ~name:Prelude.Catalog.head_rel_name ~schema
+    Relation.make ~hash:None ~name:Prelude.Catalog.head_rel_name ~schema
       ~tree:None ~constraints:None
       ~cardinality:Conventions.Cardinality.ConstrainedFinite
       ~generator:(Some generator)
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:(Relation.Provenance.Base Prelude.Catalog.head_rel_name)
       ~lineage:(Relation.Lineage.Base Prelude.Catalog.head_rel_name)
+      ()
 end

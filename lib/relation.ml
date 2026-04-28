@@ -44,7 +44,7 @@ type t = {
   lineage : Lineage.t;
 }
 
-let make ~producer ~hash ~name ~schema ~tree ~constraints ~cardinality ~generator ~membership_criteria ~provenance ~lineage =
+let make ?(producer = None) ~hash ~name ~schema ~tree ~constraints ~cardinality ~generator ~membership_criteria ~provenance ~lineage () =
   {
     hash;
     name;

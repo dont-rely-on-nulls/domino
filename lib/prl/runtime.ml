@@ -16,7 +16,8 @@ let load_library path : (unit, string) result =
           Ok ()
         with Dynlink.Error e -> Error (Dynlink.error_message e))
 
-let relation_row_of_tuple (schema : Schema.t) (tuple : Tuple.materialized) :
+(* Convert an engine materialized tuple to the plugin's (string * Obj.t) list format. *)
+let to_plugin_row (schema : Schema.t) (tuple : Tuple.materialized) :
     Sakura_prl_api.tuple option =
   let rec go acc = function
     | [] -> Some (List.rev acc)
@@ -27,7 +28,8 @@ let relation_row_of_tuple (schema : Schema.t) (tuple : Tuple.materialized) :
   in
   go [] schema
 
-let materialized_of_row relation_name (schema : Schema.t)
+(* Convert a plugin row back to an engine materialized tuple. *)
+let of_plugin_row relation_name (schema : Schema.t)
     (row : Sakura_prl_api.tuple) : Tuple.materialized option =
   let rec go acc = function
     | [] -> Some { Tuple.relation = relation_name; attributes = acc }
@@ -40,28 +42,30 @@ let materialized_of_row relation_name (schema : Schema.t)
   in
   go Tuple.AttributeMap.empty schema
 
+(* Wrap a list of plugin rows as a generator. Uses an array for O(1) indexing. *)
+let rows_to_generator relation_name schema (rows : Sakura_prl_api.tuple list) :
+    Generator.t =
+  let arr = Array.of_list rows in
+  let n = Array.length arr in
+  let rec gen i _pos =
+    if i >= n then Generator.Done
+    else
+      match of_plugin_row relation_name schema arr.(i) with
+      | None -> Generator.Error "Plugin row does not conform to predicate schema."
+      | Some tuple -> Generator.Value (Tuple.Materialized tuple, gen (i + 1))
+  in
+  gen 0
+
 let make_generator relation_name schema (impl : Sakura_prl_api.implementation)
     (bindings : Sakura_prl_api.tuple) : Generator.t =
   match impl.produce with
   | None -> fun _ -> Generator.Done
   | Some produce ->
-      let rows_cache = lazy (produce bindings) in
-      let rec gen pos =
-        let i = Option.value ~default:0 pos in
-        match Lazy.force rows_cache with
+      let rows_result = lazy (produce bindings) in
+      fun _pos ->
+        match Lazy.force rows_result with
         | Error e -> Generator.Error e
-        | Ok rows ->
-            if i < 0 || i >= List.length rows then Generator.Done
-            else
-              match
-                materialized_of_row relation_name schema (List.nth rows i)
-              with
-              | None ->
-                  Generator.Error
-                    "Plugin row does not conform to predicate schema."
-              | Some tuple -> Generator.Value (Tuple.Materialized tuple, gen)
-      in
-      gen
+        | Ok rows -> rows_to_generator relation_name schema rows _pos
 
 let make_producer relation_name schema (impl : Sakura_prl_api.implementation) :
     Relation.producer =
@@ -75,6 +79,6 @@ let make_membership_criteria schema (impl : Sakura_prl_api.implementation) :
       fun _tree_of -> function
         | Tuple.NonMaterialized _ -> false
         | Tuple.Materialized m -> (
-            match relation_row_of_tuple schema m with
+            match to_plugin_row schema m with
             | None -> false
-            | Some row -> ( match check row with Ok b -> b | Error _ -> false))
+            | Some row -> (match check row with Ok b -> b | Error _ -> false))

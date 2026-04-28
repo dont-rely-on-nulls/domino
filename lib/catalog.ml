@@ -65,8 +65,7 @@ module Make (S : Management.Physical.S with type error = string) = struct
       Manip.create_immutable_relation storage db ~name:rel.name
         ~schema:rel.schema ~generator:(Option.get rel.generator)
         ~membership_criteria:rel.membership_criteria
-        ~cardinality:rel.cardinality
-        ~producer:None
+        ~cardinality:rel.cardinality ~producer:None
     with
     | Ok (new_db, _) -> new_db
     | Error e ->

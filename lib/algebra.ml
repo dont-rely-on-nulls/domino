@@ -42,11 +42,12 @@ module Make (Storage : Management.Physical.S) = struct
       | Some c -> c
       | None -> Conventions.Cardinality.AlephZero
     in
-    Relation.make ~producer:None ~hash:None ~name ~schema ~tree:None ~constraints ~cardinality
+    Relation.make ~hash:None ~name ~schema ~tree:None ~constraints ~cardinality
       ~generator:(Some gen)
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "derived")
+      ()
 
   let const_relation (pairs : (string * Conventions.AbstractValue.t) list) :
       Relation.t =
@@ -248,47 +249,51 @@ module Make (Storage : Management.Physical.S) = struct
     in
     match right.Relation.producer with
     | Some right_producer when attrs <> [] ->
-        (* Right is a function predicate: for each left tuple, call producer
-           with that tuple's join-attribute bindings to get matching right rows. *)
+        (* Right is a function predicate: for each left tuple, call the producer
+           with that tuple's join-attribute bindings to obtain matching right rows. *)
         let left_gen = to_generator storage left in
-        let rec from_left_dyn lgen lpos =
-         fun pos ->
-          match lgen (Some lpos) with
-          | Generator.Done -> Generator.Done
-          | Generator.Error e -> Generator.Error e
-          | Generator.Value (lt, next_left) ->
-              let bindings = bindings_of_tuple attrs lt in
-              let rgen = right_producer bindings in
-              let right_tuples =
-                match drain rgen with Ok ts -> ts | Error _ -> []
-              in
-              let lv = get_vals attrs lt in
-              let matches =
-                List.filter_map
-                  (fun rt ->
-                    if get_vals attrs rt = lv then Some (merge lt rt) else None)
-                  right_tuples
-              in
-              (match matches with
-              | [] -> from_left_dyn next_left (lpos + 1) pos
-              | _ ->
-                  chain_with_cont (list_generator matches)
-                    (from_left_dyn next_left (lpos + 1))
-                    pos)
+        let make_right_producer_join_gen lgen =
+          let rec from_left lgen lpos =
+            fun _pos ->
+            match lgen (Some lpos) with
+            | Generator.Done -> Generator.Done
+            | Generator.Error e -> Generator.Error e
+            | Generator.Value (lt, next_left) ->
+                let bindings = bindings_of_tuple attrs lt in
+                (match drain (right_producer bindings) with
+                | Error (GeneratorError e | StorageError e) -> Generator.Error e
+                | Ok right_tuples ->
+                    let lv = get_vals attrs lt in
+                    let matches =
+                      List.filter_map
+                        (fun rt ->
+                          if get_vals attrs rt = lv then Some (merge lt rt)
+                          else None)
+                        right_tuples
+                    in
+                    (match matches with
+                    | [] -> from_left next_left (lpos + 1) _pos
+                    | _ ->
+                        chain_with_cont (list_generator matches)
+                          (from_left next_left (lpos + 1))
+                          _pos))
+          in
+          from_left lgen 0
         in
         Ok
           (of_generator ~name ~schema:merged_schema
-             ?constraints:merged_constraints (from_left_dyn left_gen 0))
+             ?constraints:merged_constraints
+             (make_right_producer_join_gen left_gen))
     | _ ->
         let right_gen = to_generator storage right in
         (match drain right_gen with
         | Error e -> Error e
         | Ok right_tuples ->
-            let left_gen =
+            let left_gen_result =
               match left.Relation.producer with
               | Some left_producer when attrs <> [] ->
-                  (* Left is a function predicate: derive left tuples by calling
-                     producer once per unique binding set found in right_tuples. *)
+                  (* Left is a function predicate: collect all left tuples by
+                     calling the producer once per unique binding set from right. *)
                   let unique_bindings =
                     right_tuples
                     |> List.filter_map (fun rt ->
@@ -297,21 +302,22 @@ module Make (Storage : Management.Physical.S) = struct
                            else None)
                     |> List.sort_uniq compare
                   in
-                  let all_left_tuples =
-                    List.concat_map
-                      (fun bindings ->
-                        match drain (left_producer bindings) with
-                        | Ok ts -> ts
-                        | Error _ -> [])
-                      unique_bindings
-                  in
-                  list_generator all_left_tuples
-              | _ -> to_generator storage left
+                  List.fold_left
+                    (fun acc bindings ->
+                      Result.bind acc (fun ts ->
+                          match drain (left_producer bindings) with
+                          | Ok new_ts -> Ok (ts @ new_ts)
+                          | Error e -> Error e))
+                    (Ok [])
+                    unique_bindings
+                  |> Result.map list_generator
+              | _ -> Ok (to_generator storage left)
             in
-            let join_gen = make_join_gen left_gen right_tuples in
-            Ok
-              (of_generator ~name ~schema:merged_schema
-                 ?constraints:merged_constraints join_gen))
+            Result.bind left_gen_result (fun left_gen ->
+                Ok
+                  (of_generator ~name ~schema:merged_schema
+                     ?constraints:merged_constraints
+                     (make_join_gen left_gen right_tuples))))
 
   let union storage rel1 rel2 =
     let gen1 = to_generator storage rel1 in

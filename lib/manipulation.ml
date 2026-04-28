@@ -246,13 +246,14 @@ module Make (Storage : Management.Physical.S) = struct
             Merkle.empty stored.tree_keys
         in
         let relation =
-          Relation.make ~producer:None ~hash:(Some rel_hash) ~name:stored.name
+          Relation.make ~hash:(Some rel_hash) ~name:stored.name
             ~schema:stored.schema ~tree:(Some tree) ~constraints:None
             ~cardinality:stored.cardinality ~generator:None
             ~membership_criteria:
               (build_membership_criteria ~name:stored.name stored.schema)
             ~provenance:(Relation.Provenance.Base stored.name)
             ~lineage:(Relation.Lineage.Base stored.name)
+            ()
         in
         Ok (Some relation)
 
@@ -313,12 +314,13 @@ module Make (Storage : Management.Physical.S) = struct
       let tree = Merkle.empty in
       let relation_hash = Hashing.hash_relation ~name ~schema ~tree in
       let relation =
-        Relation.make ~producer:None ~hash:(Some relation_hash) ~name ~schema ~tree:(Some tree)
+        Relation.make ~hash:(Some relation_hash) ~name ~schema ~tree:(Some tree)
           ~constraints:None ~cardinality:(Conventions.Cardinality.Finite 0)
           ~generator:None
           ~membership_criteria:(build_membership_criteria ~name schema)
           ~provenance:(Relation.Provenance.Base name)
           ~lineage:(Relation.Lineage.Base name)
+          ()
       in
       let new_db = Management.Database.add_relation db ~relation in
       let* () = store_relation storage relation in
@@ -839,12 +841,13 @@ module Make (Storage : Management.Physical.S) = struct
       let tree = Merkle.empty in
       let relation_hash = Hashing.hash_relation ~name ~schema ~tree in
       let relation =
-        Relation.make ~producer:None ~hash:(Some relation_hash) ~name ~schema ~tree:(Some tree)
+        Relation.make ~hash:(Some relation_hash) ~name ~schema ~tree:(Some tree)
           ~constraints:None ~cardinality:(Conventions.Cardinality.Finite 0)
           ~generator:None
           ~membership_criteria:(build_membership_criteria ~name schema)
           ~provenance:(Relation.Provenance.Base name)
           ~lineage:(Relation.Lineage.Base name)
+          ()
       in
       let new_db = Management.Database.add_relation db ~relation in
       let* () = store_relation storage relation in
@@ -872,6 +875,7 @@ module Make (Storage : Management.Physical.S) = struct
           ~constraints:None ~cardinality ~generator:(Some generator)
           ~producer ~membership_criteria ~provenance:(Relation.Provenance.Base name)
           ~lineage:(Relation.Lineage.Base name)
+          ()
       in
       let new_db = Management.Database.add_relation db ~relation in
       let* () = store_relation storage relation in

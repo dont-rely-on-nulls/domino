@@ -16,11 +16,10 @@ module Make (Storage : Management.Physical.S with type error = string) = struct
 
   let execute storage db ast =
     match Exec.execute storage db ast with
-    | Ok (Exec.DbResult (db, msg)) -> Ok (Sublanguage_types.Transition db) 
+    | Ok (Exec.DbResult (db, _)) -> Ok (Sublanguage_types.Transition db)
     | Ok (Exec.Switch multigroup) -> Ok (Sublanguage_types.SessionSwitch multigroup)
     | Ok (Exec.NewMultigroup name) -> Ok (Sublanguage_types.CreateMultigroup name)
     | Error e -> Error e
-    [@@warning "-27"]
 
   let sexp_of_error = Exec.sexp_of_error
 end
