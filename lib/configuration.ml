@@ -84,3 +84,23 @@ let require_section ~(name : string) ~(valid_tags : string list) (config : t) :
     if List.mem tag valid_tags then Ok () else errorf "Unknown %s: %s" name tag
   in
   Ok (tag, body)
+
+let map_of_sexp : Sexplib.Sexp.t -> (Sexplib.Sexp.t Utilities.StringMap.t, string) result =
+  let open Sexplib.Sexp in
+  let open Utilities.StringMap in
+  function
+  | List pairs -> List.fold_right
+                    (fun sexp acc ->
+                      match (sexp, acc) with
+                      | List [ Atom k; v ], Ok acc' -> Ok (add k v acc')
+                      | _, Error e -> Error e
+                      | _ -> Error "Malformed pair")
+                    pairs
+                    (Ok empty)
+  | _ -> Error "Expected list of pairs"
+
+let atom_of_sexp : Sexplib.Sexp.t -> (string, string) result =
+  let open Sexplib.Sexp in
+  function
+  | Atom s -> Ok s
+  | _ -> Error "Expected atom"
