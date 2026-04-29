@@ -2,15 +2,15 @@ open Ctypes
 open PosixTypes
 open Foreign
 
-type mdb_result = Success | Failure of int
+type mdb_result = (unit, int) Result.t
 
 let mdb_result_of_int = function
-  | 0 -> Success
-  | x -> Failure x
+  | 0 -> Ok ()
+  | x -> Error x
 
 let int_of_mdb_result = function
-  | Success -> 0
-  | Failure x -> x
+  | Ok _ -> 0
+  | Error x -> x
 
 let mdb_mode_t = mode_t
 
