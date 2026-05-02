@@ -39,16 +39,16 @@ end
 (** Simple hash set implementation. This is a placeholder until a proper
     radix-merkle library with OCaml 5 support becomes available. *)
 module HashSet : S = struct
-  module StringSet = Set.Make (String)
+  module HashSet' = Set.Make (Conventions.Hash)
 
-  type t = StringSet.t
+  type t = HashSet'.t
 
-  let empty = StringSet.empty
-  let is_empty = StringSet.is_empty
-  let insert hash tree = StringSet.add hash tree
-  let delete hash tree = StringSet.remove hash tree
-  let member hash tree = StringSet.mem hash tree
-  let keys tree = StringSet.elements tree
+  let empty = HashSet'.empty
+  let is_empty = HashSet'.is_empty
+  let insert hash tree = HashSet'.add hash tree
+  let delete hash tree = HashSet'.remove hash tree
+  let member hash tree = HashSet'.mem hash tree
+  let keys tree = HashSet'.elements tree
   (* TODO: Streaming/pagination for large tuple sets. Currently materializes
      entire keyset into memory, which fails for relations with billions of tuples.
      Replace with paginated access (keys_paginated offset limit) or lazy generator
@@ -56,14 +56,14 @@ module HashSet : S = struct
      radix-merkle tree (plebeia) for native lazy traversal. *)
 
   let root_hash tree =
-    if StringSet.is_empty tree then None
+    if HashSet'.is_empty tree then None
     else
       (* Compute root hash by hashing sorted concatenation of all hashes *)
-      let sorted_hashes = StringSet.elements tree in
-      let concatenated = String.concat "" sorted_hashes in
+      let sorted_hashes = HashSet'.elements tree in
+      let concatenated = String.concat "" (List.map Conventions.Hash.to_string sorted_hashes) in
       Some (Conventions.Hash.hash_text concatenated)
 
-  let size = StringSet.cardinal
+  let size = HashSet'.cardinal
 end
 
 include HashSet
