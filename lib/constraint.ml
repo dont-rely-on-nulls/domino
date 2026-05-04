@@ -30,6 +30,7 @@ type t =
   | Or of t list
   | Exists of { variable : attr_name; quantifier : relation_name; body : t }
   | Forall of { variable : attr_name; quantifier : relation_name; body : t }
+  | Eq of { left : binding_expr; right : binding_expr }
 
 type diagnostic =
   | MembershipFailed of {
@@ -58,7 +59,10 @@ let vars_in (c : t) : attr_name list =
             let next = FingerTree.append (FingerTree.of_list cs) rest in
             loop set next
         | Exists { variable; body; _ } | Forall { variable; body; _ } ->
-            loop (StringSet.add variable set) (FingerTree.cons rest body))
+            loop (StringSet.add variable set) (FingerTree.cons rest body)
+        | Eq { left; right } ->
+            let add_expr acc = function Var v -> StringSet.add v acc | Const _ -> acc in
+            loop (add_expr (add_expr set left) right) rest)
   in
   loop StringSet.empty (FingerTree.singleton c) |> StringSet.elements
 
@@ -89,6 +93,9 @@ let rename_vars (renames : (attr_name * attr_name) list) : t -> t =
     | Forall { variable; quantifier; body } ->
         let variable' = rename_name variable in
         Forall { variable = variable'; quantifier; body = go body }
+    | Eq { left; right } ->
+        let rename_expr = function Var v -> Var (rename_name v) | Const _ as e -> e in
+        Eq { left = rename_expr left; right = rename_expr right }
   in
   go
 
@@ -117,6 +124,7 @@ let rec filter_by_attrs (attrs : attr_name list) (c : t) : t option =
       match filter_by_attrs (variable :: attrs) body with
       | Some body' -> Some (Forall { variable; quantifier; body = body' })
       | None -> None)
+  | Eq _ -> if all_present c then Some c else None
 
 let merge (cs1 : (string * t) list) (cs2 : (string * t) list) :
     (string * t) list =
@@ -181,6 +189,17 @@ let rec evaluate (ctx : eval_context) (tuple : Tuple.materialized) (c : t) :
       | Error d -> Error d)
   | And cs -> evaluate_and ctx tuple cs
   | Or cs -> evaluate_or ctx tuple cs
+  | Eq { left; right } ->
+      let resolve = function
+        | Const v -> Some v
+        | Var a -> (
+            match Tuple.AttributeMap.find_opt a tuple.attributes with
+            | Some attr -> Some attr.Attribute.value
+            | None -> None)
+      in
+      (match (resolve left, resolve right) with
+      | Some l, Some r -> Ok (l = r)
+      | _ -> Ok false)
   | Exists { variable; quantifier; body } -> (
       match ctx.iterate_finite quantifier with
       | None -> Error (UnboundedQuantifier { variable; quantifier })
@@ -321,7 +340,8 @@ let polarity_of ?(neg = false) (c : t) : polarity_index =
             loop acc' (FingerTree.cons rest (is_neg, body))
         | Forall { quantifier; body; _ } ->
             let acc' = add_pol acc quantifier (with_neg is_neg Negative) in
-            loop acc' (FingerTree.cons rest (is_neg, body)))
+            loop acc' (FingerTree.cons rest (is_neg, body))
+        | Eq _ -> loop acc rest)
   in
   loop PolarityMap.empty (FingerTree.singleton (neg, c))
 
@@ -378,7 +398,8 @@ let focused_filter (c : t) (dep_rel : relation_name)
             loop acc (FingerTree.cons rest body)
         | And cs | Or cs ->
             let next = FingerTree.append (FingerTree.of_list cs) rest in
-            loop acc next)
+            loop acc next
+        | Eq _ -> loop acc rest)
   in
   loop [] (FingerTree.singleton c)
 
@@ -407,7 +428,8 @@ let trigger_constants (c : t) (dep_rel : relation_name) :
             loop acc (FingerTree.cons rest body)
         | And cs | Or cs ->
             let next = FingerTree.append (FingerTree.of_list cs) rest in
-            loop acc next)
+            loop acc next
+        | Eq _ -> loop acc rest)
   in
   loop [] (FingerTree.singleton c)
 
@@ -521,7 +543,17 @@ let substitute_transition (c : t) (dep_rel : relation_name)
                      (Visit (body_mode, body))
                      (BuildForall (variable, quantifier))
                      rest)
-                  vals)
+                  vals
+            | Eq { left; right } ->
+                let subst_expr subs = function
+                  | Var v -> (match BindingMap.find_opt v subs with Some v' -> Const v' | None -> Var v)
+                  | Const _ as e -> e
+                in
+                let left', right' = match mode with
+                  | SubstituteGo -> (left, right)
+                  | SubstituteApply subs -> (subst_expr subs left, subst_expr subs right)
+                in
+                loop rest (Eq { left = left'; right = right' } :: vals))
         | BuildNot universe -> (
             match vals with
             | body :: vals' -> loop rest (Not { body; universe } :: vals')
@@ -570,12 +602,10 @@ let gte ~left ~right =
       binding = make_comparison_binding ~left ~right;
     }
 
-let eq ~left ~right =
-  MemberOf { target = "equal"; binding = make_comparison_binding ~left ~right }
+let eq ~left ~right = Eq { left; right }
 
 let neq ~left ~right =
-  MemberOf
-    { target = "not_equal"; binding = make_comparison_binding ~left ~right }
+  Not { body = Eq { left; right }; universe = "" }
 
 let between ~value ~low ~high =
   And

@@ -14,3 +14,5 @@ We can ephemeral relations that relations that have its values generated on dema
 From where an attribute comes from in a generated relation (ephemeral). For example, if a join occurs and blends the attributes from two different relations, the base relations are references on the new generated ephemeral relation as to identify its origins. This is what enables "updatable views", since we always know the source of an attribute.
 ** Lineage
 What operation produced an attribute. A join, project, etc.
+** Entity Group
+** Entity Type

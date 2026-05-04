@@ -13,6 +13,7 @@ type t =
   | Or of t list
   | Exists of { variable : attr_name; quantifier : relation_name; body : t }
   | Forall of { variable : attr_name; quantifier : relation_name; body : t }
+  | Eq of { left : binding_expr; right : binding_expr }
 
 type diagnostic =
   | MembershipFailed of {
