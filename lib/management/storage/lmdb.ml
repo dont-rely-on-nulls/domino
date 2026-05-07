@@ -35,7 +35,7 @@ module Backend : Physical.BACKEND = struct
   let with_transaction' env body =
     let open Utilities.Result in
     let success = ref false in
-    let* tx = mdb_txn_begin' env (current_tx' ()) (Unsigned.UInt.of_int 0) in
+    let* tx = mdb_txn_begin' env (current_tx' ()) Unsigned.UInt.zero in
     Fun.protect
       (fun () ->
         match body () with
@@ -71,24 +71,28 @@ module Backend : Physical.BACKEND = struct
   let disconnect { env; _ } =
     mdb_env_close env
 
-  let begin_transaction _conn = not_implemented
-
-  let commit _conn = not_implemented
-
-  let rollback _conn = not_implemented
-
   let get { dbi; _ } hash =
     match mdb_get' (current_tx ()) dbi (Bytes.of_string hash) with
     | Ok x -> Ok (Some x)
     | Error e when e = MDB_Errors.mdb_notfound -> Ok (None)
     | Error e -> Error e
 
-  let put _conn _hash _value = not_implemented
+  let put { dbi; _ } hash value = mdb_put' (current_tx ()) dbi (Bytes.of_string hash) value Unsigned.UInt.zero
 
-  let exists _conn _hash = not_implemented
+  let exists conn hash = get conn hash |> Result.map Option.is_some
 
-  let get_many _conn _hashes = not_implemented
+  let lift_result r =
+    BatEnum.fold
+      (fun acc x -> Result.map (fun xs -> x::xs) acc)
+      (Ok [])
+      r
+    |> Result.map BatList.enum
 
-  let put_many _conn _values = not_implemented
+  let get_many conn hashes = BatEnum.map (get conn) hashes |> lift_result
+
+  let put_many conn values =
+    with_transaction conn
+      (fun () ->
+        BatEnum.map (fun (k, v) -> put conn k v |> ignore) values
+        |> lift_result)
 end
-[@warning "-38-32"]
