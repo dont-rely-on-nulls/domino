@@ -29,11 +29,11 @@ module type BACKEND = sig
   val exists : connection -> Conventions.Hash.t -> (bool, error) result
   (** Check if a hash exists *)
 
-  val begin_transaction : connection -> (unit, error) result
-  (** Begin a transaction *)
-
   val with_transaction : connection -> (unit -> 'a) -> ('a option, error) result
   (** Execute a function within a transaction *)
+
+  val abort : connection -> unit
+  (** Abort the currently executing transaction. This performs a non-local transfer of control to the nearest `with_transaction` *)
 
   val get_many :
     connection -> Conventions.Hash.t BatEnum.t -> (bytes option BatEnum.t, error) result
