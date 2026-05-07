@@ -1,4 +1,9 @@
 module Hash = struct
+  (*
+   * TODO: implement hashes as an opaque type, preferably in a way
+   * that would make it convenient to pass it down to C *without*
+   * copying it's representation.
+   *)
   type t = string (* Sha256.t *)
 
   (* FIXME: this is terrible *)
