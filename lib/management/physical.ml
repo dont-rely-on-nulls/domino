@@ -32,18 +32,15 @@ module type BACKEND = sig
   val begin_transaction : connection -> (unit, error) result
   (** Begin a transaction *)
 
-  val commit : connection -> (unit, error) result
-  (** Commit a transaction *)
-
-  val rollback : connection -> (unit, error) result
-  (** Rollback a transaction *)
+  val with_transaction : connection -> (unit -> 'a) -> ('a option, error) result
+  (** Execute a function within a transaction *)
 
   val get_many :
-    connection -> Conventions.Hash.t list -> (bytes option list, error) result
+    connection -> Conventions.Hash.t BatEnum.t -> (bytes option BatEnum.t, error) result
   (** Batch get multiple values *)
 
   val put_many :
-    connection -> (Conventions.Hash.t * bytes) list -> (unit, error) result
+    connection -> (Conventions.Hash.t * bytes) BatEnum.t -> (unit, error) result
   (** Batch put multiple values *)
 end
 
@@ -79,7 +76,7 @@ module type S = sig
   val exists : t -> Conventions.Hash.t -> (bool, error) result
   (** Check if a hash exists *)
 
-  val with_transaction : t -> (unit -> ('a, error) result) -> ('a, error) result
+  val with_transaction : t -> (unit -> 'a) -> ('a option, error) result
   (** Execute a function within a transaction *)
 end
 
@@ -109,16 +106,7 @@ module Make (B : BACKEND) :
   let load_raw conn hash = B.get conn hash
   let exists conn hash = B.exists conn hash
 
-  let with_transaction conn f =
-    match B.begin_transaction conn with
-    | Error e -> Error e
-    | Ok () -> (
-        match f () with
-        | Ok result -> (
-            match B.commit conn with Ok () -> Ok result | Error e -> Error e)
-        | Error e ->
-            let _ = B.rollback conn in
-            Error e)
+  let with_transaction = B.with_transaction
 end
 
 (** In-memory backend for testing and development *)
