@@ -401,5 +401,3 @@ module Make (Storage : Management.Physical.S) = struct
              (function Tuple.Materialized t -> Some t | _ -> None)
              tuples)
 end
-
-module Memory = Make (Management.Physical.Memory)

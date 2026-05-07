@@ -71,5 +71,3 @@ module Make (Storage : Management.Physical.S) = struct
     | Ast.Take (n, q) ->
         execute storage db q >>= fun rel -> wrap (Alg.take storage n rel)
 end
-
-module Memory = Make (Management.Physical.Memory)
