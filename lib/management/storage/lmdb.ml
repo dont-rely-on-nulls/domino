@@ -1,6 +1,4 @@
-let not_implemented = Obj.magic ()
-
-module Backend : Physical.BACKEND = struct
+module B : Physical.BACKEND with type error = string = struct
   open External.Lmdb
   open Ctypes
 
@@ -10,7 +8,7 @@ module Backend : Physical.BACKEND = struct
 
   type configuration = { path : string; name : string }
   type connection = { env : mdb_env structure ptr; dbi : mdb_dbi }
-  type error = int
+  type error = string (* int *) (* FIXME *)
 
   type _ Effect.t +=
      | Current: mdb_txn structure ptr Effect.t
@@ -51,48 +49,73 @@ module Backend : Physical.BACKEND = struct
            Ok None)
       ~finally:(fun () -> if not !success then mdb_txn_abort tx |> ignore)
 
-  let with_transaction { env; _ } body = with_transaction' env body
+  let with_transaction { env; _ } body =
+    with_transaction' env body
+    |> Result.map_error Int.to_string
+
+  let abort _ = Effect.perform Rollback
 
   let connect { path; name } =
-    let open Utilities.Result in
-    let* env = mdb_env_create' () in
-    match mdb_env_open env path (Unsigned.UInt.of_int 0) PosixTypes.Mode.zero with
-    | Error x ->
-       mdb_env_close env;
-       Error x
-    | Ok () ->
-       Result.bind
-         (with_transaction' env
-            (fun () ->
-              let* dbi = mdb_dbi_open' (current_tx ()) name (Unsigned.UInt.of_int 0) in
-              Ok { env; dbi }))
-         Option.get
+    begin
+      let open Utilities.Result in
+      let* env = mdb_env_create' () in
+      match mdb_env_open env path (Unsigned.UInt.of_int 0) PosixTypes.Mode.zero with
+      | Error x ->
+         mdb_env_close env;
+         Error x
+      | Ok () ->
+         Result.bind
+           (with_transaction' env
+              (fun () ->
+                let* dbi = mdb_dbi_open' (current_tx ()) name (Unsigned.UInt.of_int 0) in
+                Ok { env; dbi }))
+           Option.get
+    end
+    |> Result.map_error Int.to_string
 
   let disconnect { env; _ } =
     mdb_env_close env
 
   let get { dbi; _ } hash =
-    match mdb_get' (current_tx ()) dbi (Bytes.of_string hash) with
-    | Ok x -> Ok (Some x)
-    | Error e when e = MDB_Errors.mdb_notfound -> Ok (None)
-    | Error e -> Error e
+    begin
+      match mdb_get' (current_tx ()) dbi (Bytes.of_string hash) with
+      | Ok x -> Ok (Some x)
+      | Error e when e = MDB_Errors.mdb_notfound -> Ok (None)
+      | Error e -> Error e
+    end
+    |> Result.map_error Int.to_string
 
-  let put { dbi; _ } hash value = mdb_put' (current_tx ()) dbi (Bytes.of_string hash) value Unsigned.UInt.zero
+  let put { dbi; _ } hash value =
+    mdb_put' (current_tx ()) dbi (Bytes.of_string hash) value Unsigned.UInt.zero
+    |> Result.map_error Int.to_string
 
-  let exists conn hash = get conn hash |> Result.map Option.is_some
+  let exists conn hash =
+    get conn hash
+    |> Result.map Option.is_some
 
   let lift_result r =
     BatEnum.fold
-      (fun acc x -> Result.map (fun xs -> x::xs) acc)
+      (fun acc x ->
+        Result.bind acc
+          (fun xs -> Result.bind x (fun x -> Ok (x::xs))))
       (Ok [])
       r
     |> Result.map BatList.enum
+
+  let flatten_result = function
+    | Error e -> Error e
+    | Ok (Error e) -> Error e
+    | Ok (Ok x) -> Ok x
 
   let get_many conn hashes = BatEnum.map (get conn) hashes |> lift_result
 
   let put_many conn values =
     with_transaction conn
       (fun () ->
-        BatEnum.map (fun (k, v) -> put conn k v |> ignore) values
-        |> lift_result)
+        BatEnum.map (fun (k, v) -> put conn k v) values
+        |> lift_result
+        |> Result.map ignore)
+    |> Result.map Option.get
+    |> flatten_result
+
 end
