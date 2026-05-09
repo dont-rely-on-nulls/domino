@@ -20,36 +20,42 @@ module Make (Storage : Management.Physical.S) = struct
     in
     go gen 0 []
 
-  let to_generator (storage : storage) (rel : Relation.t) : Generator.t =
-    match rel.Relation.generator with
-    | Some gen -> gen
-    | None -> (
+  let to_generator (storage : storage) (rel : #Relation.relation) : Generator.t =
+    match rel#kind with
+    | `Ephemeral | `Domain ->
+        ((Obj.magic rel) : < generator : Generator.t >)#generator
+    | `Pseudo ->
+        ((Obj.magic rel) : < as_generator : (string * Conventions.AbstractValue.t) list -> Generator.t >)#as_generator []
+    | `Stored -> begin
         (* TODO: Avoid materializing all tuple hashes/tuples at once.
          Current implementation calls tuple_hashes rel which loads all hashes
          into memory, then load_tuples which loads all tuples. This defeats
          lazy evaluation and scales badly (fails for billions of tuples).
          Replace with paginated tuple_hashes or Merkle streaming to load
          hashes/tuples on demand in chunks. *)
-        let hashes = Ops.tuple_hashes rel in
-        match Ops.load_tuples storage hashes with
+        match Ops.load_tuples storage rel#hash with
         | Error _ ->
-            fun _pos -> Generator.Error ("Failed to load: " ^ rel.Relation.name)
-        | Ok ts -> list_generator (List.map (fun t -> Tuple.Materialized t) ts))
-
-  let of_generator ~name ~schema ?constraints ?cardinality gen =
+            fun _pos -> Generator.Error ("Failed to load: " ^ rel#name)
+        | Ok ts -> list_generator (List.map (fun t -> Tuple.Materialized t) ts)
+        end
+  let of_generator ~name ~schema ?constraints ?cardinality generator membership_criteria: Relation.ephemeral =
     let cardinality =
       match cardinality with
       | Some c -> c
       | None -> Conventions.Cardinality.AlephZero
     in
-    Relation.make ~hash:None ~name ~schema ~tree:None ~constraints ~cardinality
-      ~generator:(Some gen)
-      ~membership_criteria:(fun _ _ -> true)
-      ~provenance:Relation.Provenance.Undefined
-      ~lineage:(Relation.Lineage.Base "derived") ()
+    new Relation.ephemeral
+      ~name
+      ~schema
+      ~constraints
+      ~cardinality
+      ~generator
+      ~membership_criteria
+      ~provenance:None
+      ~lineage:None
 
   let const_relation (pairs : (string * Conventions.AbstractValue.t) list) :
-      Relation.t =
+      Relation.ephemeral =
     let attrs =
       List.fold_left
         (fun acc (k, v) -> Tuple.AttributeMap.add k { Attribute.value = v } acc)
@@ -59,7 +65,9 @@ module Make (Storage : Management.Physical.S) = struct
       Tuple.Materialized { Tuple.relation = "const"; attributes = attrs }
     in
     let schema = List.map (fun (k, _) -> (k, "abstract")) pairs in
-    of_generator ~name:"const" ~schema (list_generator [ tuple ])
+    (* TODO: Make it always true for now, gotta rework on this generator *)
+    let membership_criteria _tuple = true in
+    of_generator ~name:"const" ~schema (list_generator [ tuple ]) membership_criteria
 
   (* Operators *)
 
@@ -76,11 +84,14 @@ module Make (Storage : Management.Physical.S) = struct
       in
       fun pos -> go gen pos
     in
+    (* TODO: Make it always true for now, gotta rework on this generator *)
+    let membership_criteria _tuple = true in
     Ok
       (of_generator
-         ~name:("σ_" ^ rel.Relation.name)
-         ~schema:rel.Relation.schema ?constraints:rel.Relation.constraints
-         lazy_gen)
+         ~name:("σ_" ^ rel#name)
+         ~schema:rel#schema ?constraints:rel#constraints
+         lazy_gen
+         membership_criteria)
 
   let project storage (attrs : string list) rel =
     let gen = to_generator storage rel in
@@ -98,7 +109,7 @@ module Make (Storage : Management.Physical.S) = struct
       | other -> other
     in
     let new_schema =
-      List.filter (fun (n, _) -> List.mem n attrs) rel.Relation.schema
+      List.filter (fun (n, _) -> List.mem n attrs) rel#schema
     in
     let lazy_gen =
       let rec go g pos =
@@ -110,7 +121,7 @@ module Make (Storage : Management.Physical.S) = struct
       fun pos -> go gen pos
     in
     let filtered_constraints =
-      match rel.Relation.constraints with
+      match rel#constraints with
       | None | Some [] -> None
       | Some cs -> (
           let kept =
@@ -123,10 +134,12 @@ module Make (Storage : Management.Physical.S) = struct
           in
           match kept with [] -> None | _ -> Some kept)
     in
+    (* TODO: Make it always true for now, gotta rework on this generator *)
+    let membership_criteria _tuple = true in
     Ok
       (of_generator
-         ~name:("π_" ^ rel.Relation.name)
-         ~schema:new_schema ?constraints:filtered_constraints lazy_gen)
+         ~name:("π_" ^ rel#name)
+         ~schema:new_schema ?constraints:filtered_constraints lazy_gen membership_criteria)
 
   let rename storage (renames : (string * string) list) rel =
     let rename_key k =
@@ -144,7 +157,7 @@ module Make (Storage : Management.Physical.S) = struct
     in
     let gen = to_generator storage rel in
     let new_schema =
-      List.map (fun (n, d) -> (rename_key n, d)) rel.Relation.schema
+      List.map (fun (n, d) -> (rename_key n, d)) rel#schema
     in
     let lazy_gen =
       let rec go g pos =
@@ -156,7 +169,7 @@ module Make (Storage : Management.Physical.S) = struct
       fun pos -> go gen pos
     in
     let renamed_constraints =
-      match rel.Relation.constraints with
+      match rel#constraints with
       | None | Some [] -> None
       | Some cs ->
           Some
@@ -164,12 +177,14 @@ module Make (Storage : Management.Physical.S) = struct
                (fun (name, c) -> (name, Constraint.rename_vars renames c))
                cs)
     in
+    (* TODO: Make it always true for now, gotta rework on this generator *)
+    let membership_criteria _tuple = true in
     Ok
       (of_generator
-         ~name:("ρ_" ^ rel.Relation.name)
-         ~schema:new_schema ?constraints:renamed_constraints lazy_gen)
+         ~name:("ρ_" ^ rel#name)
+         ~schema:new_schema ?constraints:renamed_constraints lazy_gen membership_criteria)
 
-  let equijoin storage (attrs : string list) left right =
+  let equijoin storage (attrs : string list) left right: (Relation.ephemeral, error) result =
     let get_vals attr_list = function
       | Tuple.Materialized t ->
           List.map
@@ -191,20 +206,20 @@ module Make (Storage : Management.Physical.S) = struct
       | _ -> lt
     in
     let merged_schema =
-      left.Relation.schema
+      left#schema
       @ List.filter
           (fun (n, _) ->
             (not (List.mem n attrs))
-            && not (List.exists (fun (m, _) -> m = n) left.Relation.schema))
-          right.Relation.schema
+            && not (List.exists (fun (m, _) -> m = n) left#schema))
+          right#schema
     in
     let merged_constraints =
-      match (left.Relation.constraints, right.Relation.constraints) with
+      match (left#constraints, right#constraints) with
       | None, None -> None
       | Some cs, None | None, Some cs -> Some cs
       | Some cs1, Some cs2 -> Some (Constraint.merge cs1 cs2)
     in
-    let name = "⋈_" ^ left.Relation.name ^ "_" ^ right.Relation.name in
+    let name = "⋈_" ^ left#name ^ "_" ^ right#name in
     let rec chain_with_cont g cont pos =
       match g pos with
       | Generator.Done -> cont pos
@@ -235,86 +250,19 @@ module Make (Storage : Management.Physical.S) = struct
       in
       from_left left_gen 0
     in
-    let bindings_of_tuple attrs_list = function
-      | Tuple.Materialized m ->
-          List.filter_map
-            (fun attr ->
-              match Tuple.AttributeMap.find_opt attr m.Tuple.attributes with
-              | Some a -> Some (attr, a.Attribute.value)
-              | None -> None)
-            attrs_list
-      | _ -> []
-    in
-    match right.Relation.producer with
-    | Some right_producer when attrs <> [] ->
-        (* Right is a function predicate: for each left tuple, call the producer
-           with that tuple's join-attribute bindings to obtain matching right rows. *)
+
+    let right_gen = to_generator storage right in
+    match drain right_gen with
+    | Error e -> Error e
+    | Ok right_tuples ->
         let left_gen = to_generator storage left in
-        let make_right_producer_join_gen lgen =
-          let rec from_left lgen lpos =
-           fun _pos ->
-            match lgen (Some lpos) with
-            | Generator.Done -> Generator.Done
-            | Generator.Error e -> Generator.Error e
-            | Generator.Value (lt, next_left) -> (
-                let bindings = bindings_of_tuple attrs lt in
-                match drain (right_producer bindings) with
-                | Error (GeneratorError e | StorageError e) -> Generator.Error e
-                | Ok right_tuples -> (
-                    let lv = get_vals attrs lt in
-                    let matches =
-                      List.filter_map
-                        (fun rt ->
-                          if get_vals attrs rt = lv then Some (merge lt rt)
-                          else None)
-                        right_tuples
-                    in
-                    match matches with
-                    | [] -> from_left next_left (lpos + 1) _pos
-                    | _ ->
-                        chain_with_cont (list_generator matches)
-                          (from_left next_left (lpos + 1))
-                          _pos))
-          in
-          from_left lgen 0
-        in
+        (* TODO: Make it always true for now, gotta rework on this generator *)
+        let membership_criteria _tuple = true in
         Ok
           (of_generator ~name ~schema:merged_schema
              ?constraints:merged_constraints
-             (make_right_producer_join_gen left_gen))
-    | _ -> (
-        let right_gen = to_generator storage right in
-        match drain right_gen with
-        | Error e -> Error e
-        | Ok right_tuples ->
-            let left_gen_result =
-              match left.Relation.producer with
-              | Some left_producer when attrs <> [] ->
-                  (* Left is a function predicate: collect all left tuples by
-                     calling the producer once per unique binding set from right. *)
-                  let unique_bindings =
-                    right_tuples
-                    |> List.filter_map (fun rt ->
-                        let b = bindings_of_tuple attrs rt in
-                        if List.length b = List.length attrs then Some b
-                        else None)
-                    |> List.sort_uniq compare
-                  in
-                  List.fold_left
-                    (fun acc bindings ->
-                      Result.bind acc (fun ts ->
-                          match drain (left_producer bindings) with
-                          | Ok new_ts -> Ok (ts @ new_ts)
-                          | Error e -> Error e))
-                    (Ok []) unique_bindings
-                  |> Result.map list_generator
-              | _ -> Ok (to_generator storage left)
-            in
-            Result.bind left_gen_result (fun left_gen ->
-                Ok
-                  (of_generator ~name ~schema:merged_schema
-                     ?constraints:merged_constraints
-                     (make_join_gen left_gen right_tuples))))
+             (make_join_gen left_gen right_tuples)
+             membership_criteria)
 
   let union storage rel1 rel2 =
     let gen1 = to_generator storage rel1 in
@@ -328,9 +276,11 @@ module Make (Storage : Management.Physical.S) = struct
       in
       fun pos -> go gen1 gen2 pos
     in
-    let name = "∪_" ^ rel1.Relation.name ^ "_" ^ rel2.Relation.name in
+    let name = "∪_" ^ rel1#name ^ "_" ^ rel2#name in
+    (* TODO: Make it always true for now, gotta rework on this generator *)
+    let membership_criteria _tuple = true in
     (* Conservative: drop constraints since they only hold if both inputs agree *)
-    Ok (of_generator ~name ~schema:rel1.Relation.schema chain_gen)
+    Ok (of_generator ~name ~schema:rel1#schema chain_gen membership_criteria)
 
   let attrs_equal (m1 : Attribute.materialized Tuple.AttributeMap.t)
       (m2 : Attribute.materialized Tuple.AttributeMap.t) =
@@ -368,10 +318,12 @@ module Make (Storage : Management.Physical.S) = struct
           in
           fun pos -> go left_gen pos
         in
-        let name = "−_" ^ rel1.Relation.name ^ "_" ^ rel2.Relation.name in
+        let name = "−_" ^ rel1#name ^ "_" ^ rel2#name in
+        (* TODO: Make it always true for now, gotta rework on this generator *)
+        let membership_criteria _tuple = true in
         Ok
-          (of_generator ~name ~schema:rel1.Relation.schema
-             ?constraints:rel1.Relation.constraints lazy_gen)
+          (of_generator ~name ~schema:rel1#schema
+             ?constraints:rel1#constraints lazy_gen membership_criteria)
 
   let take storage n rel =
     let gen = to_generator storage rel in
@@ -386,11 +338,13 @@ module Make (Storage : Management.Physical.S) = struct
       in
       fun pos -> go gen n pos
     in
+    (* TODO: Make it always true for now, gotta rework on this generator *)
+    let membership_criteria _tuple = true in
     Ok
       (of_generator
-         ~name:("τ_" ^ rel.Relation.name)
-         ~schema:rel.Relation.schema ?constraints:rel.Relation.constraints
-         ~cardinality:(Conventions.Cardinality.Finite n) lazy_gen)
+         ~name:("τ_" ^ rel#name)
+         ~schema:rel#schema ?constraints:rel#constraints
+         ~cardinality:(Conventions.Cardinality.Finite n) lazy_gen membership_criteria)
 
   let materialize storage rel : (Tuple.materialized list, error) Result.t =
     match drain (to_generator storage rel) with

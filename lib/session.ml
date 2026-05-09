@@ -8,7 +8,7 @@ type cursor = {
   id : string;
   mutable generator : Generator.t;
   mutable position : int;
-  db_snapshot : Management.Database.t;
+  db_snapshot : Management.Database.database;
   query_sexp : string;
   created_at : float;
 }
@@ -17,9 +17,9 @@ type t = { tbl : (string, cursor) Hashtbl.t; mutable counter : int }
 
 let create () : t = { tbl = Hashtbl.create 16; counter = 0 }
 
-let register (reg : t) ~(db : Management.Database.t) ~(query : string)
+let register (reg : t) ~(db : Management.Database.database) ~(query : string)
     ~(generator : Generator.t) : cursor =
-  let raw = string_of_int reg.counter ^ query ^ db.Management.Database.hash in
+  let raw = string_of_int reg.counter ^ query ^ db#hash in
   let id = Conventions.Hash.hash_text raw in
   reg.counter <- reg.counter + 1;
   let cur =

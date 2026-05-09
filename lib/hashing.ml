@@ -48,9 +48,9 @@ let hash_tuple (tuple : Tuple.materialized) : Conventions.Hash.t =
     - The relation name
     - The schema (attribute names and types)
     - The merkle tree root hash (representing all tuples) *)
-let hash_relation ~name ~(schema : Schema.t) ~tree : Conventions.Hash.t =
+(* let hash_relation ~name ~(schema : Schema.t) ~tree : Conventions.Hash.t =
   let schema_str = Schema.to_string schema in
   let tree_hash =
     match Merkle.root_hash tree with Some h -> h | None -> "empty"
   in
-  Conventions.Hash.hash_text (name ^ "|" ^ schema_str ^ "|" ^ tree_hash)
+  Conventions.Hash.hash_text (name ^ "|" ^ schema_str ^ "|" ^ tree_hash) *)

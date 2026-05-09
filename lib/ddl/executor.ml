@@ -17,7 +17,7 @@ module Make (Storage : Management.Physical.S) = struct
   let wrap_manip r = Result.map_error (fun e -> ManipulationError e) r
 
   let get_rel db name =
-    Ops.get_relation db ~name |> Option.to_result ~none:(RelationNotFound name)
+    Ops.get_relation db name |> Option.to_result ~none:(RelationNotFound name)
 
   let convert_cardinality : Ast.cardinality_spec -> Conventions.Cardinality.t =
     function
@@ -26,11 +26,11 @@ module Make (Storage : Management.Physical.S) = struct
     | Ast.Continuum -> Conventions.Cardinality.Continuum
     | Ast.ConstrainedFinite -> Conventions.Cardinality.ConstrainedFinite
 
-  let execute (storage : Storage.t) (db : Management.Database.t)
-      (stmt : Ast.statement) : (Management.Database.t * string, error) result =
+  let execute (storage : Storage.t) (db : Management.Database.database)
+      (stmt : Ast.statement) : (Management.Database.database * string, error) result =
     match stmt with
     | Ast.CreateDatabase name ->
-        let* db = Ops.create_database storage ~name |> wrap_manip in
+        let* db = Ops.create_database storage name |> wrap_manip in
         Ok (db, "Database created: " ^ name)
     | Ast.CreateRelation { name; schema = schema_pairs } ->
         let schema =
@@ -39,23 +39,27 @@ module Make (Storage : Management.Physical.S) = struct
             Schema.empty schema_pairs
         in
         let* db, _ =
-          Ops.create_relation storage db ~name ~schema |> wrap_manip
+          Ops.create_relation storage db name schema |> wrap_manip
         in
         Ok (db, "Relation created: " ^ name)
     | Ast.RetractRelation name ->
-        let* db = Ops.retract_relation storage db ~name |> wrap_manip in
+        let* db = Ops.retract_relation storage db name |> wrap_manip in
         Ok (db, "Relation retracted: " ^ name)
     | Ast.ClearRelation name ->
         let* rel = get_rel db name in
         let* db, _ = Ops.clear_relation storage db rel |> wrap_manip in
         Ok (db, "Relation cleared: " ^ name)
     | Ast.RegisterDomain { name; cardinality } ->
-        let domain =
-          Domain.make ~name
+        let domain: Relation.domain =
+          new Relation.domain
+            ~name
             ~generator:(fun _ -> Generator.Error "not enumerable via DDL")
             ~membership_criteria:(fun _ -> true)
             ~cardinality:(convert_cardinality cardinality)
-            ~compare:Stdlib.compare
+            ~schema:Schema.empty
+            ~provenance:None
+            ~lineage:None
+            ~constraints:None
         in
         let* db = Ops.register_domain storage db domain |> wrap_manip in
         Ok (db, "Domain registered: " ^ name)

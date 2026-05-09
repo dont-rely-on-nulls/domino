@@ -47,8 +47,10 @@
             include = [
               ".ocamlformat"
               "dune-project"
+              (nix-filter.lib.inDirectory "bplustree")
               (nix-filter.lib.inDirectory "bin")
               (nix-filter.lib.inDirectory "lib")
+              (nix-filter.lib.inDirectory "shared")
               (nix-filter.lib.inDirectory "test")
             ];
           };
@@ -83,6 +85,8 @@
                             ppx_protocol_conv ]
             ++ (with ocamlPackages; [
               sha
+              ctypes
+              ctypes-foreign
               data-encoding
               ppx_inline_test
               ppx_deriving
@@ -162,6 +166,8 @@
               ocamlPackages.ppx_sexp_conv
               ocamlPackages.lwt
               ocamlPackages.lwt-exit
+              ocamlPackages.ctypes
+              ocamlPackages.ctypes-foreign
               ppx_protocol_conv
               ppx_protocol_conv_xml_light
             ];
@@ -234,6 +240,8 @@
               # Libraries
               # ocamlPackages.menhir
               ocamlPackages.sha
+              ocamlPackages.ctypes
+              ocamlPackages.ctypes-foreign
               ocamlPackages.data-encoding
               ocamlPackages.ppx_inline_test
               ocamlPackages.ppx_deriving

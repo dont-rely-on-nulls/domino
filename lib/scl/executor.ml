@@ -6,7 +6,7 @@ type cursor_batch = {
   has_more : bool;
 }
 
-type exec_result = Batch of cursor_batch | Closed of Management.Database.t
+type exec_result = Batch of cursor_batch | Closed of Management.Database.database
 
 let sessions : Session.t option ref = ref None
 let set_sessions s = sessions := Some s
@@ -38,7 +38,7 @@ module Make (Storage : Management.Physical.S) = struct
 
   let ( let* ) = Result.bind
 
-  let execute (storage : Storage.t) (db : Management.Database.t)
+  let execute (storage : Storage.t) (db : Management.Database.database)
       (stmt : Ast.statement) : (exec_result, error) result =
     match stmt with
     | Ast.Begin { query; limit } ->

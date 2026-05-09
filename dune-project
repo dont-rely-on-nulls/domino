@@ -24,11 +24,13 @@
   (description "A longer description")
   (depends
    ocaml
-   dune
-   ppx_protocol_conv
-   ppx_protocol_conv_xml_light
-   sha
-   data-encoding
+    dune
+    ppx_protocol_conv
+    ppx_protocol_conv_xml_light
+    sha
+    ctypes
+    ctypes-foreign
+    data-encoding
    (ppx_inline_test :with-test)
    ppx_deriving
    ppx_sexp_conv

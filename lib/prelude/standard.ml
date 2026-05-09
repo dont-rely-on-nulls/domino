@@ -15,8 +15,9 @@ let make_comparison ~name ~domain_name ~pred ~cardinality ~generator =
     |> Schema.add "left" domain_name
     |> Schema.add "right" domain_name
   in
-  let membership_criteria : (string -> Merkle.t option) -> Tuple.t -> bool =
-   fun _tree_of -> function
+  let membership_criteria : (*(string -> Merkle.t option) ->*) Tuple.t -> bool =
+   (* fun _tree_of -> function *)
+   function
      | Tuple.Materialized m -> (
          match
            ( Tuple.AttributeMap.find_opt "left" m.attributes,
@@ -27,10 +28,15 @@ let make_comparison ~name ~domain_name ~pred ~cardinality ~generator =
          | _ -> false)
      | Tuple.NonMaterialized _ -> false
   in
-  Relation.make ~hash:None ~name ~schema ~tree:None ~constraints:None
-    ~cardinality ~generator:(Some generator) ~membership_criteria
-    ~provenance:(Relation.Provenance.Base name)
-    ~lineage:(Relation.Lineage.Base name) ()
+  new Relation.ephemeral
+    ~name
+    ~schema
+    ~constraints:None
+    ~cardinality
+    ~generator
+    ~membership_criteria
+    ~provenance:None
+    ~lineage:None
 
 (** Enumerate pairs (a, b) where a < b using triangular indexing. *)
 let pair_of_nat_lt n =
@@ -50,7 +56,7 @@ let cantor_pair_of_nat n =
   let a = w - b in
   (a, b)
 
-let less_than_natural : Relation.t =
+let less_than_natural : Relation.ephemeral =
   let rec generator (position : int option) : Generator.result =
     match position with
     | Some position ->
@@ -69,7 +75,7 @@ let less_than_natural : Relation.t =
     ~pred:(fun c -> c < 0)
     ~cardinality:Conventions.Cardinality.AlephZero ~generator
 
-let less_than_or_equal_natural : Relation.t =
+let less_than_or_equal_natural : Relation.ephemeral =
   let rec generator (position : int option) : Generator.result =
     match position with
     | Some n ->
@@ -90,7 +96,7 @@ let less_than_or_equal_natural : Relation.t =
     ~pred:(fun c -> c <= 0)
     ~cardinality:Conventions.Cardinality.AlephZero ~generator
 
-let greater_than_natural : Relation.t =
+let greater_than_natural : Relation.ephemeral =
   let rec generator (position : int option) : Generator.result =
     match position with
     | Some n ->
@@ -108,7 +114,7 @@ let greater_than_natural : Relation.t =
     ~pred:(fun c -> c > 0)
     ~cardinality:Conventions.Cardinality.AlephZero ~generator
 
-let greater_than_or_equal_natural : Relation.t =
+let greater_than_or_equal_natural : Relation.ephemeral =
   let rec generator (position : int option) : Generator.result =
     match position with
     | Some n ->
@@ -128,7 +134,7 @@ let greater_than_or_equal_natural : Relation.t =
     ~pred:(fun c -> c >= 0)
     ~cardinality:Conventions.Cardinality.AlephZero ~generator
 
-let equal_natural : Relation.t =
+let equal_natural : Relation.ephemeral =
   let rec generator (position : int option) : Generator.result =
     match position with
     | Some n ->
@@ -143,7 +149,7 @@ let equal_natural : Relation.t =
     ~pred:(fun c -> c = 0)
     ~cardinality:Conventions.Cardinality.AlephZero ~generator
 
-let not_equal_natural : Relation.t =
+let not_equal_natural : Relation.ephemeral =
   let rec generator (position : int option) : Generator.result =
     match position with
     | Some n ->
@@ -160,7 +166,7 @@ let not_equal_natural : Relation.t =
     ~pred:(fun c -> c <> 0)
     ~cardinality:Conventions.Cardinality.AlephZero ~generator
 
-let plus_natural : Relation.t =
+let plus_natural : Relation.ephemeral =
   let schema =
     Schema.empty |> Schema.add "a" "natural" |> Schema.add "b" "natural"
     |> Schema.add "sum" "natural"
@@ -177,8 +183,9 @@ let plus_natural : Relation.t =
           (Tuple.make_materialized ~relation:"plus" ~attributes, generator)
     | None -> Error "Cannot enumerate plus randomly."
   in
-  let membership_criteria : (string -> Merkle.t option) -> Tuple.t -> bool =
-   fun _tree_of -> function
+  let membership_criteria : Tuple.t -> bool =
+   (* fun _tree_of ->  *)
+    function
      | Tuple.Materialized m -> (
          match
            ( Tuple.AttributeMap.find_opt "a" m.attributes,
@@ -192,13 +199,17 @@ let plus_natural : Relation.t =
          | _ -> false)
      | Tuple.NonMaterialized _ -> false
   in
-  Relation.make ~hash:None ~name:"natural_plus" ~schema ~tree:None
-    ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
-    ~generator:(Some generator) ~membership_criteria
-    ~provenance:(Relation.Provenance.Base "plus")
-    ~lineage:(Relation.Lineage.Base "plus") ()
+  new Relation.ephemeral
+    ~name:"natural_plus"
+    ~schema
+    ~constraints:None
+    ~cardinality:Conventions.Cardinality.AlephZero
+    ~generator
+    ~membership_criteria
+    ~provenance:None
+    ~lineage:None
 
-let times_natural : Relation.t =
+let times_natural : Relation.ephemeral =
   let schema =
     Schema.empty |> Schema.add "a" "natural" |> Schema.add "b" "natural"
     |> Schema.add "product" "natural"
@@ -216,8 +227,9 @@ let times_natural : Relation.t =
           (Tuple.make_materialized ~relation:"times" ~attributes, generator)
     | None -> Error "Cannot enumerate times randomly."
   in
-  let membership_criteria : (string -> Merkle.t option) -> Tuple.t -> bool =
-   fun _tree_of -> function
+  let membership_criteria : Tuple.t -> bool =
+   (* fun _tree_of -> *) 
+    function
      | Tuple.Materialized m -> (
          match
            ( Tuple.AttributeMap.find_opt "a" m.attributes,
@@ -231,13 +243,17 @@ let times_natural : Relation.t =
          | _ -> false)
      | Tuple.NonMaterialized _ -> false
   in
-  Relation.make ~hash:None ~name:"natural_times" ~schema ~tree:None
-    ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
-    ~generator:(Some generator) ~membership_criteria
-    ~provenance:(Relation.Provenance.Base "times")
-    ~lineage:(Relation.Lineage.Base "times") ()
+  new Relation.ephemeral
+    ~name:"natural_times"
+    ~schema
+    ~constraints:None
+    ~cardinality:Conventions.Cardinality.AlephZero
+    ~generator
+    ~membership_criteria
+    ~provenance:None
+    ~lineage:None
 
-let minus_natural : Relation.t =
+let minus_natural : Relation.ephemeral =
   let schema =
     Schema.empty |> Schema.add "a" "natural" |> Schema.add "b" "natural"
     |> Schema.add "difference" "natural"
@@ -256,10 +272,11 @@ let minus_natural : Relation.t =
           (Tuple.make_materialized ~relation:"minus" ~attributes, generator)
     | None -> Error "Cannot enumerate minus randomly."
   in
-  let membership_criteria : (string -> Merkle.t option) -> Tuple.t -> bool =
-   fun _tree_of -> function
-     | Tuple.Materialized m -> (
-         match
+  let membership_criteria : Tuple.t -> bool =
+   (* fun _tree_of ->  *)
+    function
+     | Tuple.Materialized m ->
+         begin match
            ( Tuple.AttributeMap.find_opt "a" m.attributes,
              Tuple.AttributeMap.find_opt "b" m.attributes,
              Tuple.AttributeMap.find_opt "difference" m.attributes )
@@ -269,16 +286,21 @@ let minus_natural : Relation.t =
              let bv = (Obj.magic b.Attribute.value : int) in
              let dv = (Obj.magic d.Attribute.value : int) in
              av - bv = dv && dv >= 0
-         | _ -> false)
+         | _ -> false
+         end
      | Tuple.NonMaterialized _ -> false
   in
-  Relation.make ~hash:None ~name:"natural_minus" ~schema ~tree:None
-    ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
-    ~generator:(Some generator) ~membership_criteria
-    ~provenance:(Relation.Provenance.Base "minus")
-    ~lineage:(Relation.Lineage.Base "minus") ()
+  new Relation.ephemeral
+    ~name:"natural_minus"
+    ~schema
+    ~constraints:None
+    ~cardinality:Conventions.Cardinality.AlephZero
+    ~generator
+    ~membership_criteria
+    ~provenance:None
+    ~lineage:None
 
-let divide_natural : Relation.t =
+let divide_natural : Relation.ephemeral =
   let schema =
     Schema.empty |> Schema.add "a" "natural" |> Schema.add "b" "natural"
     |> Schema.add "quotient" "natural"
@@ -305,8 +327,9 @@ let divide_natural : Relation.t =
           (Tuple.make_materialized ~relation:"divide" ~attributes, generator)
     | None -> Error "Cannot enumerate divide randomly."
   in
-  let membership_criteria : (string -> Merkle.t option) -> Tuple.t -> bool =
-   fun _tree_of -> function
+  let membership_criteria : Tuple.t -> bool =
+   (* fun _tree_of ->  *)
+    function
      | Tuple.Materialized m -> (
          match
            ( Tuple.AttributeMap.find_opt "a" m.attributes,
@@ -323,11 +346,15 @@ let divide_natural : Relation.t =
          | _ -> false)
      | Tuple.NonMaterialized _ -> false
   in
-  Relation.make ~hash:None ~name:"natural_divide" ~schema ~tree:None
-    ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
-    ~generator:(Some generator) ~membership_criteria
-    ~provenance:(Relation.Provenance.Base "divide")
-    ~lineage:(Relation.Lineage.Base "divide") ()
+  new Relation.ephemeral
+    ~name:"natural_divide"
+    ~schema
+    ~constraints:None
+    ~cardinality:Conventions.Cardinality.AlephZero
+    ~generator
+    ~membership_criteria
+    ~provenance:None
+    ~lineage:None
 
 let prelude_relations =
   [

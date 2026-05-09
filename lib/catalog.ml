@@ -5,8 +5,9 @@
     undeletable, and self-referential: it carries a [public:multigroup] relation
     listing every registered multigroup. *)
 
-type t = {
-  multigroups : Management.Database.t Atomic.t Utilities.StringMap.t Atomic.t;
+type t =
+ {
+  multigroups : Management.Database.database Atomic.t Utilities.StringMap.t Atomic.t;
   default_multigroup : string;
   mutex : Mutex.t;
 }
@@ -22,10 +23,10 @@ module Make (S : Management.Physical.S with type error = string) = struct
   let map_error r =
     Result.map_error (fun e -> Sexplib.Sexp.to_string (Error.sexp_of_error e)) r
 
-  let get catalog name =
+  let get (catalog : t) name =
     Utilities.StringMap.find_opt name (Atomic.get catalog.multigroups)
 
-  let list catalog =
+  let list (catalog : t) =
     Utilities.StringMap.bindings (Atomic.get catalog.multigroups)
     |> List.map fst
 
@@ -40,17 +41,13 @@ module Make (S : Management.Physical.S with type error = string) = struct
 
   (** Dynlink every library recorded in public:loaded_library. No-op on a fresh
       DB; effective when loading a previously persisted multigroup. *)
-  let hydrate_prl_libraries storage (db : Management.Database.t) =
-    match
-      Management.Database.get_relation db
-        Prelude.Catalog.loaded_library_rel_name
-    with
+  let hydrate_prl_libraries storage (db : Management.Database.database) =
+    let pseudo_relation: Relation.pseudo option =
+      Manip.get_relation db Prelude.Catalog.loaded_library_rel_name in
+    match pseudo_relation with
     | None -> ()
-    | Some rel -> (
-        let hashes =
-          match rel.Relation.tree with None -> [] | Some t -> Merkle.keys t
-        in
-        match Manip.load_tuples storage hashes with
+    | Some rel ->
+        begin match Manip.load_tuples storage rel#hash with
         | Error _ -> ()
         | Ok tuples ->
             List.iter
@@ -58,25 +55,31 @@ module Make (S : Management.Physical.S with type error = string) = struct
                 match get_string_attr "path" t with
                 | None -> ()
                 | Some path -> ignore (Prl.Runtime.load_library path))
-              tuples)
+              tuples
+        end
 
   (** Swallow errors: a missing prelude relation is non-fatal. *)
-  let register_prelude_relation storage db (rel : Relation.t) =
+  let register_prelude_relation storage db (rel : Relation.relation) =
     match
-      Manip.create_immutable_relation storage db ~name:rel.name
-        ~schema:rel.schema ~generator:(Option.get rel.generator)
-        ~membership_criteria:rel.membership_criteria
-        ~cardinality:rel.cardinality ~producer:None
+      Manip.create_immutable_relation
+        storage
+        db
+        ~name:rel#name
+        ~schema:rel#schema
+        ~generator:None
+        ~membership_criteria:rel#membership_criteria
+        ~cardinality:rel#cardinality
+        ~producer:None
     with
     | Ok (new_db, _) -> new_db
     | Error e ->
-        Printf.eprintf "Warning: prelude relation %s: %s\n%!" rel.name
+        Printf.eprintf "Warning: prelude relation %s: %s\n%!" rel#name
           (Sexplib.Sexp.to_string (Error.sexp_of_error e));
         db
 
   (** Create DB + seed catalog + fold in [prelude_relations] + hydrate PRL. *)
   let bootstrap_multigroup storage ~prelude_relations ~name =
-    let* db = Manip.create_database storage ~name |> map_error in
+    let* db = Manip.create_database storage name |> map_error in
     let db =
       List.fold_left (register_prelude_relation storage) db prelude_relations
     in
@@ -90,7 +93,7 @@ module Make (S : Management.Physical.S with type error = string) = struct
       (fun acc (name, schema) ->
         let* db = acc in
         let* new_db, _ =
-          Manip.create_relation storage db ~name ~schema |> map_error
+          Manip.create_relation storage db name schema |> map_error
         in
         Ok new_db)
       (Ok db) definitions
@@ -101,7 +104,7 @@ module Make (S : Management.Physical.S with type error = string) = struct
     let rec go () =
       let sakura = Atomic.get sakura_ref in
       match
-        Management.Database.get_relation sakura
+        Manip.get_relation sakura
           Prelude.Catalog.multigroup_rel_name
       with
       | None -> Ok ()
@@ -126,11 +129,10 @@ module Make (S : Management.Physical.S with type error = string) = struct
     let sakura_ref = Atomic.make sakura_db in
     let* () = register_in_sakura storage sakura_ref sakura_name in
     let map = Utilities.StringMap.singleton sakura_name sakura_ref in
-    Ok
-      {
+    Ok {
         multigroups = Atomic.make map;
-        default_multigroup = sakura_name;
         mutex = Mutex.create ();
+        default_multigroup = sakura_name;
       }
 
   let add catalog storage ~prelude_relations name =
@@ -156,7 +158,7 @@ module Make (S : Management.Physical.S with type error = string) = struct
     let rec go () =
       let sakura = Atomic.get sakura_ref in
       match
-        Management.Database.get_relation sakura
+        Manip.get_relation sakura
           Prelude.Catalog.multigroup_rel_name
       with
       | None -> Ok ()
@@ -165,7 +167,7 @@ module Make (S : Management.Physical.S with type error = string) = struct
             Hashing.hash_tuple (Prelude.Catalog.build_multigroup_tuple mg_name)
           in
           let* new_sakura, _ =
-            Manip.retract_tuple storage sakura mg_rel ~tuple_hash |> map_error
+            Manip.retract_tuple storage sakura mg_rel tuple_hash |> map_error
           in
           if Atomic.compare_and_set sakura_ref sakura new_sakura then Ok ()
           else go ()

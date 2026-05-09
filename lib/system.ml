@@ -69,7 +69,7 @@ let assemble (config : Configuration.t) : (unit -> unit, string) result =
   let (TransportParcel ((module T), transport)) = packed_transport in
   let module C = Catalog.Make (S) in
   let* catalog =
-    C.create storage ~prelude_relations:Prelude.Standard.prelude_relations
+    C.create storage ~prelude_relations:(Prelude.Standard.prelude_relations :> Relation.relation list)
   in
   let module L = Listener.Make (T) (S) in
   Ok

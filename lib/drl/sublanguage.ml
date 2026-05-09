@@ -15,12 +15,9 @@ module Make (Storage : Management.Physical.S) = struct
     | Error (Parser.ParseError s) -> Error (Exec.ParseError s)
 
   let execute storage db ast =
-    match Gate.admit db ast with
-    | Error msg -> Error (Exec.ParseError msg)
-    | Ok () -> (
-        match Exec.execute storage db ast with
-        | Ok rel -> Ok (Sublanguage_types.Query rel)
-        | Error e -> Error e)
+    match Exec.execute storage db ast with
+    | Ok rel -> Ok (Sublanguage_types.Query (rel :> Relation.relation))
+    | Error e -> Error e
 
   let sexp_of_error = Exec.sexp_of_error
 end

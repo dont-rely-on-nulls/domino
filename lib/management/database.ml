@@ -1,9 +1,7 @@
 (** Database root: a lightweight versioned descriptor that maps relation names
-    to their content-addressed hashes. Physical storage owns the persistent
-    structure; this value is just metadata plus hash references.
+    to content-addressed relation values. The database object owns the B+ tree
+    pointer and advances it when relations change. *)
 
-    Mutations return a new object with an updated hash chain. The database
-    object owns the B+ tree pointer and advances it when relations change. *)
 
 class database ~name:(init_name : Conventions.Name.t) =
   let init_hash = Conventions.Hash.hash_text init_name in
@@ -22,14 +20,9 @@ class database ~name:(init_name : Conventions.Name.t) =
     method relations = relations
     method timestamp = timestamp
 
-    method get_relation_hash rel_name =
-      BatMap.String.find_opt rel_name relations
-
-    method get_relation_names =
-      BatMap.String.fold (fun n _ acc -> n :: acc) relations []
-
-    method has_relation rel_name =
-      BatMap.String.mem rel_name relations
+    method get_relation_hash rel_name = BatMap.String.find_opt rel_name relations
+    method get_relation_names = BatMap.String.fold (fun n _ acc -> n :: acc) relations []
+    method has_relation rel_name = BatMap.String.mem rel_name relations
 
     method private compute_hash rels =
       BatMap.String.fold
@@ -58,8 +51,6 @@ class database ~name:(init_name : Conventions.Name.t) =
       else
         let rels = BatMap.String.add rel_name relation_hash relations in
         self#advance rels (Some tp)
-  end
-
-type t = database
-
-let empty ~name = new database ~name
+    
+    method serialize (): Storable.Database.t = failwith "NOT IMPLEMENTED"
+end
