@@ -46,11 +46,11 @@ let mdb_env_create' () = with_output_pointer
 let mdb_env_open = foreign "mdb_env_open" (ptr mdb_env @-> string @-> uint @-> mdb_mode_t @-> returning mdb_result)
 let mdb_env_close = foreign "mdb_env_close" (ptr mdb_env @-> returning void)
 
-let mdb_dbi_open = foreign "mdb_dbi_open" (ptr mdb_txn @-> string @-> uint @-> ptr mdb_dbi @-> returning mdb_result)
-let mdb_dbi_open' txn name flags = with_output_pointer
-                                     mdb_dbi
-                                     (Unsigned.UInt.of_int 0)
-                                     (mdb_dbi_open txn name flags)
+let mdb_dbi_open = foreign "mdb_dbi_open" (ptr mdb_txn @-> ptr char @-> uint @-> ptr mdb_dbi @-> returning mdb_result)
+let mdb_dbi_open' txn flags = with_output_pointer
+                                mdb_dbi
+                                (Unsigned.UInt.of_int 0)
+                                (mdb_dbi_open txn (from_voidp char null) flags)
 
 let mdb_txn_begin = foreign "mdb_txn_begin" (ptr mdb_env @-> ptr mdb_txn @-> uint @-> ptr (ptr mdb_txn) @-> returning mdb_result)
 let mdb_txn_begin' env parent flags = with_output_pointer

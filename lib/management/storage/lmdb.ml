@@ -6,7 +6,7 @@ module B : Physical.BACKEND with type error = string = struct
     let mdb_notfound = -30798
   end
 
-  type configuration = { path : string; name : string }
+  type configuration = { path : string }
   type connection = { env : mdb_env structure ptr; dbi : mdb_dbi }
   type error = string (* int *) (* FIXME *)
 
@@ -21,11 +21,7 @@ module B : Physical.BACKEND with type error = string = struct
                 |> Option.to_result ~none:"Missing key: path"
                 |> fmap (Configuration.atom_of_sexp)
     in
-    let* name = Utilities.StringMap.find_opt "name" keys
-                |> Option.to_result ~none:"Missing key: name"
-                |> fmap (Configuration.atom_of_sexp)
-    in
-    Ok { path; name }
+    Ok { path }
 
   let current_tx () = Effect.perform Current
   let current_tx' () = try current_tx () with Effect.Unhandled Current -> (from_voidp mdb_txn null)
@@ -55,11 +51,12 @@ module B : Physical.BACKEND with type error = string = struct
 
   let abort _ = Effect.perform Rollback
 
-  let connect { path; name } =
+  let connect { path; _ } =
     begin
       let open Utilities.Result in
       let* env = mdb_env_create' () in
-      match mdb_env_open env path (Unsigned.UInt.of_int 0) PosixTypes.Mode.zero with
+      (* TODO: make the POSIX mode a config parameter *)
+      match mdb_env_open env path Unsigned.UInt.zero (PosixTypes.Mode.of_int 420) with
       | Error x ->
          mdb_env_close env;
          Error x
@@ -67,7 +64,7 @@ module B : Physical.BACKEND with type error = string = struct
          Result.bind
            (with_transaction' env
               (fun () ->
-                let* dbi = mdb_dbi_open' (current_tx ()) name (Unsigned.UInt.of_int 0) in
+                let* dbi = mdb_dbi_open' (current_tx ()) Unsigned.UInt.zero in
                 Ok { env; dbi }))
            Option.get
     end
