@@ -73,23 +73,6 @@ module B : Physical.BACKEND with type error = string = struct
   let disconnect { env; _ } =
     mdb_env_close env
 
-  let get { dbi; _ } hash =
-    begin
-      match mdb_get' (current_tx ()) dbi (Bytes.of_string hash) with
-      | Ok x -> Ok (Some x)
-      | Error e when e = MDB_Errors.mdb_notfound -> Ok (None)
-      | Error e -> Error e
-    end
-    |> Result.map_error Int.to_string
-
-  let put { dbi; _ } hash value =
-    mdb_put' (current_tx ()) dbi (Bytes.of_string hash) value Unsigned.UInt.zero
-    |> Result.map_error Int.to_string
-
-  let exists conn hash =
-    get conn hash
-    |> Result.map Option.is_some
-
   let lift_result r =
     BatEnum.fold
       (fun acc x ->
@@ -103,6 +86,41 @@ module B : Physical.BACKEND with type error = string = struct
     | Error e -> Error e
     | Ok (Error e) -> Error e
     | Ok (Ok x) -> Ok x
+
+  (*
+   * FIXME: this exists just to get things going right now, but I am
+   * now convinced that the proper thing to do would be to reify
+   * transactions as values at the interface level, and have every
+   * function that needs to read or write to a database take a
+   * transaction instead.
+   *)
+  let ensure_tx conn cont =
+    try cont (current_tx ())
+    with Effect.Unhandled Current ->
+      with_transaction conn (fun () -> cont (current_tx ()))
+      |> Result.map Option.get
+      |> flatten_result
+
+  let get ({ dbi; _ } as conn) hash =
+    ensure_tx conn
+      (fun tx ->
+        begin
+          match mdb_get' tx dbi (Bytes.of_string hash) with
+          | Ok x -> Ok (Some x)
+          | Error e when e = MDB_Errors.mdb_notfound -> Ok (None)
+          | Error e -> Error e
+        end
+        |> Result.map_error Int.to_string)
+
+  let put ({ dbi; _ } as conn) hash value =
+    ensure_tx conn
+      (fun tx ->
+        mdb_put' tx dbi (Bytes.of_string hash) value Unsigned.UInt.zero
+        |> Result.map_error Int.to_string)
+
+  let exists conn hash =
+    get conn hash
+    |> Result.map Option.is_some
 
   let get_many conn hashes = BatEnum.map (get conn) hashes |> lift_result
 
