@@ -104,5 +104,3 @@ module Make (Storage : Management.Physical.S with type error = string) = struct
     | Ast.Use multigroup -> Ok (Switch multigroup)
     | Ast.CreateMultigroup name -> Ok (NewMultigroup name)
 end
-
-module Memory = Make (Management.Physical.Memory)

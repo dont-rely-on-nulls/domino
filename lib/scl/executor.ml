@@ -69,5 +69,3 @@ module Make (Storage : Management.Physical.S) = struct
         Session.close reg ~id:cursor;
         Ok (Closed db)
 end
-
-module Memory = Make (Management.Physical.Memory)

@@ -133,5 +133,3 @@ module Make (Storage : Management.Physical.S) = struct
             Ok db)
           (Ok db) tuples
 end
-
-module Memory = Make (Management.Physical.Memory)

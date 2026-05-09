@@ -85,5 +85,3 @@ module Make (Storage : Management.Physical.S) = struct
         execute_define_function_predicate storage db spec
     | Ast.ListFunctionPredicates -> execute_list_function_predicates db
 end
-
-module Memory = Make (Management.Physical.Memory)

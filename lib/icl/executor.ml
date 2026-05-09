@@ -52,5 +52,3 @@ module Make (Storage : Management.Physical.S) = struct
         | Ok new_db -> Ok (new_db, "Constraint registered: " ^ constraint_name)
         | Error e -> Error e)
 end
-
-module Memory = Make (Management.Physical.Memory)

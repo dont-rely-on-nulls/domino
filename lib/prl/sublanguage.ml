@@ -17,5 +17,3 @@ module Make (Storage : Management.Physical.S) = struct
   let execute = Exec.execute
   let sexp_of_error = Exec.sexp_of_error
 end
-
-module Memory = Make (Management.Physical.Memory)

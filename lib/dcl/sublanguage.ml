@@ -25,5 +25,3 @@ module Make (Storage : Management.Physical.S with type error = string) = struct
 
   let sexp_of_error = Exec.sexp_of_error
 end
-
-module Memory = Make (Management.Physical.Memory)

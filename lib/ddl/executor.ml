@@ -60,5 +60,3 @@ module Make (Storage : Management.Physical.S) = struct
         let* db = Ops.register_domain storage db domain |> wrap_manip in
         Ok (db, "Domain registered: " ^ name)
 end
-
-module Memory = Make (Management.Physical.Memory)

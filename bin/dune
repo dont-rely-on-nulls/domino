@@ -4,3 +4,9 @@
  (modules server)
  (libraries relational_engine unix)
  (modes byte exe))
+
+(rule
+ (targets main_c.exe)
+ (deps main.c)
+ (action
+  (bash "cc main.c -o main_c.exe $(pkg-config --cflags --libs lmdb)")))
