@@ -118,7 +118,7 @@ class stored
     method set_tree_pointer tp = self#advance tp
     method set_cardinality c = {< cardinality = c >}
     method set_constraints c = {< constraints = c >}
-    method serialize () = failwith "NOT IMPLEMENTED"
+    method serialize () = { Storable.Relation.name = name; schema }
 end
 
 class ephemeral 
@@ -187,6 +187,18 @@ class pseudo
     (* TODO: Remove this from the virtual definition *)
     method serialize () = failwith "Pseudo relations are procedural"
 end
+
+let deserialize_stored (_bytes : bytes) : (stored, string) result =
+  try
+    let stored = Storable.Relation.of_bytes _bytes in
+    let membership_criteria =
+      Constraint.build_membership_criteria ~_name:stored.name ~schema:stored.schema
+    in
+    Ok
+      (new stored ~name:stored.name ~schema:stored.schema ~constraints:None
+         ~cardinality:Conventions.Cardinality.ConstrainedFinite
+         ~membership_criteria ~lineage:None ~provenance:None)
+  with Invalid_argument message -> Error message
 
 class domain ~name ~schema ~constraints ~cardinality ~membership_criteria
   ~lineage ~provenance ~generator =

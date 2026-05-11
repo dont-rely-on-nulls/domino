@@ -2,10 +2,8 @@ module type LISTENER = functor
   (T : Transport.TRANSPORT)
   (S : Management.Physical.S with type error = string)
   -> sig
-  val run : T.t -> Catalog.t -> S.t -> unit
+  val run : T.t -> S.t -> unit
 end
-
-type connection_context = { mutable current_multigroup : string }
 
 module Make : LISTENER =
 functor
@@ -15,9 +13,13 @@ functor
   struct
     module type SubS = Sublanguage.S with type storage = S.t
 
-    (* module BranchOps = Management.Branch.Make (S) *)
     module AlgebraOps = Algebra.Make (S)
-    module CatalogOps = Catalog.Make (S)
+
+    (* Per-connection state: the client must issue (use "name") before
+       any sublanguage command is accepted. *)
+    type conn_state =
+      | NoMultigroup
+      | Active of Nt.handle * Management.Multigroup.multigroup
 
     let read_command input =
       try Ok (Sexplib.Sexp.input_sexp input)
@@ -45,7 +47,7 @@ functor
       Utilities.StringMap.find_opt tag sublanguages
       |> Option.to_result ~none:(Error.UnrecognizedSublanguage tag)
 
-    let execute storage db expr (module Language : SubS) =
+    let execute_sublanguage storage db expr (module Language : SubS) =
       Language.parse_sexp expr
       |> fmap (Language.execute storage db)
       |> Result.map_error (fun e ->
@@ -53,41 +55,20 @@ functor
 
     let execute_command storage db = function
       | Sexplib.Sexp.(List [ Atom tag; expr ]) ->
-          find_language tag |> fmap (execute storage db expr)
+          find_language tag |> fmap (execute_sublanguage storage db expr)
       | s -> Error (Error.MalformedExpression s)
 
-    (* let advance_head_branch storage new_hash =
-      match BranchOps.get_head storage with
-      | Ok (Some branch_name) ->
-          ignore (BranchOps.update_tip storage ~name:branch_name ~tip:new_hash)
-      | _ -> () *)
-
-    let perform storage catalog ctx db_head old_db result =
+    (* Thread handle and db through the connection after a sublanguage result. *)
+    let perform handle db result =
       match result with
-      | Sublanguage.Transition new_db ->
-          if Atomic.compare_and_set db_head old_db new_db then (
-            (* advance_head_branch storage new_db.hash; *)
-            Ok result)
-          else Error (Error.Conflict { old_db; new_db })
-      | Sublanguage.SessionSwitch multigroup -> (
-          match CatalogOps.get catalog multigroup with
-          | None -> Error (Error.MultigroupNotFound multigroup)
-          | Some _ ->
-              ctx.current_multigroup <- multigroup;
-              Ok result)
-      | Sublanguage.CreateMultigroup name -> (
-          match
-            CatalogOps.add catalog storage
-              ~prelude_relations:(Prelude.Standard.prelude_relations :> Relation.relation list) name
-          with
-          | Error e -> Error (Error.SyntaxError e)
-          | Ok _ -> Ok result)
-      | _ -> Ok result
+      | Sublanguage_types.Transition new_db -> Ok (handle, new_db, result)
+      | Sublanguage_types.SessionSwitch _ ->
+          Error (Error.SyntaxError "SessionSwitch not supported")
+      | Sublanguage_types.CreateMultigroup _ ->
+          Error (Error.SyntaxError "CreateMultigroup not supported")
+      | _ -> Ok (handle, db, result)
 
-    (* let get_branch storage = *)
-      (* match BranchOps.get_head storage with Ok (Some name) -> name | _ -> "--" *)
-
-    let current_limit = 16 (* TODO: make the limit per-connection? *)
+    let current_limit = 16
 
     let materialize_generator gen limit =
       let rec go gen pos acc count =
@@ -108,8 +89,6 @@ functor
       in
       go gen 0 [] 0
 
-    (* TODO: This function should likely handle only ephemeral relations,
-       but currently it breaks the Query sublanguage accessor. *)
     let materialize_relation storage (rel : Relation.relation) limit =
       let gen = AlgebraOps.to_generator storage rel in
       materialize_generator gen limit
@@ -123,78 +102,6 @@ functor
               [
                 Atom k; Conventions.AbstractValue.sexp_of_t attr.Attribute.value;
               ]))
-
-    (* TODO: does our network protocol make sense? *)
-    let serialize storage (db : Management.Multigroup.multigroup) =
-      let open Sexplib.Sexp in
-      function
-      | Error e -> List [ Atom "error"; Error.sexp_of_error e ]
-      (* TODO: forsake the global cursor register in favour of per-connection bookkeeping *)
-      | Ok (Sublanguage.Cursor { cursor_id; rows; has_more }) ->
-          let row_sexps = List.map tuple_to_sexp rows in
-          let rows_sexp = List row_sexps in
-          List
-            [
-              Atom "cursor";
-              List [ Atom "id"; Atom cursor_id ];
-              List [ Atom "rows"; rows_sexp ];
-              List
-                [
-                  Atom "row_count"; Atom (string_of_int (List.length row_sexps));
-                ];
-              List [ Atom "has_more"; Atom (string_of_bool has_more) ];
-              List [ Atom "db_hash"; Atom db#hash ];
-              List [ Atom "db_name"; Atom db#name ];
-              (* List [ Atom "branch"; Atom (get_branch storage) ]; *)
-            ]
-      | Ok (Sublanguage.Query rel) ->
-          let tuples, truncated =
-            materialize_relation storage rel current_limit
-          in
-          let schema_sexp =
-            List
-              (List.map
-                 (fun (a, d) -> List [ Atom a; Atom d ])
-                 rel#schema)
-          in
-          let rows_sexp = List (List.map tuple_to_sexp tuples) in
-          List
-            [
-              Atom "relation";
-              List [ Atom "name"; Atom rel#name ];
-              List [ Atom "schema"; schema_sexp ];
-              List [ Atom "rows"; rows_sexp ];
-              List
-                [ Atom "row_count"; Atom (string_of_int (List.length tuples)) ];
-              List [ Atom "truncated"; Atom (string_of_bool truncated) ];
-              List [ Atom "db_hash"; Atom db#hash ];
-              List [ Atom "db_name"; Atom db#name ];
-              (* List [ Atom "branch"; Atom (get_branch storage) ]; *)
-            ]
-      | Ok (Sublanguage.Transition new_db) ->
-          List
-            [
-              Atom "ok";
-              List [ Atom "db_hash"; Atom new_db#hash ];
-              List [ Atom "db_name"; Atom new_db#name ];
-              (* TODO: `serialize' shouldn't need access to the storage layer *)
-              (* List [ Atom "branch"; Atom (get_branch storage) ]; *)
-            ]
-      | Ok (Sublanguage.SessionSwitch multigroup) ->
-          List
-            [
-              Atom "ok";
-              List
-                [
-                  Atom "message"; Atom ("Switched to multigroup " ^ multigroup);
-                ];
-            ]
-      | Ok (Sublanguage.CreateMultigroup name) ->
-          List
-            [
-              Atom "ok";
-              List [ Atom "message"; Atom ("Multigroup " ^ name ^ " created") ];
-            ]
 
     let print_with_time str =
       (* TODO: a proper logger *)
@@ -217,48 +124,152 @@ functor
       flush out_ch;
       print_with_time response
 
-    let resolve_db_ref catalog ctx =
-      match CatalogOps.get catalog ctx.current_multigroup with
-      | Some db_ref -> Ok db_ref
-      | None -> Error (Error.MultigroupNotFound ctx.current_multigroup)
+    let send_error out_ch e =
+      output_response out_ch
+        Sexplib.Sexp.(List [ Atom "error"; Error.sexp_of_error e ])
 
-    let fallback_db ctx = new Management.Multigroup.multigroup ~name:ctx.current_multigroup
+    let send_ok_message out_ch msg =
+      output_response out_ch
+        Sexplib.Sexp.(List [ Atom "ok"; List [ Atom "message"; Atom msg ] ])
 
-    let send_serialized storage out_ch db result =
-      serialize storage db result |> output_response out_ch
+    let serialize storage (db : Management.Multigroup.multigroup) =
+      let open Sexplib.Sexp in
+      function
+      | Error e -> List [ Atom "error"; Error.sexp_of_error e ]
+      | Ok (Sublanguage_types.Cursor { cursor_id; rows; has_more }) ->
+          let row_sexps = List.map tuple_to_sexp rows in
+          let rows_sexp = List row_sexps in
+          List
+            [
+              Atom "cursor";
+              List [ Atom "id"; Atom cursor_id ];
+              List [ Atom "rows"; rows_sexp ];
+              List
+                [
+                  Atom "row_count"; Atom (string_of_int (List.length row_sexps));
+                ];
+              List [ Atom "has_more"; Atom (string_of_bool has_more) ];
+              List [ Atom "db_hash"; Atom db#hash ];
+              List [ Atom "db_name"; Atom db#name ];
+              (* TODO: forsake the global cursor register in favour of per-connection bookkeeping *)
+            ]
+      | Ok (Sublanguage_types.Query rel) ->
+          let tuples, truncated =
+            materialize_relation storage rel current_limit
+          in
+          let schema_sexp =
+            List
+              (List.map
+                 (fun (a, d) -> List [ Atom a; Atom d ])
+                 rel#schema)
+          in
+          let rows_sexp = List (List.map tuple_to_sexp tuples) in
+          List
+            [
+              Atom "relation";
+              List [ Atom "name"; Atom rel#name ];
+              List [ Atom "schema"; schema_sexp ];
+              List [ Atom "rows"; rows_sexp ];
+              List
+                [ Atom "row_count"; Atom (string_of_int (List.length tuples)) ];
+              List [ Atom "truncated"; Atom (string_of_bool truncated) ];
+              List [ Atom "db_hash"; Atom db#hash ];
+              List [ Atom "db_name"; Atom db#name ];
+            ]
+      | Ok (Sublanguage_types.Transition new_db) ->
+          List
+            [
+              Atom "ok";
+              List [ Atom "db_hash"; Atom new_db#hash ];
+              List [ Atom "db_name"; Atom new_db#name ];
+            ]
+      | Ok (Sublanguage_types.SessionSwitch multigroup) ->
+          List
+            [
+              Atom "ok";
+              List
+                [
+                  Atom "message"; Atom ("Switched to multigroup " ^ multigroup);
+                ];
+            ]
+      | Ok (Sublanguage_types.CreateMultigroup name) ->
+          List
+            [
+              Atom "ok";
+              List [ Atom "message"; Atom ("Multigroup " ^ name ^ " created") ];
+            ]
 
-    let handle_sublanguage storage catalog ctx out_ch sexp =
-      match resolve_db_ref catalog ctx with
-      | Error e -> send_serialized storage out_ch (fallback_db ctx) (Error e)
-      | Ok db_ref ->
-          let db = Atomic.get db_ref in
-          Ok sexp
-          |> fmap (execute_command storage db)
-          |> fmap (perform storage catalog ctx db_ref db)
-          |> send_serialized storage out_ch db
+    (* Open a handle to a multigroup by name via the NT object layer. The claims
+       from Firewall become the connection_context for access checks. *)
+    let open_multigroup (_storage : S.t) claims name =
+      match
+        Nt.open_handle () () ~path:[ "multigroups"; name ]
+          ~connection_context:claims
+      with
+      | Error e -> Error (Error.SyntaxError e)
+      | Ok handle -> (
+          match Nt.deserialize () () Nt.Multigroup handle.Nt.obj with
+          | Error e -> Error (Error.SyntaxError e)
+          | Ok (Nt.Multigroup mg) -> Ok (handle, mg)
+          | Ok _ -> Error (Error.SyntaxError "unexpected object type at path"))
 
-    let handle_client connection (catalog : Catalog.t) (storage : S.t) =
+    let handle_use storage claims output state name =
+      match open_multigroup storage claims name with
+      | Error e -> send_error output e
+      | Ok (handle, mg) ->
+          state := Active (handle, mg);
+          send_ok_message output ("using multigroup: " ^ name)
+
+    let handle_sublanguage storage output state sexp handle db =
+      match
+        Ok sexp
+        |> fmap (execute_command storage db)
+        |> fmap (perform handle db)
+      with
+      | Error e -> send_error output e
+      | Ok (new_handle, new_db, r) ->
+          state := Active (new_handle, new_db);
+          serialize storage new_db (Ok r) |> output_response output
+
+    let dispatch_command storage claims output state sexp =
+      match sexp with
+      | Sexplib.Sexp.(List [ Atom "use"; Atom name ]) ->
+          handle_use storage claims output state name
+      | _ -> (
+          match !state with
+          | NoMultigroup ->
+              send_error output
+                (Error.SyntaxError "no multigroup selected; send (use \"name\")")
+          | Active (handle, db) ->
+              handle_sublanguage storage output state sexp handle db)
+
+    let handle_client connection (storage : S.t) =
       let input = T.input connection in
       let output = T.output connection in
-      let ctx = { current_multigroup = catalog.default_multigroup } in
-      try
+      (* Authenticate via NT PermissionsManager::Firewall before anything else. *)
+      let claims =
+        match Nt.firewall () with
+        | Ok c -> c
+        | Error e -> Printf.eprintf "Auth failed: %s\n%!" e; ""
+      in
+      let state = ref NoMultigroup in
+      (try
         while true do
           match read_command input with
-          | Error e ->
-              send_serialized storage output (fallback_db ctx) (Error e)
-          | Ok sexp -> handle_sublanguage storage catalog ctx output sexp
+          | Error e -> send_error output e
+          | Ok sexp -> dispatch_command storage claims output state sexp
         done
       with
       | End_of_file -> ()
       | e ->
-          Printf.eprintf "Error handling connection: %s" (Printexc.to_string e)
+          Printf.eprintf "Error handling connection: %s" (Printexc.to_string e))
 
-    let spawn_handler catalog storage connection =
-      Stdlib.Domain.spawn (fun () -> handle_client connection catalog storage)
+    let spawn_handler storage connection =
+      Stdlib.Domain.spawn (fun () -> handle_client connection storage)
 
-    let run transport catalog storage =
+    let run transport storage =
       T.listen transport;
       while true do
-        T.accept transport |> spawn_handler catalog storage |> ignore
+        T.accept transport |> spawn_handler storage |> ignore
       done
   end

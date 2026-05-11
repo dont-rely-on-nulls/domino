@@ -67,15 +67,8 @@ let assemble (config : Configuration.t) : (unit -> unit, string) result =
   let* packed_transport = transport_provider transport_body in
   let (StorageParcel ((module S), storage)) = packed_storage in
   let (TransportParcel ((module T), transport)) = packed_transport in
-  let module C = Catalog.Make (S) in
-  let* catalog =
-    C.create storage ~prelude_relations:(Prelude.Standard.prelude_relations :> Relation.relation list)
-  in
   let module L = Listener.Make (T) (S) in
-  Ok
-    (fun () ->
-      Scl.Executor.set_sessions (Session.create ());
-      L.run transport catalog storage)
+  Ok (fun () -> L.run transport storage)
 
 let run_from_config (path : string) : (unit -> unit, string) result =
   let ( let* ) = Result.bind in

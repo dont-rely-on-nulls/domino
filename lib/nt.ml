@@ -1,3 +1,7 @@
+(* PermissionsManager::Firewall — validates a connection during login and
+   returns the set of claims granted to the authenticated connection. *)
+let firewall _method = failwith "NOT IMPLEMENTED"
+
 let get_relation _db _name = failwith "NOT IMPLEMENTED"
 let create_multigroup _storage _name = failwith "NOT IMPLEMENTED"
 let create_relation _storage _db _name _schema = failwith "NOT IMPLEMENTED"
