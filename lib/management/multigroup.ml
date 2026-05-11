@@ -1,9 +1,9 @@
-(** Database root: a lightweight versioned descriptor that maps relation names
-    to content-addressed relation values. The database object owns the B+ tree
+(** Multigroup root: a lightweight versioned descriptor that maps relation names
+    to content-addressed relation values. The multigroup object owns the B+ tree
     pointer and advances it when relations change. *)
 
 
-class database ~name:(init_name : Conventions.Name.t) =
+class multigroup ~name:(init_name : Conventions.Name.t) =
   let init_hash = Conventions.Hash.hash_text init_name in
   object (self)
     val name : Conventions.Name.t = init_name
@@ -51,6 +51,6 @@ class database ~name:(init_name : Conventions.Name.t) =
       else
         let rels = BatMap.String.add rel_name relation_hash relations in
         self#advance rels (Some tp)
-    
-    method serialize (): Storable.Database.t = failwith "NOT IMPLEMENTED"
+
+    method serialize (): Storable.Multigroup.t = failwith "NOT IMPLEMENTED"
 end

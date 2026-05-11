@@ -15,7 +15,7 @@ functor
   struct
     module type SubS = Sublanguage.S with type storage = S.t
 
-    module BranchOps = Management.Branch.Make (S)
+    (* module BranchOps = Management.Branch.Make (S) *)
     module AlgebraOps = Algebra.Make (S)
     module CatalogOps = Catalog.Make (S)
 
@@ -84,8 +84,8 @@ functor
           | Ok _ -> Ok result)
       | _ -> Ok result
 
-    let get_branch storage =
-      match BranchOps.get_head storage with Ok (Some name) -> name | _ -> "--"
+    (* let get_branch storage = *)
+      (* match BranchOps.get_head storage with Ok (Some name) -> name | _ -> "--" *)
 
     let current_limit = 16 (* TODO: make the limit per-connection? *)
 
@@ -125,7 +125,7 @@ functor
               ]))
 
     (* TODO: does our network protocol make sense? *)
-    let serialize storage (db : Management.Database.database) =
+    let serialize storage (db : Management.Multigroup.multigroup) =
       let open Sexplib.Sexp in
       function
       | Error e -> List [ Atom "error"; Error.sexp_of_error e ]
@@ -145,7 +145,7 @@ functor
               List [ Atom "has_more"; Atom (string_of_bool has_more) ];
               List [ Atom "db_hash"; Atom db#hash ];
               List [ Atom "db_name"; Atom db#name ];
-              List [ Atom "branch"; Atom (get_branch storage) ];
+              (* List [ Atom "branch"; Atom (get_branch storage) ]; *)
             ]
       | Ok (Sublanguage.Query rel) ->
           let tuples, truncated =
@@ -169,7 +169,7 @@ functor
               List [ Atom "truncated"; Atom (string_of_bool truncated) ];
               List [ Atom "db_hash"; Atom db#hash ];
               List [ Atom "db_name"; Atom db#name ];
-              List [ Atom "branch"; Atom (get_branch storage) ];
+              (* List [ Atom "branch"; Atom (get_branch storage) ]; *)
             ]
       | Ok (Sublanguage.Transition new_db) ->
           List
@@ -178,7 +178,7 @@ functor
               List [ Atom "db_hash"; Atom new_db#hash ];
               List [ Atom "db_name"; Atom new_db#name ];
               (* TODO: `serialize' shouldn't need access to the storage layer *)
-              List [ Atom "branch"; Atom (get_branch storage) ];
+              (* List [ Atom "branch"; Atom (get_branch storage) ]; *)
             ]
       | Ok (Sublanguage.SessionSwitch multigroup) ->
           List
@@ -222,7 +222,7 @@ functor
       | Some db_ref -> Ok db_ref
       | None -> Error (Error.MultigroupNotFound ctx.current_multigroup)
 
-    let fallback_db ctx = new Management.Database.database ~name:ctx.current_multigroup
+    let fallback_db ctx = new Management.Multigroup.multigroup ~name:ctx.current_multigroup
 
     let send_serialized storage out_ch db result =
       serialize storage db result |> output_response out_ch

@@ -39,8 +39,8 @@ module Make (Storage : Management.Physical.S) = struct
     | Ast.Forall { variable; quantifier; body } ->
         Constraint.forall ~variable ~quantifier (convert_body body)
 
-  let execute (storage : Storage.t) (db : Management.Database.database)
-      (stmt : Ast.statement) : (Management.Database.database * string, error) result =
+  let execute (storage : Storage.t) (db : Management.Multigroup.multigroup)
+      (stmt : Ast.statement) : (Management.Multigroup.multigroup * string, error) result =
     match stmt with
     | Ast.RegisterConstraint { constraint_name; relation_name; body } -> (
         let runtime_body = convert_body body in

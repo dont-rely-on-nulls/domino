@@ -11,8 +11,8 @@ type t =
   (* TODO: think of a better way to manage and serialize sublanguage errors *)
   | SublanguageError of Sexplib.Sexp.t
   | Conflict of {
-      old_db : Management.Database.database;
-      new_db : Management.Database.database;
+      old_db : Management.Multigroup.multigroup;
+      new_db : Management.Multigroup.multigroup;
     }
   | SyntaxError of string
   | MultigroupNotFound of string

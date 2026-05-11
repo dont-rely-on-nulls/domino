@@ -26,12 +26,12 @@ module Make (Storage : Management.Physical.S) = struct
     | Ast.Continuum -> Conventions.Cardinality.Continuum
     | Ast.ConstrainedFinite -> Conventions.Cardinality.ConstrainedFinite
 
-  let execute (storage : Storage.t) (db : Management.Database.database)
-      (stmt : Ast.statement) : (Management.Database.database * string, error) result =
+  let execute (storage : Storage.t) (db : Management.Multigroup.multigroup)
+      (stmt : Ast.statement) : (Management.Multigroup.multigroup * string, error) result =
     match stmt with
-    | Ast.CreateDatabase name ->
-        let* db = Ops.create_database storage name |> wrap_manip in
-        Ok (db, "Database created: " ^ name)
+    | Ast.CreateMultigroup name ->
+        let* db = Ops.create_multigroup storage name |> wrap_manip in
+        Ok (db, "Multigroup created: " ^ name)
     | Ast.CreateRelation { name; schema = schema_pairs } ->
         let schema =
           List.fold_left

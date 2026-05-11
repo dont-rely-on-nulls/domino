@@ -34,7 +34,7 @@ module Make (Storage : Management.Physical.S) = struct
       (wrap (Alg.equijoin storage common source filter))
       (fun joined -> wrap (Alg.project storage source_attrs joined))
 
-  let rec execute (storage : Storage.t) (db : Management.Database.database)
+  let rec execute (storage : Storage.t) (db : Management.Multigroup.multigroup)
       (q : Ast.query) : (Relation.ephemeral, error) Result.t =
     let ( >>= ) = Result.bind in
     match q with

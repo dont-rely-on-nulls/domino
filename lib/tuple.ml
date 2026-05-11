@@ -1,5 +1,5 @@
 module AttributeMap = struct
-  include Map.Make (String)
+  include BatMap.String
 
   let sexp_of_t sexp_of_v m =
     Sexplib.Sexp.List

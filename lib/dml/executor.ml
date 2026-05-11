@@ -55,8 +55,8 @@ module Make (Storage : Management.Physical.S) = struct
   let materialize_tuples storage rel =
     Result.map_error wrap_alg (Alg.materialize storage rel)
 
-  let execute (storage : Storage.t) (db : Management.Database.database)
-      (stmt : Ast.statement) : (Management.Database.database, error) result =
+  let execute (storage : Storage.t) (db : Management.Multigroup.multigroup)
+      (stmt : Ast.statement) : (Management.Multigroup.multigroup, error) result =
     match stmt with
     | Ast.InsertTuple { relation; attributes } ->
         let* rel = get_rel db relation in

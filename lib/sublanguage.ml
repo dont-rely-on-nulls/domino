@@ -27,7 +27,7 @@ module type S = sig
   val parse_sexp : Sexplib.Sexp.t -> (ast, error) Result.t
 
   val execute :
-    storage -> Management.Database.database -> ast -> (result, error) Result.t
+    storage -> Management.Multigroup.multigroup -> ast -> (result, error) Result.t
 
   val sexp_of_error : error -> Sexplib.Sexp.t
 end

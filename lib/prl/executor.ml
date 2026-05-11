@@ -20,7 +20,7 @@ module Make (Storage : Management.Physical.S) = struct
   let ( let* ) = Result.bind
   let map_rel_error r = Result.map_error (fun e -> RelationError e) r
 
-  let require_relation (db : Management.Database.database) rel_name =
+  let require_relation (db : Management.Multigroup.multigroup) rel_name =
     match Ops.get_relation db#hash rel_name with
     | Some rel -> Ok rel
     | None -> Error (RelationNotFound rel_name)

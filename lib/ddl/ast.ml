@@ -8,7 +8,7 @@ type cardinality_spec =
 [@@deriving sexp]
 
 type statement =
-  | CreateDatabase of string
+  | CreateMultigroup of string
   | CreateRelation of { name : string; schema : (string * string) list }
   | RetractRelation of string
   | ClearRelation of string

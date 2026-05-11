@@ -7,7 +7,7 @@
 
 type t =
  {
-  multigroups : Management.Database.database Atomic.t Utilities.StringMap.t Atomic.t;
+  multigroups : Management.Multigroup.multigroup Atomic.t Utilities.StringMap.t Atomic.t;
   default_multigroup : string;
   mutex : Mutex.t;
 }
@@ -41,7 +41,7 @@ module Make (S : Management.Physical.S with type error = string) = struct
 
   (** Dynlink every library recorded in public:loaded_library. No-op on a fresh
       DB; effective when loading a previously persisted multigroup. *)
-  let hydrate_prl_libraries storage (db : Management.Database.database) =
+  let hydrate_prl_libraries storage (db : Management.Multigroup.multigroup) =
     let pseudo_relation: Relation.pseudo option =
       Manip.get_relation db Prelude.Catalog.loaded_library_rel_name in
     match pseudo_relation with
@@ -79,7 +79,7 @@ module Make (S : Management.Physical.S with type error = string) = struct
 
   (** Create DB + seed catalog + fold in [prelude_relations] + hydrate PRL. *)
   let bootstrap_multigroup storage ~prelude_relations ~name =
-    let* db = Manip.create_database storage name |> map_error in
+    let* db = Manip.create_multigroup storage name |> map_error in
     let db =
       List.fold_left (register_prelude_relation storage) db prelude_relations
     in

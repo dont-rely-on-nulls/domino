@@ -18,11 +18,11 @@ let boot () =
       ~membership_criteria:(fun _ -> true) ~lineage:None ~provenance:None
   in
   let database =
-    (new Management.Database.database ~name:"main")#add_relation
+    (new Management.Multigroup.multigroup ~name:"main")#add_relation
       ~name:relation1#name ~relation_hash:relation1#hash ~tree_pointer:relation1#hash
   in
   let database2 =
-    (new Management.Database.database ~name:"main")#add_relation
+    (new Management.Multigroup.multigroup ~name:"main")#add_relation
       ~name:relation2#name ~relation_hash:relation2#hash ~tree_pointer:relation2#hash
   in
   Printf.printf "attribute hash: %s\n" attribute_hash;

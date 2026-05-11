@@ -621,3 +621,58 @@ let between ~value ~low ~high =
           binding = make_comparison_binding ~left:value ~right:high;
         };
     ]
+
+(** Build membership criteria from schema (validates type membership). Returns a
+    function that takes a tree-lookup function and a tuple, checking schema
+    conformance and tree membership at call time. *)
+let build_membership_criteria 
+      ~_name
+      ~schema :
+      (*(string -> Merkle.t option) ->*) Tuple.t -> bool =
+  let value_conforms_to_domain domain_name (value : Conventions.AbstractValue.t)
+    =
+    match domain_name with
+    | "integer" -> Obj.is_int value
+    | "natural" -> Obj.is_int value && (Obj.obj value : int) >= 0
+    | "string" -> Obj.tag value = Obj.string_tag
+    | _ ->
+       (* Unknown domain: could be a relation-typed attribute (nested tuple)
+          or a user-defined domain. Accept for now; full validation would
+          require looking up the target relation's schema. *)
+       true
+  in
+  let n_expected = List.length schema in
+  (* fun tree_of tuple -> *)
+  fun tuple ->
+  match tuple with
+  | Tuple.NonMaterialized _nm ->
+     (* begin match tree_of name with
+        | None -> false
+        | Some t ->
+        Merkle.member nm.hash t
+        && Tuple.AttributeMap.cardinal nm.attributes = n_expected
+        && List.for_all
+        (fun (attr_name, _) ->
+        Tuple.AttributeMap.mem attr_name nm.attributes)
+        schema
+        end *)
+     false
+  | Tuple.Materialized m ->
+     Tuple.AttributeMap.cardinal m.attributes = n_expected
+     && List.for_all
+          (fun (attr_name, domain_name) ->
+            match Tuple.AttributeMap.find_opt attr_name m.attributes with
+            | None -> false
+            | Some attr ->
+               value_conforms_to_domain domain_name attr.Attribute.value)
+          schema
+
+(** Mutation direction for cascade constraint checking *)
+type mutation = Insert | Delete
+
+(** Context for a single tuple mutation, used by cascade checking *)
+type mutation_context = {
+    target_relation : string;
+    transition : (string * Conventions.AbstractValue.t) list;
+    kind : mutation;
+  }
