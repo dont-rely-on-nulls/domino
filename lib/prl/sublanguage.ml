@@ -1,8 +1,7 @@
-module Make (Storage : Management.Physical.S) = struct
-  module Exec = Executor.Make (Storage)
+module Make (NT : Nt.S) = struct
+  module Exec = Executor.Make (NT)
 
   type configuration = unit
-  type storage = Storage.t
   type ast = Ast.statement
   type error = Exec.error
 
@@ -17,5 +16,3 @@ module Make (Storage : Management.Physical.S) = struct
   let execute = Exec.execute
   let sexp_of_error = Exec.sexp_of_error
 end
-
-module Memory = Make (Management.Physical.Memory)

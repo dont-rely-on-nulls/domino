@@ -1,25 +1,16 @@
-module type LISTENER = functor
-  (T : Transport.TRANSPORT)
-  (S : Management.Physical.S with type error = string)
-  -> sig
-  val run : T.t -> S.t -> unit
-end
-
-module Make : LISTENER =
+module Make =
 functor
   (T : Transport.TRANSPORT)
-  (S : Management.Physical.S with type error = string)
+  (NT : Nt.S)
   ->
   struct
-    module type SubS = Sublanguage.S with type storage = S.t
-
-    module AlgebraOps = Algebra.Make (S)
+    module type SubS = Sublanguage.S
 
     (* Per-connection state: the client must issue (use "name") before
        any sublanguage command is accepted. *)
     type conn_state =
       | NoMultigroup
-      | Active of Nt.handle * Management.Multigroup.multigroup
+      | Active of Nt.branch_handle * Management.Multigroup.multigroup
 
     let read_command input =
       try Ok (Sexplib.Sexp.input_sexp input)
@@ -31,13 +22,12 @@ functor
         (fun (module Language : SubS) ->
           Utilities.StringMap.add Language.name (module Language : SubS))
         [
-          (module Drl.Sublanguage.Make (S) : SubS);
-          (module Ddl.Sublanguage.Make (S) : SubS);
-          (module Dml.Sublanguage.Make (S) : SubS);
-          (module Icl.Sublanguage.Make (S) : SubS);
-          (* (module Dcl.Sublanguage.Make (S) : SubS); *)
-          (module Prl.Sublanguage.Make (S) : SubS);
-          (module Scl.Sublanguage.Make (S) : SubS);
+          (module Drl.Sublanguage.Make (NT) : SubS);
+          (module Ddl.Sublanguage.Make (NT) : SubS);
+          (module Dml.Sublanguage.Make (NT) : SubS);
+          (module Icl.Sublanguage.Make (NT) : SubS);
+          (module Prl.Sublanguage.Make (NT) : SubS);
+          (module Scl.Sublanguage.Make (NT) : SubS);
         ]
         Utilities.StringMap.empty
 
@@ -47,18 +37,17 @@ functor
       Utilities.StringMap.find_opt tag sublanguages
       |> Option.to_result ~none:(Error.UnrecognizedSublanguage tag)
 
-    let execute_sublanguage storage db expr (module Language : SubS) =
+    let execute_sublanguage bh db expr (module Language : SubS) =
       Language.parse_sexp expr
-      |> fmap (Language.execute storage db)
+      |> fmap (Language.execute bh db)
       |> Result.map_error (fun e ->
           Error.SublanguageError (Language.sexp_of_error e))
 
-    let execute_command storage db = function
+    let execute_command bh db = function
       | Sexplib.Sexp.(List [ Atom tag; expr ]) ->
-          find_language tag |> fmap (execute_sublanguage storage db expr)
+          find_language tag |> fmap (execute_sublanguage bh db expr)
       | s -> Error (Error.MalformedExpression s)
 
-    (* Thread handle and db through the connection after a sublanguage result. *)
     let perform handle db result =
       match result with
       | Sublanguage_types.Transition new_db -> Ok (handle, new_db, result)
@@ -89,8 +78,8 @@ functor
       in
       go gen 0 [] 0
 
-    let materialize_relation storage (rel : Relation.relation) limit =
-      let gen = AlgebraOps.to_generator storage rel in
+    let materialize_relation (rel : Relation.relation) limit =
+      let gen = Algebra.to_generator rel in
       materialize_generator gen limit
 
     let tuple_to_sexp (t : Tuple.materialized) =
@@ -104,7 +93,6 @@ functor
               ]))
 
     let print_with_time str =
-      (* TODO: a proper logger *)
       let now = Unix.gettimeofday () in
       let tm = Unix.localtime now in
       let orange = "\027[38;5;208m" in
@@ -132,7 +120,7 @@ functor
       output_response out_ch
         Sexplib.Sexp.(List [ Atom "ok"; List [ Atom "message"; Atom msg ] ])
 
-    let serialize storage (db : Management.Multigroup.multigroup) =
+    let serialize (db : Management.Multigroup.multigroup) =
       let open Sexplib.Sexp in
       function
       | Error e -> List [ Atom "error"; Error.sexp_of_error e ]
@@ -144,19 +132,13 @@ functor
               Atom "cursor";
               List [ Atom "id"; Atom cursor_id ];
               List [ Atom "rows"; rows_sexp ];
-              List
-                [
-                  Atom "row_count"; Atom (string_of_int (List.length row_sexps));
-                ];
+              List [ Atom "row_count"; Atom (string_of_int (List.length row_sexps)) ];
               List [ Atom "has_more"; Atom (string_of_bool has_more) ];
               List [ Atom "db_hash"; Atom db#hash ];
               List [ Atom "db_name"; Atom db#name ];
-              (* TODO: forsake the global cursor register in favour of per-connection bookkeeping *)
             ]
       | Ok (Sublanguage_types.Query rel) ->
-          let tuples, truncated =
-            materialize_relation storage rel current_limit
-          in
+          let tuples, truncated = materialize_relation rel current_limit in
           let schema_sexp =
             List
               (List.map
@@ -170,8 +152,7 @@ functor
               List [ Atom "name"; Atom rel#name ];
               List [ Atom "schema"; schema_sexp ];
               List [ Atom "rows"; rows_sexp ];
-              List
-                [ Atom "row_count"; Atom (string_of_int (List.length tuples)) ];
+              List [ Atom "row_count"; Atom (string_of_int (List.length tuples)) ];
               List [ Atom "truncated"; Atom (string_of_bool truncated) ];
               List [ Atom "db_hash"; Atom db#hash ];
               List [ Atom "db_name"; Atom db#name ];
@@ -187,10 +168,7 @@ functor
           List
             [
               Atom "ok";
-              List
-                [
-                  Atom "message"; Atom ("Switched to multigroup " ^ multigroup);
-                ];
+              List [ Atom "message"; Atom ("Switched to multigroup " ^ multigroup) ];
             ]
       | Ok (Sublanguage_types.CreateMultigroup name) ->
           List
@@ -199,77 +177,64 @@ functor
               List [ Atom "message"; Atom ("Multigroup " ^ name ^ " created") ];
             ]
 
-    (* Open a handle to a multigroup by name via the NT object layer. The claims
-       from Firewall become the connection_context for access checks. *)
-    let open_multigroup (_storage : S.t) claims name =
-      match
-        Nt.open_handle () () ~path:[ "multigroups"; name ]
-          ~connection_context:claims
-      with
-      | Error e -> Error (Error.SyntaxError e)
-      | Ok handle -> (
-          match Nt.deserialize () () Nt.Multigroup handle.Nt.obj with
-          | Error e -> Error (Error.SyntaxError e)
-          | Ok (Nt.Multigroup mg) -> Ok (handle, mg)
-          | Ok _ -> Error (Error.SyntaxError "unexpected object type at path"))
-
-    let handle_use storage claims output state name =
-      match open_multigroup storage claims name with
-      | Error e -> send_error output e
+    let handle_use claims output state name =
+      match NT.open_branch claims name with
+      | Error e ->
+          send_error output (Error.SyntaxError (Nt.string_of_error e))
       | Ok (handle, mg) ->
           state := Active (handle, mg);
           send_ok_message output ("using multigroup: " ^ name)
 
-    let handle_sublanguage storage output state sexp handle db =
+    let handle_sublanguage output state sexp handle db =
       match
         Ok sexp
-        |> fmap (execute_command storage db)
+        |> fmap (execute_command handle db)
         |> fmap (perform handle db)
       with
       | Error e -> send_error output e
       | Ok (new_handle, new_db, r) ->
           state := Active (new_handle, new_db);
-          serialize storage new_db (Ok r) |> output_response output
+          serialize new_db (Ok r) |> output_response output
 
-    let dispatch_command storage claims output state sexp =
+    let dispatch_command claims output state sexp =
       match sexp with
       | Sexplib.Sexp.(List [ Atom "use"; Atom name ]) ->
-          handle_use storage claims output state name
+          handle_use claims output state name
       | _ -> (
           match !state with
           | NoMultigroup ->
               send_error output
                 (Error.SyntaxError "no multigroup selected; send (use \"name\")")
           | Active (handle, db) ->
-              handle_sublanguage storage output state sexp handle db)
+              handle_sublanguage output state sexp handle db)
 
-    let handle_client connection (storage : S.t) =
+    let handle_client connection =
       let input = T.input connection in
       let output = T.output connection in
-      (* Authenticate via NT PermissionsManager::Firewall before anything else. *)
       let claims =
-        match Nt.firewall () with
+        match NT.authenticate Nt.PlainText with
         | Ok c -> c
-        | Error e -> Printf.eprintf "Auth failed: %s\n%!" e; ""
+        | Error e ->
+            Printf.eprintf "Auth failed: %s\n%!" (Nt.string_of_error e); ""
       in
       let state = ref NoMultigroup in
       (try
         while true do
           match read_command input with
           | Error e -> send_error output e
-          | Ok sexp -> dispatch_command storage claims output state sexp
+          | Ok sexp -> dispatch_command claims output state sexp
         done
       with
       | End_of_file -> ()
       | e ->
           Printf.eprintf "Error handling connection: %s" (Printexc.to_string e))
 
-    let spawn_handler storage connection =
-      Stdlib.Domain.spawn (fun () -> handle_client connection storage)
+    let spawn_handler connection =
+      Stdlib.Domain.spawn (fun () -> handle_client connection)
 
-    let run transport storage =
+    let run transport =
       T.listen transport;
       while true do
-        T.accept transport |> spawn_handler storage |> ignore
+        T.accept transport |> spawn_handler |> ignore
       done
   end

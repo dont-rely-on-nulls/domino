@@ -8,9 +8,8 @@ type cursor_batch = {
 
 type exec_result = Batch of cursor_batch | Closed of Management.Multigroup.multigroup
 
-module Make (Storage : Management.Physical.S) = struct
-  module DrlExec = Drl.Executor.Make (Storage)
-  module Alg = Algebra.Make (Storage)
+module Make (NT : Nt.S) = struct
+  module DrlExec = Drl.Executor.Make (NT)
 
   type error =
     | ParseError of string
@@ -26,7 +25,7 @@ module Make (Storage : Management.Physical.S) = struct
 
   let ( let* ) = Result.bind
 
-  let execute (_storage : Storage.t) (db : Management.Multigroup.multigroup)
+  let execute (_bh : Nt.branch_handle) (db : Management.Multigroup.multigroup)
       (stmt : Ast.statement) : (exec_result, error) result =
     ignore default_batch;
     match stmt with
@@ -39,4 +38,4 @@ module Make (Storage : Management.Physical.S) = struct
         Ok (Closed db)
 end
 
-module Memory = Make (Management.Physical.Memory)
+module Memory = Make (Nt.Memory)

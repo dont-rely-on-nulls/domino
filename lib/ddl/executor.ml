@@ -1,23 +1,18 @@
-module Make (Storage : Management.Physical.S) = struct
-  module Ops = Manipulation.Make (Storage)
-
+module Make (NT : Nt.S) = struct
   type error =
     | ParseError of string
-    | ManipulationError of Error.t
+    | NtError of Nt.error
     | RelationNotFound of string
 
   let sexp_of_error e =
     let open Sexplib.Sexp in
     match e with
     | ParseError s -> List [ Atom "parse-error"; Atom s ]
-    | ManipulationError e -> Error.sexp_of_error e
+    | NtError e -> List [ Atom "nt-error"; Atom (Nt.string_of_error e) ]
     | RelationNotFound s -> List [ Atom "relation-not-found"; Atom s ]
 
   let ( let* ) = Result.bind
-  let wrap_manip r = Result.map_error (fun e -> ManipulationError e) r
-
-  let get_rel db name =
-    Ops.get_relation db name |> Option.to_result ~none:(RelationNotFound name)
+  let wrap_nt r = Result.map_error (fun e -> NtError e) r
 
   let convert_cardinality : Ast.cardinality_spec -> Conventions.Cardinality.t =
     function
@@ -26,43 +21,46 @@ module Make (Storage : Management.Physical.S) = struct
     | Ast.Continuum -> Conventions.Cardinality.Continuum
     | Ast.ConstrainedFinite -> Conventions.Cardinality.ConstrainedFinite
 
-  let execute (storage : Storage.t) (db : Management.Multigroup.multigroup)
-      (stmt : Ast.statement) : (Management.Multigroup.multigroup * string, error) result =
+  let execute (bh : Nt.branch_handle) (db : Management.Multigroup.multigroup)
+      (stmt : Ast.statement) :
+      (Nt.branch_handle * Management.Multigroup.multigroup * string, error) result =
     match stmt with
     | Ast.CreateMultigroup name ->
-        let* db = Ops.create_multigroup storage name |> wrap_manip in
-        Ok (db, "Multigroup created: " ^ name)
+        let* bh, db =
+          NT.create_multigroup "" name |> wrap_nt
+        in
+        Ok (bh, db, "Multigroup created: " ^ name)
     | Ast.CreateRelation { name; schema = schema_pairs } ->
         let schema =
           List.fold_left
             (fun s (attr, dom) -> Schema.add attr dom s)
             Schema.empty schema_pairs
         in
-        let* db, _ =
-          Ops.create_relation storage db name schema |> wrap_manip
+        let* bh, db =
+          NT.create_relation bh db ~branch_name:db#name ~name ~schema
+          |> wrap_nt
         in
-        Ok (db, "Relation created: " ^ name)
+        Ok (bh, db, "Relation created: " ^ name)
     | Ast.RetractRelation name ->
-        let* db = Ops.retract_relation storage db name |> wrap_manip in
-        Ok (db, "Relation retracted: " ^ name)
-    | Ast.ClearRelation name ->
-        let* rel = get_rel db name in
-        let* db, _ = Ops.clear_relation storage db rel |> wrap_manip in
-        Ok (db, "Relation cleared: " ^ name)
+        let* bh, db =
+          NT.retract_relation bh db ~name |> wrap_nt
+        in
+        Ok (bh, db, "Relation retracted: " ^ name)
+    | Ast.ClearRelation name -> (
+        match NT.get_relation db name with
+        | None -> Error (RelationNotFound name)
+        | Some rel ->
+            let* bh, db = NT.clear_relation bh db (rel :> Relation.relation) |> wrap_nt in
+            Ok (bh, db, "Relation cleared: " ^ name))
     | Ast.RegisterDomain { name; cardinality } ->
-        let domain: Relation.domain =
-          new Relation.domain
-            ~name
+        let domain : Relation.domain =
+          new Relation.domain ~name
             ~generator:(fun _ -> Generator.Error "not enumerable via DDL")
             ~membership_criteria:(fun _ -> true)
             ~cardinality:(convert_cardinality cardinality)
-            ~schema:Schema.empty
-            ~provenance:None
-            ~lineage:None
+            ~schema:Schema.empty ~provenance:None ~lineage:None
             ~constraints:None
         in
-        let* db = Ops.register_domain storage db domain |> wrap_manip in
-        Ok (db, "Domain registered: " ^ name)
+        let* bh, db = NT.register_domain bh db domain |> wrap_nt in
+        Ok (bh, db, "Domain registered: " ^ name)
 end
-
-module Memory = Make (Management.Physical.Memory)

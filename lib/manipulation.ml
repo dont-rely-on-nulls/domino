@@ -14,11 +14,11 @@
 
 (** Functor to create manipulation operations with a storage backend *)
 module Make (Storage : Management.Physical.S) = struct
-  include Nt
-  
   type storage = Storage.t
   type error = Error.t
-  
+
+  let ( let* ) = Result.bind
+
   (* State Persistence - Store relation and database states *)
 
   (** Store a relation state to storage *)

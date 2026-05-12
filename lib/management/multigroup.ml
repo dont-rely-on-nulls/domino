@@ -62,23 +62,24 @@ class multigroup ~name:(init_name : Conventions.Name.t) =
 end
 
 let deserialize (_bytes : bytes) : (multigroup, string) result =
-  try
-    let stored = Storable.Multigroup.of_bytes _bytes in
-    let db = new multigroup ~name:stored.name in
-    let db =
-      List.fold_left
-        (fun db rel ->
-          let membership_criteria =
-            Constraint.build_membership_criteria ~_name:rel.Storable.Relation.name
-              ~schema:rel.schema
-          in
-          let relation =
-            new Relation.stored ~name:rel.name ~schema:rel.schema ~constraints:None
-              ~cardinality:Conventions.Cardinality.ConstrainedFinite
-              ~membership_criteria ~lineage:None ~provenance:None
-          in
-          db#add_relation relation)
-        db stored.relations
-    in
-    Ok db
-  with Invalid_argument message -> Error message
+  failwith "NOT IMPLEMENTED"
+  (* try *)
+  (*   let stored = Storable.Multigroup.of_bytes _bytes in *)
+  (*   let db = new multigroup ~name:stored.name in *)
+  (*   let db = *)
+  (*     List.fold_left *)
+  (*       (fun db rel -> *)
+  (*         let membership_criteria = *)
+  (*           Constraint.build_membership_criteria ~_name:rel.Storable.Relation.name *)
+  (*             ~schema:rel.schema *)
+  (*         in *)
+  (*         let relation = *)
+  (*           new Relation.stored ~name:rel.name ~schema:rel.schema ~constraints:None *)
+  (*             ~cardinality:Conventions.Cardinality.ConstrainedFinite *)
+  (*             ~membership_criteria ~lineage:None ~provenance:None *)
+  (*         in *)
+  (*         db#add_relation relation) *)
+  (*       db stored.relations *)
+  (*   in *)
+  (*   Ok db *)
+  (* with Invalid_argument message -> Error message *)

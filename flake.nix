@@ -260,7 +260,6 @@
               legacyPackages.z3
             ];
 
-
             shellHook = ''
               export CAML_LD_LIBRARY_PATH="''${CAML_LD_LIBRARY_PATH:+$CAML_LD_LIBRARY_PATH:}$(ocamlfind query num)"
             '';

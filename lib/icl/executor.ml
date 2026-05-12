@@ -1,19 +1,18 @@
-module Make (Storage : Management.Physical.S) = struct
-  module Ops = Manipulation.Make (Storage)
-
+module Make (NT : Nt.S) = struct
   type error =
     | ParseError of string
-    | ManipulationError of Error.t
+    | NtError of Nt.error
     | ConversionError of string
 
   let sexp_of_error e =
     let open Sexplib.Sexp in
     match e with
     | ParseError s -> List [ Atom "parse-error"; Atom s ]
-    | ManipulationError e -> Error.sexp_of_error e
+    | NtError e -> List [ Atom "nt-error"; Atom (Nt.string_of_error e) ]
     | ConversionError s -> List [ Atom "conversion-error"; Atom s ]
 
-  let wrap_manip = Result.map_error (fun e -> ManipulationError e)
+  let ( let* ) = Result.bind
+  let wrap_nt = Result.map_error (fun e -> NtError e)
 
   let convert_binding_expr : Ast.binding_expr -> Constraint.binding_expr =
     function
@@ -39,18 +38,18 @@ module Make (Storage : Management.Physical.S) = struct
     | Ast.Forall { variable; quantifier; body } ->
         Constraint.forall ~variable ~quantifier (convert_body body)
 
-  let execute (storage : Storage.t) (db : Management.Multigroup.multigroup)
-      (stmt : Ast.statement) : (Management.Multigroup.multigroup * string, error) result =
+  let execute (bh : Nt.branch_handle) (db : Management.Multigroup.multigroup)
+      (stmt : Ast.statement) :
+      (Nt.branch_handle * Management.Multigroup.multigroup * string, error) result =
     match stmt with
-    | Ast.RegisterConstraint { constraint_name; relation_name; body } -> (
+    | Ast.RegisterConstraint { constraint_name; relation_name; body } ->
         let runtime_body = convert_body body in
-        match
-          Ops.register_constraint storage db ~constraint_name ~relation_name
+        let* bh, new_db =
+          NT.register_constraint bh db ~constraint_name ~relation_name
             ~body:runtime_body
-          |> wrap_manip
-        with
-        | Ok new_db -> Ok (new_db, "Constraint registered: " ^ constraint_name)
-        | Error e -> Error e)
+          |> wrap_nt
+        in
+        Ok (bh, new_db, "Constraint registered: " ^ constraint_name)
 end
 
-module Memory = Make (Management.Physical.Memory)
+module Memory = Make (Nt.Memory)

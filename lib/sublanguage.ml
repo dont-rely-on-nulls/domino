@@ -19,7 +19,6 @@ include Sublanguage_types
 module type S = sig
   include Configuration.CONFIGURABLE
 
-  type storage
   type ast
   type error
 
@@ -27,7 +26,7 @@ module type S = sig
   val parse_sexp : Sexplib.Sexp.t -> (ast, error) Result.t
 
   val execute :
-    storage -> Management.Multigroup.multigroup -> ast -> (result, error) Result.t
+    Nt.branch_handle -> Management.Multigroup.multigroup -> ast -> (result, error) Result.t
 
   val sexp_of_error : error -> Sexplib.Sexp.t
 end
