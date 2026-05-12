@@ -24,8 +24,17 @@ let registry : registry =
       empty
       |> add "memory" (fun _sexp ->
           Ok (NtParcel (module Nt.Memory : Nt.S)))
-      |> add "sqlite" (fun _sexp ->
-          Ok (NtParcel (module Nt.Sqlite : Nt.S)));
+      |> add "sqlite" (fun sexp ->
+          (* Accept (sqlite) for :memory: or (sqlite "/path/to/db") for a file. *)
+          let path = match sexp with
+            | Sexplib.Sexp.(List [ Atom p ]) -> p
+            | _ -> ":memory:"
+          in
+          let module M = Nt.Make (struct
+            let driver   = "sqlite"
+            let init_arg = path
+          end) in
+          Ok (NtParcel (module M : Nt.S)));
     transport =
       empty
       |> add "tcp" (fun sexp ->
@@ -62,6 +71,7 @@ let assemble (config : Configuration.t) : (unit -> unit, string) result =
   let* packed_transport = transport_provider transport_body in
   let (NtParcel (module NT)) = packed_nt in
   let (TransportParcel ((module T), transport)) = packed_transport in
+  let* () = NT.init () |> Result.map_error Nt.string_of_error in
   let module L = Listener.Make (T) (NT) in
   Ok (fun () -> L.run transport)
 

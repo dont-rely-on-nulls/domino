@@ -70,13 +70,30 @@ module Make (B : Backend) = struct
   let ( let* ) = Result.bind
 
   (* --------------------------------------------------------------------------
+     Forward references — both filled in at module-body end after all
+     dependencies are defined, avoiding OCaml's sequential-binding constraint.
+     -------------------------------------------------------------------------- *)
+
+  (* Filled in with seed_prelude once that function is defined below. *)
+  let seed_prelude_ref
+    : (branch_handle -> Management.Multigroup.multigroup
+       -> (branch_handle * Management.Multigroup.multigroup, error) result) ref =
+    ref (fun bh mg -> Ok (bh, mg))
+
+  (* Filled in with do_init once that function is defined below.
+     Called by init() to seed / restore the master branch before any
+     connections are accepted — eliminates the per-connection race. *)
+  let do_init_ref : (unit -> (unit, error) result) ref =
+    ref (fun () -> Ok ())
+
+  (* --------------------------------------------------------------------------
      Runtime initialisation
      -------------------------------------------------------------------------- *)
 
   let init () =
     let rc = Nt_ffi.rnt_init B.driver B.init_arg in
     if rc <> 0 then Error (HandleError "rnt_init failed")
-    else Ok ()
+    else !do_init_ref ()
 
   (* --------------------------------------------------------------------------
      Authentication
@@ -96,6 +113,13 @@ module Make (B : Backend) = struct
     | _           -> Error (AuthFailed "firewall rejected connection")
 
   (* --------------------------------------------------------------------------
+     Path helpers (shared by branch and relation lifecycle)
+     -------------------------------------------------------------------------- *)
+
+  let relation_path (branch_name : string) (rel_name : string) : string =
+    "/system/branches/" ^ branch_name ^ "/relations/" ^ rel_name
+
+  (* --------------------------------------------------------------------------
      Branch (multigroup head) lifecycle
      -------------------------------------------------------------------------- *)
 
@@ -104,7 +128,31 @@ module Make (B : Backend) = struct
     if Bytes.length payload = 0 then
       Ok (new Management.Multigroup.multigroup ~name)
     else
-      Error (NotSupported "multigroup deserialisation not yet implemented")
+      match Management.Multigroup.deserialize payload with
+      | Ok mg   -> Ok mg
+      | Error m -> Error (HandleError ("multigroup deserialize failed: " ^ m))
+
+  (* After deserializing a branch payload, register each stored relation in
+     RNT's ObjectManager and restore its persisted Merkle root so that
+     subsequent cursors see the correct tuple set. *)
+  let restore_merkle_roots (mg : Management.Multigroup.multigroup) : unit =
+    BatMap.String.iter (fun _rel_name (rel : Relation.relation) ->
+      match rel#kind with
+      | `Stored ->
+          let path = relation_path mg#name rel#name in
+          ignore (Nt_ffi.rnt_register_relation path);
+          let root =
+            match
+              ((Obj.magic rel)
+                : < tree_pointer : Conventions.Hash.t option ; .. >)
+              #tree_pointer
+            with
+            | None   -> ""
+            | Some r -> r
+          in
+          ignore (Nt_ffi.rnt_set_relation_root path root)
+      | _ -> ()
+    ) mg#relations
 
   let ensure_branch (path : string) : unit =
     ignore (Nt_ffi.rnt_register_branch path (from_voidp uint8_t null) Unsigned.Size_t.zero)
@@ -126,7 +174,9 @@ module Make (B : Backend) = struct
           let payload = Nt_ffi.consume_uint8_array !@pp !@lp in
           (match multigroup_of_payload name payload with
            | Error e -> Error e
-           | Ok mg   -> Ok (bh, mg))
+           | Ok mg   ->
+               restore_merkle_roots mg;
+               Ok (bh, mg))
 
   let close_branch (bh : branch_handle) : (unit, error) result =
     let rc = Nt_ffi.rnt_close_handle (Nt_ffi.nint_to_ptr bh) in
@@ -143,9 +193,6 @@ module Make (B : Backend) = struct
   (* --------------------------------------------------------------------------
      Relation handles
      -------------------------------------------------------------------------- *)
-
-  let relation_path (branch_name : string) (rel_name : string) : string =
-    "/system/branches/" ^ branch_name ^ "/relations/" ^ rel_name
 
   let open_relation (branch_name : string) (rel_name : string) :
       (relation_handle, error) result =
@@ -292,9 +339,10 @@ module Make (B : Backend) = struct
   let clear_relation (bh : branch_handle) (mg : Management.Multigroup.multigroup)
       (rel : Relation.relation) :
       (branch_handle * Management.Multigroup.multigroup, error) result =
-    (* Tuple unlinking in RNT not yet in C API; multigroup state is preserved. *)
-    ignore rel;
-    Ok (bh, mg)
+    let path = relation_path mg#name rel#name in
+    let rc = Nt_ffi.rnt_clear_relation path in
+    if rc <> 0 then Error (HandleError ("clear_relation failed: " ^ rel#name))
+    else Ok (bh, mg)
 
   let register_domain (bh : branch_handle) (mg : Management.Multigroup.multigroup)
       (domain : Relation.domain) :
@@ -375,20 +423,134 @@ module Make (B : Backend) = struct
         Ok (hashes @ [h]))
       (Ok []) tuples
 
-  let retract_tuple ~branch_name:_ ~rel_name:_ (_hash : string) :
+  let retract_tuple ~branch_name ~rel_name (hash : string) :
       (unit, error) result =
-    (* rnt_unlink_tuple not yet in C API. *)
-    Error (NotSupported "tuple deletion not yet supported in C API")
+    let path = relation_path branch_name rel_name in
+    let rc = Nt_ffi.rnt_unlink_tuple path hash in
+    if rc = 0 then Ok () else Error (HandleError "retract_tuple failed")
 
-  let relation_merkle_root (branch_name : string) (rel_name : string) :
+  let relation_root (branch_name : string) (rel_name : string) :
       (string, error) result =
     let path = relation_path branch_name rel_name in
     let (rc, root_opt) =
-      Nt_ffi.with_out_string (fun pp -> Nt_ffi.rnt_relation_merkle_root path pp)
+      Nt_ffi.with_out_string (fun pp -> Nt_ffi.rnt_relation_root path pp)
     in
     match (rc, root_opt) with
     | (0, Some r) -> Ok r
-    | _           -> Error (HandleError "merkle_root computation failed")
+    | _           -> Error (HandleError "relation_root query failed")
+
+  let set_relation_root (branch_name : string) (rel_name : string) (root : string) :
+      (unit, error) result =
+    let path = relation_path branch_name rel_name in
+    let rc = Nt_ffi.rnt_set_relation_root path root in
+    if rc = 0 then Ok () else Error (HandleError "set_relation_root failed")
+
+  (* --------------------------------------------------------------------------
+     Prelude / catalog bootstrap
+     -------------------------------------------------------------------------- *)
+
+  (* After bulk tuple insertion, reads each stored relation's current Merkle
+     root from RNT and stamps it into the multigroup, then commits. This
+     ensures the persisted payload carries real tree_pointers so that
+     restore_merkle_roots on the next boot does not wipe the Merkle tree. *)
+  let sync_merkle_roots_and_commit (bh : branch_handle)
+      (mg : Management.Multigroup.multigroup) :
+      (branch_handle * Management.Multigroup.multigroup, error) result =
+    let rels = mg#relations in
+    let* mg' =
+      BatMap.String.fold
+        (fun _name (rel : Relation.relation) acc ->
+          let* cur_mg = acc in
+          match rel#kind with
+          | `Stored ->
+              let* root = relation_root cur_mg#name rel#name in
+              if root = "" then Ok cur_mg
+              else
+                let updated =
+                  ((Obj.magic rel)
+                    : < set_tree_pointer :
+                          Conventions.Hash.t option -> Relation.stored ; .. >)
+                  #set_tree_pointer (Some root)
+                in
+                Ok (cur_mg#update_relation (updated :> Relation.relation))
+          | _ -> Ok cur_mg)
+        rels (Ok mg)
+    in
+    let* () = commit_branch bh mg' in
+    Ok (bh, mg')
+
+  (* Seed the catalog prelude into a brand-new (empty) multigroup.
+     Creates all catalog relations as stored relations, inserts the
+     self-describing tuples into public:relation and public:attribute,
+     then syncs Merkle roots so the payload is durable across restarts. *)
+  let seed_prelude (bh : branch_handle) (mg : Management.Multigroup.multigroup) :
+      (branch_handle * Management.Multigroup.multigroup, error) result =
+    let* (bh, mg) =
+      List.fold_left
+        (fun acc (name, schema) ->
+          let* (bh, mg) = acc in
+          create_relation bh mg ~branch_name:mg#name ~name ~schema)
+        (Ok (bh, mg))
+        Prelude.Catalog.catalog_definitions
+    in
+    let rel_tuples =
+      List.map
+        (fun (name, _) -> Prelude.Catalog.build_relation_tuple name)
+        Prelude.Catalog.catalog_definitions
+    in
+    let* _ =
+      create_tuples ~branch_name:mg#name
+        ~rel_name:Prelude.Catalog.relation_rel_name rel_tuples
+    in
+    let attr_tuples =
+      List.concat_map
+        (fun (rel_name, schema) ->
+          Prelude.Catalog.build_attribute_tuples ~relation_name:rel_name schema)
+        Prelude.Catalog.catalog_definitions
+    in
+    let* _ =
+      create_tuples ~branch_name:mg#name
+        ~rel_name:Prelude.Catalog.attribute_rel_name attr_tuples
+    in
+    sync_merkle_roots_and_commit bh mg
+
+  let () = seed_prelude_ref := seed_prelude
+
+  (* Seed or restore the master branch once, before any connections are
+     accepted.  Called by init() via do_init_ref so that seeding is
+     single-threaded and races between concurrent connection-open calls
+     are impossible. *)
+  let do_init () : (unit, error) result =
+    let path = "/system/branches/master" in
+    let raw = Nt_ffi.rnt_open_handle path (from_voidp void null) in
+    match Nt_ffi.ptr_to_opt raw with
+    | None -> Error (HandleError "init: could not open master branch")
+    | Some bh ->
+        let pp = allocate (ptr uint8_t) (from_voidp uint8_t null) in
+        let lp = allocate size_t Unsigned.Size_t.zero in
+        let rc = Nt_ffi.rnt_branch_payload (Nt_ffi.nint_to_ptr bh) pp lp in
+        if rc <> 0 then (
+          ignore (Nt_ffi.rnt_close_handle (Nt_ffi.nint_to_ptr bh));
+          Error (HandleError "init: could not read master branch payload")
+        ) else
+          let payload = Nt_ffi.consume_uint8_array !@pp !@lp in
+          let result =
+            if Bytes.length payload = 0 then
+              let mg = new Management.Multigroup.multigroup ~name:"master" in
+              seed_prelude bh mg
+            else
+              (match Management.Multigroup.deserialize payload with
+               | Error m -> Error (HandleError ("init: deserialize failed: " ^ m))
+               | Ok mg ->
+                   restore_merkle_roots mg;
+                   Ok (bh, mg))
+          in
+          ignore (Nt_ffi.rnt_close_handle (Nt_ffi.nint_to_ptr bh));
+          (match result with
+           | Ok _ -> Ok ()
+           | Error e -> Error e)
+
+  let () = do_init_ref := do_init
 
   (* --------------------------------------------------------------------------
      Multigroup queries
@@ -456,8 +618,9 @@ module type S = sig
   val create_tuples : branch_name:string -> rel_name:string -> Tuple.materialized list -> (string list, error) result
   val retract_tuple : branch_name:string -> rel_name:string -> string -> (unit, error) result
 
-  val insert_tuple         : string -> string -> (string * string) list -> (string, error) result
-  val relation_merkle_root : string -> string -> (string, error) result
+  val insert_tuple    : string -> string -> (string * string) list -> (string, error) result
+  val relation_root   : string -> string -> (string, error) result
+  val set_relation_root : string -> string -> string -> (unit, error) result
 end
 
 (* --------------------------------------------------------------------------

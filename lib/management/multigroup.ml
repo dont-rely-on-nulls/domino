@@ -61,25 +61,33 @@ class multigroup ~name:(init_name : Conventions.Name.t) =
       }
 end
 
-let deserialize (_bytes : bytes) : (multigroup, string) result =
-  failwith "NOT IMPLEMENTED"
-  (* try *)
-  (*   let stored = Storable.Multigroup.of_bytes _bytes in *)
-  (*   let db = new multigroup ~name:stored.name in *)
-  (*   let db = *)
-  (*     List.fold_left *)
-  (*       (fun db rel -> *)
-  (*         let membership_criteria = *)
-  (*           Constraint.build_membership_criteria ~_name:rel.Storable.Relation.name *)
-  (*             ~schema:rel.schema *)
-  (*         in *)
-  (*         let relation = *)
-  (*           new Relation.stored ~name:rel.name ~schema:rel.schema ~constraints:None *)
-  (*             ~cardinality:Conventions.Cardinality.ConstrainedFinite *)
-  (*             ~membership_criteria ~lineage:None ~provenance:None *)
-  (*         in *)
-  (*         db#add_relation relation) *)
-  (*       db stored.relations *)
-  (*   in *)
-  (*   Ok db *)
-  (* with Invalid_argument message -> Error message *)
+let deserialize (bytes : bytes) : (multigroup, string) result =
+  (* Reconstruct a multigroup from its persisted payload.
+     Only name, schema, and tree_pointer (Merkle root) are restored per
+     relation.  Constraints are not yet round-tripped — see the TODO in
+     storable.ml for the constraint serialisation plan. *)
+  try
+    let stored = Storable.Multigroup.of_bytes bytes in
+    let db = new multigroup ~name:stored.name in
+    let db =
+      List.fold_left
+        (fun mg rel ->
+          let relation =
+            new Relation.stored
+              ~name:rel.Storable.Relation.name
+              ~schema:rel.schema
+              ~constraints:None
+              ~cardinality:Conventions.Cardinality.AlephZero
+              ~lineage:None
+              ~provenance:None
+              ~membership_criteria:(fun _ -> true)
+          in
+          let relation =
+            if rel.tree_pointer = "" then relation
+            else relation#set_tree_pointer (Some rel.tree_pointer)
+          in
+          mg#add_relation (relation :> Relation.relation))
+        db stored.relations
+    in
+    Ok db
+  with Invalid_argument message -> Error message

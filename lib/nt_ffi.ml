@@ -54,9 +54,18 @@ let rnt_link_tuple =
   fn "rnt_link_tuple"
     (string @-> string @-> ptr (ptr char) @-> returning int)
 
-let rnt_relation_merkle_root =
-  fn "rnt_relation_merkle_root"
+let rnt_unlink_tuple =
+  fn "rnt_unlink_tuple" (string @-> string @-> returning int)
+
+let rnt_clear_relation =
+  fn "rnt_clear_relation" (string @-> returning int)
+
+let rnt_relation_root =
+  fn "rnt_relation_root"
     (string @-> ptr (ptr char) @-> returning int)
+
+let rnt_set_relation_root =
+  fn "rnt_set_relation_root" (string @-> string @-> returning int)
 
 (* Cursor and VM ----------------------------------------------------------- *)
 let rnt_cursor_open =

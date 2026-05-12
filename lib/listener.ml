@@ -6,11 +6,13 @@ functor
   struct
     module type SubS = Sublanguage.S
 
-    (* Per-connection state: the client must issue (use "name") before
-       any sublanguage command is accepted. *)
-    type conn_state =
-      | NoMultigroup
-      | Active of Nt.branch_handle * Management.Multigroup.multigroup
+    (* Per-connection state: always active from the moment the client connects.
+       Authentication and the default "master" branch are opened automatically. *)
+    type conn_state = {
+      claims        : Nt.claims;
+      branch_handle : Nt.branch_handle;
+      multigroup    : Management.Multigroup.multigroup;
+    }
 
     let read_command input =
       try Ok (Sexplib.Sexp.input_sexp input)
@@ -28,6 +30,7 @@ functor
           (module Icl.Sublanguage.Make (NT) : SubS);
           (module Prl.Sublanguage.Make (NT) : SubS);
           (module Scl.Sublanguage.Make (NT) : SubS);
+          (module Vcl.Sublanguage.Make (NT) : SubS);
         ]
         Utilities.StringMap.empty
 
@@ -51,13 +54,7 @@ functor
     let perform handle db result =
       match result with
       | Sublanguage_types.Transition new_db -> Ok (handle, new_db, result)
-      | Sublanguage_types.SessionSwitch _ ->
-          Error (Error.SyntaxError "SessionSwitch not supported")
-      | Sublanguage_types.CreateMultigroup _ ->
-          Error (Error.SyntaxError "CreateMultigroup not supported")
       | _ -> Ok (handle, db, result)
-
-    let current_limit = 16
 
     let tuple_to_sexp (t : Tuple.materialized) =
       let open Sexplib.Sexp in
@@ -115,8 +112,6 @@ functor
               List [ Atom "db_name"; Atom db#name ];
             ]
       | Ok (Sublanguage_types.Query _rel) ->
-          (* Query results are now returned as Cursor by the DRL sublanguage.
-             This branch is retained for exhaustiveness but should not be reached. *)
           ignore db;
           List [ Atom "error"; Atom "unexpected Query result: use Cursor path" ]
       | Ok (Sublanguage_types.Transition new_db) ->
@@ -139,36 +134,40 @@ functor
               List [ Atom "message"; Atom ("Multigroup " ^ name ^ " created") ];
             ]
 
-    let handle_use claims output state name =
-      match NT.open_branch claims name with
+    (* Close the current branch and open a new one by name.
+       On failure to open the target, re-opens "master" as a fallback to keep
+       the connection alive. *)
+    let switch_branch output state name =
+      let { claims; branch_handle = old_handle; _ } = !state in
+      match NT.close_branch old_handle with
       | Error e ->
           send_error output (Error.SyntaxError (Nt.string_of_error e))
-      | Ok (handle, mg) ->
-          state := Active (handle, mg);
-          send_ok_message output ("using multigroup: " ^ name)
+      | Ok () ->
+          (match NT.open_branch claims name with
+           | Error e ->
+               (match NT.open_branch claims "master" with
+                | Ok (bh, mg) ->
+                    state := { !state with branch_handle = bh; multigroup = mg }
+                | Error _ -> ());
+               send_error output (Error.SyntaxError (Nt.string_of_error e))
+           | Ok (bh, mg) ->
+               state := { claims; branch_handle = bh; multigroup = mg };
+               send_ok_message output ("using branch: " ^ name))
 
-    let handle_sublanguage output state sexp handle db =
+    let handle_sublanguage output state sexp =
+      let handle = !state.branch_handle in
+      let db = !state.multigroup in
       match
         Ok sexp
         |> fmap (execute_command handle db)
         |> fmap (perform handle db)
       with
       | Error e -> send_error output e
+      | Ok (_, _, Sublanguage_types.SessionSwitch name) ->
+          switch_branch output state name
       | Ok (new_handle, new_db, r) ->
-          state := Active (new_handle, new_db);
+          state := { !state with branch_handle = new_handle; multigroup = new_db };
           serialize new_db (Ok r) |> output_response output
-
-    let dispatch_command claims output state sexp =
-      match sexp with
-      | Sexplib.Sexp.(List [ Atom "use"; Atom name ]) ->
-          handle_use claims output state name
-      | _ -> (
-          match !state with
-          | NoMultigroup ->
-              send_error output
-                (Error.SyntaxError "no multigroup selected; send (use \"name\")")
-          | Active (handle, db) ->
-              handle_sublanguage output state sexp handle db)
 
     let handle_client connection =
       let input = T.input connection in
@@ -179,17 +178,22 @@ functor
         | Error e ->
             Printf.eprintf "Auth failed: %s\n%!" (Nt.string_of_error e); ""
       in
-      let state = ref NoMultigroup in
-      (try
-        while true do
-          match read_command input with
-          | Error e -> send_error output e
-          | Ok sexp -> dispatch_command claims output state sexp
-        done
-      with
-      | End_of_file -> ()
-      | e ->
-          Printf.eprintf "Error handling connection: %s" (Printexc.to_string e))
+      (match NT.open_branch claims "master" with
+       | Error e ->
+           send_error output (Error.SyntaxError (Nt.string_of_error e))
+       | Ok (bh, mg) ->
+           let state = ref { claims; branch_handle = bh; multigroup = mg } in
+           (try
+             while true do
+               match read_command input with
+               | Error e -> send_error output e
+               | Ok sexp -> handle_sublanguage output state sexp
+             done
+           with
+           | End_of_file -> ignore (NT.close_branch !state.branch_handle)
+           | e ->
+               ignore (NT.close_branch !state.branch_handle);
+               Printf.eprintf "Error handling connection: %s" (Printexc.to_string e)))
 
     let spawn_handler connection =
       Stdlib.Domain.spawn (fun () -> handle_client connection)

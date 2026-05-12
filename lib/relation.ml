@@ -118,7 +118,10 @@ class stored
     method set_tree_pointer tp = self#advance tp
     method set_cardinality c = {< cardinality = c >}
     method set_constraints c = {< constraints = c >}
-    method serialize () = { Storable.Relation.name = name; schema }
+    method serialize () =
+      { Storable.Relation.name;
+        schema;
+        tree_pointer = Option.value tree_pointer ~default:"" }
 end
 
 class ephemeral 
