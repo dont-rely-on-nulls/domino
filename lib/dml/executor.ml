@@ -25,7 +25,7 @@ module Make (Storage : Management.Physical.S) = struct
   let wrap_alg e = AlgebraError e
 
   let get_rel db name =
-    match Ops.get_relation db ~name with
+    match Ops.get_relation db name with
     | Some r -> Ok r
     | None -> Error (RelationNotFound name)
 
@@ -55,18 +55,18 @@ module Make (Storage : Management.Physical.S) = struct
   let materialize_tuples storage rel =
     Result.map_error wrap_alg (Alg.materialize storage rel)
 
-  let execute (storage : Storage.t) (db : Management.Database.t)
-      (stmt : Ast.statement) : (Management.Database.t, error) result =
+  let execute (storage : Storage.t) (db : Management.Multigroup.multigroup)
+      (stmt : Ast.statement) : (Management.Multigroup.multigroup, error) result =
     match stmt with
     | Ast.InsertTuple { relation; attributes } ->
         let* rel = get_rel db relation in
-        let tuple = build_tuple ~relation:rel.Relation.name attributes in
+        let tuple = build_tuple ~relation:rel#name attributes in
         let* db, _, _ = Ops.create_tuple storage db rel tuple |> wrap_manip in
         Ok db
     | Ast.InsertTuples { relation; tuples } ->
         let* rel = get_rel db relation in
         let tuple_list =
-          List.map (build_tuple ~relation:rel.Relation.name) tuples
+          List.map (build_tuple ~relation:rel#name) tuples
         in
         let* db, _, _ =
           Ops.create_tuples storage db rel tuple_list |> wrap_manip
@@ -74,10 +74,10 @@ module Make (Storage : Management.Physical.S) = struct
         Ok db
     | Ast.DeleteTuple { relation; attributes } ->
         let* rel = get_rel db relation in
-        let tuple = build_tuple ~relation:rel.Relation.name attributes in
+        let tuple = build_tuple ~relation:rel#name attributes in
         let tuple_hash = Hashing.hash_tuple tuple in
         let* db, _ =
-          Ops.retract_tuple storage db rel ~tuple_hash |> wrap_manip
+          Ops.retract_tuple storage db rel tuple_hash |> wrap_manip
         in
         Ok db
     | Ast.Assign { target; body } ->
@@ -87,7 +87,7 @@ module Make (Storage : Management.Physical.S) = struct
         let* db, rel = Ops.clear_relation storage db rel |> wrap_manip in
         let* db, _, _ =
           Ops.create_tuples storage db rel
-            (List.map (retarget rel.Relation.name) tuples)
+            (List.map (retarget rel#name) tuples)
           |> wrap_manip
         in
         Ok db
@@ -97,7 +97,7 @@ module Make (Storage : Management.Physical.S) = struct
         let* tuples = materialize_tuples storage result_rel in
         let* db, _, _ =
           Ops.create_tuples storage db rel
-            (List.map (retarget rel.Relation.name) tuples)
+            (List.map (retarget rel#name) tuples)
           |> wrap_manip
         in
         Ok db
@@ -107,16 +107,16 @@ module Make (Storage : Management.Physical.S) = struct
         let common =
           List.filter_map
             (fun (n, _) ->
-              if List.exists (fun (m, _) -> m = n) pred_rel.Relation.schema then
+              if List.exists (fun (m, _) -> m = n) pred_rel#schema then
                 Some n
               else None)
-            rel.Relation.schema
+            rel#schema
         in
         let* joined =
           Alg.equijoin storage common rel pred_rel |> Result.map_error wrap_alg
         in
         let* to_delete =
-          Alg.project storage (List.map fst rel.Relation.schema) joined
+          Alg.project storage (List.map fst rel#schema) joined
           |> Result.map_error wrap_alg
         in
         let* tuples = materialize_tuples storage to_delete in
@@ -125,10 +125,10 @@ module Make (Storage : Management.Physical.S) = struct
             let* db = acc in
             let* rel = get_rel db target in
             let tuple_hash =
-              Hashing.hash_tuple (retarget rel.Relation.name t)
+              Hashing.hash_tuple (retarget rel#name t)
             in
             let* db, _ =
-              Ops.retract_tuple storage db rel ~tuple_hash |> wrap_manip
+              Ops.retract_tuple storage db rel tuple_hash |> wrap_manip
             in
             Ok db)
           (Ok db) tuples

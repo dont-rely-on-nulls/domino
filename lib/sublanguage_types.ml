@@ -5,8 +5,8 @@ type cursor_result = {
 }
 
 type result =
-  | Query of Relation.t
-  | Transition of Management.Database.t
+  | Query of Relation.relation
+  | Transition of Management.Multigroup.multigroup
   | Cursor of cursor_result
   | SessionSwitch of string
   | CreateMultigroup of string

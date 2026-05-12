@@ -70,7 +70,7 @@ module Make (Storage : Physical.S with type error = string) = struct
         names
     in
     Ok branches
-
+(* 
   let branch_relation storage : Relation.t =
     let schema =
       Schema.empty |> Schema.add "name" "string" |> Schema.add "hash" "string"
@@ -102,9 +102,9 @@ module Make (Storage : Physical.S with type error = string) = struct
       ~generator:(Some generator)
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:(Relation.Provenance.Base Prelude.Catalog.branch_rel_name)
-      ~lineage:(Relation.Lineage.Base Prelude.Catalog.branch_rel_name) ()
+      ~lineage:(Relation.Lineage.Base Prelude.Catalog.branch_rel_name) () *)
 
-  let head_relation storage : Relation.t =
+  (* let head_relation storage : Relation.t =
     let schema = Schema.empty |> Schema.add "branch" "string" in
     let mk v = { Attribute.value = Obj.repr v } in
     let generator position =
@@ -129,5 +129,5 @@ module Make (Storage : Physical.S with type error = string) = struct
       ~generator:(Some generator)
       ~membership_criteria:(fun _ _ -> true)
       ~provenance:(Relation.Provenance.Base Prelude.Catalog.head_rel_name)
-      ~lineage:(Relation.Lineage.Base Prelude.Catalog.head_rel_name) ()
+      ~lineage:(Relation.Lineage.Base Prelude.Catalog.head_rel_name) () *)
 end

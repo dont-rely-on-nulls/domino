@@ -69,11 +69,12 @@ let make_producer relation_name schema (impl : Sakura_prl_api.implementation) :
  fun bindings -> make_generator relation_name schema impl bindings
 
 let make_membership_criteria schema (impl : Sakura_prl_api.implementation) :
-    (string -> Merkle.t option) -> Tuple.t -> bool =
+    Tuple.t -> bool =
   match impl.membership_criteria with
-  | None -> fun _ _ -> false
+  | None -> fun _ -> false
   | Some check -> (
-      fun _tree_of -> function
+      (* fun _tree_of -> *)
+         function
         | Tuple.NonMaterialized _ -> false
         | Tuple.Materialized m -> (
             match to_plugin_row schema m with

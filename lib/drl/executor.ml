@@ -24,22 +24,22 @@ module Make (Storage : Management.Physical.S) = struct
     let common =
       List.filter_map
         (fun (n, _) ->
-          if List.exists (fun (m, _) -> m = n) filter.Relation.schema then
+          if List.exists (fun (m, _) -> m = n) filter#schema then
             Some n
           else None)
-        source.Relation.schema
+        source#schema
     in
-    let source_attrs = List.map fst source.Relation.schema in
+    let source_attrs = List.map fst source#schema in
     Result.bind
       (wrap (Alg.equijoin storage common source filter))
       (fun joined -> wrap (Alg.project storage source_attrs joined))
 
-  let rec execute (storage : Storage.t) (db : Management.Database.t)
-      (q : Ast.query) : (Relation.t, error) Result.t =
+  let rec execute (storage : Storage.t) (db : Management.Multigroup.multigroup)
+      (q : Ast.query) : (Relation.ephemeral, error) Result.t =
     let ( >>= ) = Result.bind in
     match q with
     | Ast.Base name -> (
-        match Ops.get_relation db ~name with
+        match Ops.get_relation db name with
         | None -> Error (RelationNotFound name)
         | Some rel -> Ok rel)
     | Ast.Const pairs ->

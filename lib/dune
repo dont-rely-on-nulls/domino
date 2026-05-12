@@ -13,6 +13,8 @@
   lwt-exit
   batteries
   ppx_protocol_conv_xml_light
-  sexplib)
+  sexplib
+  ctypes
+  ctypes.foreign)
  (preprocess
   (pps ppx_deriving.show ppx_sexp_conv ppx_protocol_conv)))

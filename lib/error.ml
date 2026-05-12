@@ -11,8 +11,8 @@ type t =
   (* TODO: think of a better way to manage and serialize sublanguage errors *)
   | SublanguageError of Sexplib.Sexp.t
   | Conflict of {
-      old_db : Management.Database.t;
-      new_db : Management.Database.t;
+      old_db : Management.Multigroup.multigroup;
+      new_db : Management.Multigroup.multigroup;
     }
   | SyntaxError of string
   | MultigroupNotFound of string
@@ -39,4 +39,4 @@ let sexp_of_error e =
   | MultigroupNotFound s -> error "multigroup-not-found" [ "name" <+> Atom s ]
   | Conflict { old_db; new_db } ->
       error "conflict"
-        [ "old-hash" <+> Atom old_db.hash; "new-hash" <+> Atom new_db.hash ]
+        [ "old-hash" <+> Atom old_db#hash; "new-hash" <+> Atom new_db#hash ]

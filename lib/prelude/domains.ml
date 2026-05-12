@@ -1,9 +1,9 @@
-(** Predefined fundamental domains, ported from the Erlang implementation. Each
-    domain carries a generator (for enumeration) and membership criteria (for
-    validation). Values are stored as {!Conventions.AbstractValue.t} via
-    [Obj.magic], following the same convention as {!Standard}. *)
+(** Predefined fundamental domains. Each domain carries a generator
+    (for enumeration) and membership criteria (for validation). Values
+    are stored as {!Conventions.AbstractValue.t} via [Obj.magic],
+    following the same convention as {!Standard}. *)
 
-(** Bijection from natural number to integer: 0→0, 1→1, 2→-1, 3→2, 4→-2, … *)
+(** Bijection from natural number to integer: 0->0, 1->1, 2->-1, 3->2, 4->-2, ... *)
 let nat_to_int n =
   if n = 0 then 0 else if n mod 2 = 1 then (n + 1) / 2 else -(n / 2)
 
@@ -20,7 +20,7 @@ let cantor_unpair n =
 
 (** Integer domain: all integers, enumerated via a bijection from the naturals.
     Schema: [value: integer]. *)
-let integer : Domain.t =
+let integer : Relation.domain =
   let rec generator (position : int option) : Generator.result =
     match position with
     | Some n ->
@@ -38,13 +38,23 @@ let integer : Domain.t =
     | Tuple.Materialized _ -> true
     | Tuple.NonMaterialized _ -> false
   in
-  Domain.make ~name:"integer" ~generator ~membership_criteria
-    ~cardinality:Conventions.Cardinality.AlephZero ~compare:(fun a b ->
-      Stdlib.compare (Obj.magic a : int) (Obj.magic b : int))
+  let schema =
+    Schema.empty
+    |> Schema.add "value" "integer"
+  in
+  new Relation.domain
+    ~name:"integer"
+    ~generator
+    ~membership_criteria
+    ~schema
+    ~constraints:None
+    ~cardinality:Conventions.Cardinality.AlephZero
+    ~lineage:None
+    ~provenance:None
 
 (** Natural number domain: non-negative integers (0, 1, 2, …). Schema:
     [value: natural]. *)
-let natural : Domain.t =
+let natural : Relation.domain =
   let rec generator (position : int option) : Generator.result =
     match position with
     | Some n ->
@@ -64,15 +74,25 @@ let natural : Domain.t =
         | None -> false)
     | Tuple.NonMaterialized _ -> false
   in
-  Domain.make ~name:"natural" ~generator ~membership_criteria
-    ~cardinality:Conventions.Cardinality.AlephZero ~compare:(fun a b ->
-      Stdlib.compare (Obj.magic a : int) (Obj.magic b : int))
+  let schema =
+    Schema.empty
+    |> Schema.add "value" "natural"
+  in
+  new Relation.domain
+    ~name:"natural"
+    ~generator
+    ~membership_criteria
+    ~schema
+    ~constraints:None
+    ~cardinality:Conventions.Cardinality.AlephZero
+    ~lineage:None
+    ~provenance:None
 
 (** Rational number domain: pairs [(numerator, denominator)] where the
     denominator is never zero. The generator enumerates all such pairs via
     Cantor pairing on the integers. Schema:
     [numerator: integer, denominator: integer]. *)
-let rational : Domain.t =
+let rational : Relation.domain =
   let rec generator (position : int option) : Generator.result =
     match position with
     | Some n ->
@@ -97,12 +117,37 @@ let rational : Domain.t =
         | None -> false)
     | Tuple.NonMaterialized _ -> false
   in
-  Domain.make ~name:"rational" ~generator ~membership_criteria
-    ~cardinality:Conventions.Cardinality.AlephZero ~compare:(fun a b ->
-      Stdlib.compare (Obj.magic a : float) (Obj.magic b : float))
+  (* Note: Additionally to the membership criteria, we add the constraint here as this relation
+     can be further dismembered, rendering the denominator into a lone integer, that should
+     propagate the constraint `integer <> 0`. If we declared a domain `integer_without_zero`,
+     then this constraint would not be needed as the domain would not be dissociated from the value. *)
+  let constraints: Relation.RelationConstraint.t option =
+    let denominator_not_zero =
+      let open Constraint in
+      Not
+        { body = Eq {left = Var "denominator"; right = Const (Obj.magic 0)}
+        ; universe = "integer" }
+    in
+    Some (("DENOMINATOR_DIFFERENT_FROM_ZERO", denominator_not_zero)
+          |> List.singleton)
+  in
+  let schema =
+    Schema.empty
+    |> Schema.add "numerator" "integer"
+    |> Schema.add "denominator" "integer"
+  in
+  new Relation.domain
+    ~name:"rational"
+    ~generator
+    ~membership_criteria
+    ~schema
+    ~constraints
+    ~cardinality:Conventions.Cardinality.AlephZero
+    ~lineage:None
+    ~provenance:None
 
 (** String domain: any string value. Not enumerable. Schema: [value: string]. *)
-let string : Domain.t =
+let string : Relation.domain =
   let generator (_ : int option) : Generator.result =
     Generator.Error "Strings are not enumerable."
   in
@@ -110,6 +155,17 @@ let string : Domain.t =
     | Tuple.Materialized _ -> true
     | Tuple.NonMaterialized _ -> false
   in
-  Domain.make ~name:"string" ~generator ~membership_criteria
-    ~cardinality:Conventions.Cardinality.AlephZero ~compare:(fun a b ->
-      String.compare (Obj.magic a : string) (Obj.magic b : string))
+  let schema =
+    Schema.empty
+    |> Schema.add "value" "string"
+  in
+  new Relation.domain
+    ~name:"string"
+    ~generator
+    ~membership_criteria
+    ~schema
+    ~constraints:None
+    (* TODO: Implement some form of enumeration for strings with a bijection on naturals. *)
+    ~cardinality:Conventions.Cardinality.Continuum
+    ~lineage:None
+    ~provenance:None

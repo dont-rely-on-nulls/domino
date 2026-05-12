@@ -1,51 +1,119 @@
-(** Serialization formats for content-addressed storage.
+module Wire = struct
+  let split_once ch value =
+    match String.index_opt value ch with
+    | None -> None
+    | Some index ->
+        Some
+          ( String.sub value 0 index,
+            String.sub value (index + 1) (String.length value - index - 1) )
 
-    These modules define the wire format for persisting relational engine
-    objects to storage. Each type has to_bytes/of_bytes for serialization.
+  let lines bytes =
+    bytes |> Bytes.to_string |> String.split_on_char '\n'
+    |> List.filter (fun line -> String.trim line <> "")
 
-    The stored formats capture only the essential data needed for
-    reconstruction:
-    - Tuple: relation name and attribute hashes
-    - Relation: name, schema, tuple hashes, cardinality
-    - Database: name, relation hashes, merkle tree keys, history *)
+  let fields bytes =
+    lines bytes
+    |> List.filter_map (fun line -> split_once '=' line)
+    |> List.map (fun (key, value) -> (String.trim key, String.trim value))
 
-(** Stored tuple format for serialization *)
+  let require_type expected fields =
+    match List.assoc_opt "type" fields with
+    | Some actual when actual = expected -> ()
+    | Some actual ->
+        invalid_arg
+          (Printf.sprintf "expected storable type %S, got %S" expected actual)
+    | None -> invalid_arg "missing storable type"
+
+  let values key fields =
+    List.filter_map (fun (k, v) -> if k = key then Some v else None) fields
+
+  let required key fields =
+    match List.assoc_opt key fields with
+    | Some value -> value
+    | None -> invalid_arg ("missing storable field: " ^ key)
+
+  let attribute value =
+    match split_once ':' value with
+    | Some pair -> pair
+    | None -> invalid_arg ("invalid attribute field: " ^ value)
+
+  let encode fields =
+    fields
+    |> List.map (fun (key, value) -> key ^ "=" ^ value)
+    |> String.concat "\n" |> fun value -> Bytes.of_string (value ^ "\n")
+end
+
 module Tuple = struct
-  type t = {
-    relation : string;
-    attributes : (string * Conventions.Hash.t) list;
-        (* attr_name -> attr_value_hash *)
-  }
+  type t = { relation : string; attributes : (string * string) list }
 
-  let to_bytes (st : t) : bytes = Marshal.to_bytes st [ Marshal.Closures ]
-  let of_bytes (b : bytes) : t = Marshal.from_bytes b 0
+  let to_bytes tuple =
+    Wire.encode
+      ([ ("type", "tuple"); ("relation", tuple.relation) ]
+       @ List.map
+           (fun (name, value) -> ("attribute", name ^ ":" ^ value))
+           tuple.attributes)
+
+  let of_bytes bytes =
+    let fields = Wire.fields bytes in
+    Wire.require_type "tuple" fields;
+    {
+      relation = Wire.required "relation" fields;
+      attributes = List.map Wire.attribute (Wire.values "attribute" fields);
+    }
 end
 
-(** Stored relation format for serialization *)
 module Relation = struct
-  type t = {
-    name : string;
-    schema : Schema.t;
-    tree_keys : Conventions.Hash.t list;
-        (* Merkle tree contents - tuple hashes *)
-    cardinality : Conventions.Cardinality.t;
-  }
+  type t = { name : string; schema : (string * string) list }
 
-  let to_bytes (sr : t) : bytes = Marshal.to_bytes sr [ Marshal.Closures ]
-  let of_bytes (b : bytes) : t = Marshal.from_bytes b 0
+  let to_bytes relation =
+    Wire.encode
+      ([ ("type", "relation"); ("name", relation.name); ("kind", "stored") ]
+       @ List.map
+           (fun (name, domain) -> ("attribute", name ^ ":" ^ domain))
+           relation.schema)
+
+  let of_bytes bytes =
+    let fields = Wire.fields bytes in
+    Wire.require_type "relation" fields;
+    {
+      name = Wire.required "name" fields;
+      schema = List.map Wire.attribute (Wire.values "attribute" fields);
+    }
 end
 
-(** Stored database format for serialization *)
-module Database = struct
-  type t = {
-    name : string;
-    relations : (string * Conventions.Hash.t) list; (* name -> relation_hash *)
-    tree_keys : Conventions.Hash.t list;
-        (* Merkle tree contents - relation hashes *)
-    history : Conventions.Hash.t list;
-    timestamp : float;
-  }
+module Multigroup = struct
+  type t = { name : string; relations : Relation.t list }
 
-  let to_bytes (sd : t) : bytes = Marshal.to_bytes sd [ Marshal.Closures ]
-  let of_bytes (b : bytes) : t = Marshal.from_bytes b 0
+  let relation_value relation =
+    let attrs =
+      relation.Relation.schema
+      |> List.map (fun (name, domain) -> name ^ ":" ^ domain)
+      |> String.concat ","
+    in
+    relation.name ^ "|" ^ attrs
+
+  let parse_relation value =
+    match Wire.split_once '|' value with
+    | None -> { Relation.name = value; schema = [] }
+    | Some (name, attrs) ->
+        let schema =
+          if attrs = "" then []
+          else attrs |> String.split_on_char ',' |> List.map Wire.attribute
+        in
+        { Relation.name; schema }
+
+  let to_bytes multigroup =
+    Wire.encode
+      ([ ("type", "multigroup"); ("name", multigroup.name) ]
+       @ List.map
+           (fun relation -> ("relation", relation_value relation))
+           multigroup.relations)
+
+  let of_bytes bytes =
+    let fields = Wire.fields bytes in
+    Wire.require_type "multigroup" fields;
+    {
+      name = Wire.required "name" fields;
+      relations = List.map parse_relation (Wire.values "relation" fields);
+    }
 end

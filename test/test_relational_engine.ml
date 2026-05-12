@@ -133,14 +133,14 @@ let%test_unit "storage: transaction commit" =
       Management.Physical.Memory.close storage
 
 let%test_unit "database: create empty" =
-  let db = Management.Database.empty ~name:"test_db" in
+  let db = Management.Multigroup.empty ~name:"test_db" in
   assert (db.name = "test_db");
   assert (Merkle.is_empty db.tree);
-  assert (Management.Database.RelationMap.is_empty db.relations);
+  assert (Management.Multigroup.RelationMap.is_empty db.relations);
   assert (db.history = [])
 
 let%test_unit "database: add relation" =
-  let db = Management.Database.empty ~name:"test_db" in
+  let db = Management.Multigroup.empty ~name:"test_db" in
   (* Create a minimal relation for testing *)
   let relation =
     Relation.make ~hash:(Some "rel_hash_1") ~name:"users" ~schema:Schema.empty
@@ -150,13 +150,13 @@ let%test_unit "database: add relation" =
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "users") ()
   in
-  let db = Management.Database.add_relation db ~relation in
-  assert (Management.Database.has_relation db "users");
-  assert (Management.Database.get_relation_hash db "users" = Some "rel_hash_1");
-  assert (not (Management.Database.has_relation db "orders"))
+  let db = Management.Multigroup.add_relation db ~relation in
+  assert (Management.Multigroup.has_relation db "users");
+  assert (Management.Multigroup.get_relation_hash db "users" = Some "rel_hash_1");
+  assert (not (Management.Multigroup.has_relation db "orders"))
 
 let%test_unit "database: remove relation" =
-  let db = Management.Database.empty ~name:"test_db" in
+  let db = Management.Multigroup.empty ~name:"test_db" in
   let relation =
     Relation.make ~hash:(Some "hash1") ~name:"users" ~schema:Schema.empty
       ~tree:(Some Merkle.empty) ~constraints:None
@@ -165,13 +165,13 @@ let%test_unit "database: remove relation" =
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "users") ()
   in
-  let db = Management.Database.add_relation db ~relation in
-  assert (Management.Database.has_relation db "users");
-  let db = Management.Database.remove_relation db ~name:"users" in
-  assert (not (Management.Database.has_relation db "users"))
+  let db = Management.Multigroup.add_relation db ~relation in
+  assert (Management.Multigroup.has_relation db "users");
+  let db = Management.Multigroup.remove_relation db ~name:"users" in
+  assert (not (Management.Multigroup.has_relation db "users"))
 
 let%test_unit "database: update relation" =
-  let db = Management.Database.empty ~name:"test_db" in
+  let db = Management.Multigroup.empty ~name:"test_db" in
   let relation =
     Relation.make ~hash:(Some "hash1") ~name:"users" ~schema:Schema.empty
       ~tree:(Some Merkle.empty) ~constraints:None
@@ -180,16 +180,16 @@ let%test_unit "database: update relation" =
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "users") ()
   in
-  let db = Management.Database.add_relation db ~relation in
+  let db = Management.Multigroup.add_relation db ~relation in
   let old_db_hash = db.hash in
   let updated_relation = { relation with hash = Some "hash2" } in
-  let db = Management.Database.update_relation db ~relation:updated_relation in
-  assert (Management.Database.get_relation_hash db "users" = Some "hash2");
+  let db = Management.Multigroup.update_relation db ~relation:updated_relation in
+  assert (Management.Multigroup.get_relation_hash db "users" = Some "hash2");
   assert (db.hash <> old_db_hash);
   assert (List.mem old_db_hash db.history)
 
 let%test_unit "database: get relation names" =
-  let db = Management.Database.empty ~name:"test_db" in
+  let db = Management.Multigroup.empty ~name:"test_db" in
   let rel1 =
     Relation.make ~hash:(Some "h1") ~name:"users" ~schema:Schema.empty
       ~tree:(Some Merkle.empty) ~constraints:None
@@ -206,9 +206,9 @@ let%test_unit "database: get relation names" =
       ~provenance:Relation.Provenance.Undefined
       ~lineage:(Relation.Lineage.Base "orders") ()
   in
-  let db = Management.Database.add_relation db ~relation:rel1 in
-  let db = Management.Database.add_relation db ~relation:rel2 in
-  let names = Management.Database.get_relation_names db in
+  let db = Management.Multigroup.add_relation db ~relation:rel1 in
+  let db = Management.Multigroup.add_relation db ~relation:rel2 in
+  let names = Management.Multigroup.get_relation_names db in
   assert (List.length names = 2);
   assert (List.mem "users" names);
   assert (List.mem "orders" names)
@@ -224,14 +224,14 @@ let with_storage f =
 
 let%test_unit "manipulation: create database" =
   with_storage (fun storage ->
-      match Memory.create_database storage ~name:"my_db" with
+      match Memory.create_multigroup storage ~name:"my_db" with
       | Error _ -> assert false
       | Ok db -> assert (db.name = "my_db"))
 
 let%test_unit "manipulation: create relation" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -243,12 +243,12 @@ let%test_unit "manipulation: create relation" =
       | Ok (db, relation) ->
           assert (relation.name = "users");
           assert (relation.schema = schema);
-          assert (Management.Database.has_relation db "users"))
+          assert (Management.Multigroup.has_relation db "users"))
 
 let%test_unit "manipulation: create relation already exists" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -263,7 +263,7 @@ let%test_unit "manipulation: create relation already exists" =
 let%test_unit "manipulation: retract relation" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -271,15 +271,15 @@ let%test_unit "manipulation: retract relation" =
       match Memory.create_relation storage db ~name:"users" ~schema with
       | Error _ -> assert false
       | Ok (db, _) -> (
-          assert (Management.Database.has_relation db "users");
+          assert (Management.Multigroup.has_relation db "users");
           match Memory.retract_relation storage db ~name:"users" with
           | Error _ -> assert false
-          | Ok db -> assert (not (Management.Database.has_relation db "users"))))
+          | Ok db -> assert (not (Management.Multigroup.has_relation db "users"))))
 
 let%test_unit "manipulation: create tuple with storage" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -303,7 +303,7 @@ let%test_unit "manipulation: create tuple with storage" =
 let%test_unit "manipulation: create and load tuple" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -335,7 +335,7 @@ let%test_unit "manipulation: create and load tuple" =
 let%test_unit "manipulation: create multiple tuples with storage" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -361,7 +361,7 @@ let%test_unit "manipulation: create multiple tuples with storage" =
 let%test_unit "manipulation: load multiple tuples" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -402,7 +402,7 @@ let%test_unit "manipulation: load multiple tuples" =
 let%test_unit "manipulation: retract tuple" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -434,7 +434,7 @@ let%test_unit "manipulation: retract tuple" =
 let%test_unit "manipulation: tuple hashes" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -462,7 +462,7 @@ let%test_unit "manipulation: tuple hashes" =
 let%test_unit "manipulation: clear relation" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -492,7 +492,7 @@ let%test_unit "manipulation: clear relation" =
 let%test_unit "manipulation: duplicate tuple rejected" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -518,7 +518,7 @@ let%test_unit "manipulation: duplicate tuple rejected" =
 let%test_unit "manipulation: tuple_exists check" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -574,7 +574,7 @@ let%test_unit "manipulation: different tuples different hashes" =
 let%test_unit "manipulation: get_relation from database" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -592,7 +592,7 @@ let%test_unit "manipulation: get_relation from database" =
 let%test_unit "schema: persisted and loaded correctly" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -605,7 +605,7 @@ let%test_unit "schema: persisted and loaded correctly" =
       | Ok (db, _relation) -> (
           (* Get the relation hash *)
           let rel_hash =
-            Option.get (Management.Database.get_relation_hash db "users")
+            Option.get (Management.Multigroup.get_relation_hash db "users")
           in
           (* Load the relation from storage *)
           match Memory.load_relation storage rel_hash with
@@ -618,19 +618,19 @@ let%test_unit "schema: persisted and loaded correctly" =
               assert (List.mem ("name", "string") loaded_rel.schema);
               assert (List.mem ("email", "string") loaded_rel.schema)))
 
-let%test_unit "catalog: create_database seeds 6 catalog relations" =
+let%test_unit "catalog: create_multigroup seeds 6 catalog relations" =
   with_storage (fun storage ->
-      match Memory.create_database storage ~name:"test" with
+      match Memory.create_multigroup storage ~name:"test" with
       | Error _ -> assert false
       | Ok db ->
           let catalog_names = Prelude.Catalog.catalog_relation_names in
           List.iter
-            (fun name -> assert (Management.Database.has_relation db name))
+            (fun name -> assert (Management.Multigroup.has_relation db name))
             catalog_names)
 
 let%test_unit "catalog: sakura:relation contains all 6 catalog names" =
   with_storage (fun storage ->
-      match Memory.create_database storage ~name:"test" with
+      match Memory.create_multigroup storage ~name:"test" with
       | Error _ -> assert false
       | Ok db ->
           let rel =
@@ -642,7 +642,7 @@ let%test_unit "catalog: sakura:relation contains all 6 catalog names" =
 
 let%test_unit "catalog: sakura:on contains insert, update, delete" =
   with_storage (fun storage ->
-      match Memory.create_database storage ~name:"test" with
+      match Memory.create_multigroup storage ~name:"test" with
       | Error _ -> assert false
       | Ok db ->
           let on_rel =
@@ -654,7 +654,7 @@ let%test_unit "catalog: sakura:on contains insert, update, delete" =
 
 let%test_unit "catalog: sakura:timing contains immediate, deferred" =
   with_storage (fun storage ->
-      match Memory.create_database storage ~name:"test" with
+      match Memory.create_multigroup storage ~name:"test" with
       | Error _ -> assert false
       | Ok db ->
           let timing_rel =
@@ -666,7 +666,7 @@ let%test_unit "catalog: sakura:timing contains immediate, deferred" =
 
 let%test_unit "catalog: sakura:domain seeded with 4 prelude domains" =
   with_storage (fun storage ->
-      match Memory.create_database storage ~name:"test" with
+      match Memory.create_multigroup storage ~name:"test" with
       | Error _ -> assert false
       | Ok db ->
           let dom_rel =
@@ -678,7 +678,7 @@ let%test_unit "catalog: sakura:domain seeded with 4 prelude domains" =
 
 let%test_unit "catalog: create_relation updates sakura:relation" =
   with_storage (fun storage ->
-      match Memory.create_database storage ~name:"test" with
+      match Memory.create_multigroup storage ~name:"test" with
       | Error _ -> assert false
       | Ok db ->
           let schema = Schema.empty |> Schema.add "id" "natural" in
@@ -699,7 +699,7 @@ let%test_unit "catalog: create_relation updates sakura:relation" =
 
 let%test_unit "catalog: create_relation updates sakura:attribute" =
   with_storage (fun storage ->
-      match Memory.create_database storage ~name:"test" with
+      match Memory.create_multigroup storage ~name:"test" with
       | Error _ -> assert false
       | Ok db ->
           let schema = Schema.empty |> Schema.add "id" "natural" in
@@ -723,7 +723,7 @@ let%test_unit "catalog: create_relation updates sakura:attribute" =
 
 let%test_unit "catalog: retract_relation removes from sakura:relation" =
   with_storage (fun storage ->
-      match Memory.create_database storage ~name:"test" with
+      match Memory.create_multigroup storage ~name:"test" with
       | Error _ -> assert false
       | Ok db ->
           let schema = Schema.empty |> Schema.add "id" "natural" in
@@ -749,7 +749,7 @@ let%test_unit "catalog: retract_relation removes from sakura:relation" =
 
 let%test_unit "catalog: register_constraint inserts into sakura:constraint" =
   with_storage (fun storage ->
-      match Memory.create_database storage ~name:"test" with
+      match Memory.create_multigroup storage ~name:"test" with
       | Error _ -> assert false
       | Ok db ->
           let schema = Schema.empty |> Schema.add "id" "natural" in
@@ -778,7 +778,7 @@ let%test_unit "integration: full workflow with storage" =
   with_storage (fun storage ->
       (* Create database *)
       let db =
-        match Memory.create_database storage ~name:"shop" with
+        match Memory.create_multigroup storage ~name:"shop" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -858,7 +858,7 @@ let%test_unit "integration: full workflow with storage" =
 let%test_unit "integration: database history tracking" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"versioned" with
+        match Memory.create_multigroup storage ~name:"versioned" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -889,7 +889,7 @@ let%test_unit "integration: database history tracking" =
 let%test_unit "integration: hash bubbles up correctly" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test" with
+        match Memory.create_multigroup storage ~name:"test" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -936,7 +936,7 @@ let%test_unit "integration: hash bubbles up correctly" =
 let%test_unit "branching: load database from historical hash" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test" with
+        match Memory.create_multigroup storage ~name:"test" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1008,7 +1008,7 @@ let%test_unit "branching: load database from historical hash" =
 let%test_unit "branching: branch from historical state" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test" with
+        match Memory.create_multigroup storage ~name:"test" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1101,7 +1101,7 @@ let%test_unit "branching: branch from historical state" =
 let%test_unit "branching: full reconstruction from hash" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"shop" with
+        match Memory.create_multigroup storage ~name:"shop" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1221,7 +1221,7 @@ let%test_unit "algebra: const_relation single tuple" =
 let%test_unit "algebra: select_fn with predicate" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1258,7 +1258,7 @@ let%test_unit "algebra: select_fn with predicate" =
 let%test_unit "algebra: project restricts schema" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1296,7 +1296,7 @@ let%test_unit "algebra: project restricts schema" =
 let%test_unit "algebra: rename changes attr names" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1322,7 +1322,7 @@ let%test_unit "algebra: rename changes attr names" =
 let%test_unit "algebra: equijoin merges matching tuples" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1400,7 +1400,7 @@ let%test_unit "algebra: equijoin merges matching tuples" =
 let%test_unit "algebra: equijoin empty match" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1420,7 +1420,7 @@ let%test_unit "algebra: equijoin empty match" =
 let%test_unit "algebra: union concatenates streams" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1453,7 +1453,7 @@ let%test_unit "algebra: union concatenates streams" =
 let%test_unit "algebra: diff removes right from left" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1480,7 +1480,7 @@ let%test_unit "algebra: diff removes right from left" =
 let%test_unit "algebra: take limits output" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1523,7 +1523,7 @@ let%test_unit "drl: parse Select" =
 let%test_unit "drl: execute Base" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1543,7 +1543,7 @@ let%test_unit "drl: execute Base" =
 let%test_unit "drl: execute Select+Const" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test_db" with
+        match Memory.create_multigroup storage ~name:"test_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1926,7 +1926,7 @@ let%test_unit "constraint: Forall unbounded quantifier errors" =
 let%test_unit "constraint: create_tuple with passing constraint" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test" with
+        match Memory.create_multigroup storage ~name:"test" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -1965,7 +1965,7 @@ let%test_unit "constraint: create_tuple with passing constraint" =
 let%test_unit "constraint: create_tuple with failing constraint" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test" with
+        match Memory.create_multigroup storage ~name:"test" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2015,7 +2015,7 @@ let%test_unit "constraint: create_tuple with failing constraint" =
 let%test_unit "constraint scenario: mutual exclusion subtypes" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test" with
+        match Memory.create_multigroup storage ~name:"test" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2091,7 +2091,7 @@ let%test_unit "constraint scenario: mutual exclusion subtypes" =
 let%test_unit "constraint scenario: foreign key" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test" with
+        match Memory.create_multigroup storage ~name:"test" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2195,7 +2195,7 @@ let%test_unit "constraint scenario: foreign key" =
 let%test_unit "constraint scenario: self-reference neq" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test" with
+        match Memory.create_multigroup storage ~name:"test" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2290,7 +2290,7 @@ let%test_unit "constraint scenario: self-reference neq" =
 let%test_unit "constraint scenario: open vs closed ticket" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test" with
+        match Memory.create_multigroup storage ~name:"test" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2370,7 +2370,7 @@ let%test_unit "constraint scenario: open vs closed ticket" =
 let%test_unit "constraint scenario: weak entity dependency" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test" with
+        match Memory.create_multigroup storage ~name:"test" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2472,7 +2472,7 @@ let%test_unit "constraint scenario: weak entity dependency" =
 let%test_unit "constraint propagation: select preserves constraints" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test" with
+        match Memory.create_multigroup storage ~name:"test" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2503,7 +2503,7 @@ let%test_unit "constraint propagation: select preserves constraints" =
 let%test_unit "constraint propagation: project filters constraints" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"test" with
+        match Memory.create_multigroup storage ~name:"test" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2626,7 +2626,7 @@ let%test_unit "prl: round-trip DefineFunctionPredicate" =
 let%test_unit "prl: define predicate and query via DRL" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"prl_db" with
+        match Memory.create_multigroup storage ~name:"prl_db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2675,7 +2675,7 @@ let%test_unit "prl: define predicate and query via DRL" =
 
 let%test_unit "ddl: execute CreateDatabase" =
   with_storage (fun storage ->
-      let db = Management.Database.empty ~name:"" in
+      let db = Management.Multigroup.empty ~name:"" in
       let stmt = Ddl.Ast.CreateDatabase "shop" in
       match Ddl.Executor.Memory.execute storage db stmt with
       | Error _ -> assert false
@@ -2684,7 +2684,7 @@ let%test_unit "ddl: execute CreateDatabase" =
 let%test_unit "ddl: execute CreateRelation" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"shop" with
+        match Memory.create_multigroup storage ~name:"shop" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2697,12 +2697,12 @@ let%test_unit "ddl: execute CreateRelation" =
       in
       match Ddl.Executor.Memory.execute storage db stmt with
       | Error _ -> assert false
-      | Ok (db, _msg) -> assert (Management.Database.has_relation db "users"))
+      | Ok (db, _msg) -> assert (Management.Multigroup.has_relation db "users"))
 
 let%test_unit "dml: execute InsertTuple" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"shop" with
+        match Memory.create_multigroup storage ~name:"shop" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2720,7 +2720,7 @@ let%test_unit "dml: execute InsertTuple" =
       | Error _ -> assert false
       | Ok db ->
           let rel =
-            match Management.Database.get_relation db "users" with
+            match Management.Multigroup.get_relation db "users" with
             | None -> assert false
             | Some r -> r
           in
@@ -2729,7 +2729,7 @@ let%test_unit "dml: execute InsertTuple" =
 let%test_unit "dml: execute InsertTuples" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"shop" with
+        match Memory.create_multigroup storage ~name:"shop" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2754,7 +2754,7 @@ let%test_unit "dml: execute InsertTuples" =
       | Error _ -> assert false
       | Ok db ->
           let rel =
-            match Management.Database.get_relation db "users" with
+            match Management.Multigroup.get_relation db "users" with
             | None -> assert false
             | Some r -> r
           in
@@ -2763,7 +2763,7 @@ let%test_unit "dml: execute InsertTuples" =
 let%test_unit "dml: execute DeleteTuple" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"shop" with
+        match Memory.create_multigroup storage ~name:"shop" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2793,7 +2793,7 @@ let%test_unit "dml: execute DeleteTuple" =
       | Error _ -> assert false
       | Ok db ->
           let rel =
-            match Management.Database.get_relation db "users" with
+            match Management.Multigroup.get_relation db "users" with
             | None -> assert false
             | Some r -> r
           in
@@ -2802,7 +2802,7 @@ let%test_unit "dml: execute DeleteTuple" =
 let%test_unit "ddl: execute RetractRelation" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"shop" with
+        match Memory.create_multigroup storage ~name:"shop" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2817,12 +2817,12 @@ let%test_unit "ddl: execute RetractRelation" =
       with
       | Error _ -> assert false
       | Ok (db, _msg) ->
-          assert (not (Management.Database.has_relation db "users")))
+          assert (not (Management.Multigroup.has_relation db "users")))
 
 let%test_unit "ddl: execute ClearRelation" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"shop" with
+        match Memory.create_multigroup storage ~name:"shop" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2854,7 +2854,7 @@ let%test_unit "ddl: execute ClearRelation" =
       | Error _ -> assert false
       | Ok (db, _msg) ->
           let rel =
-            match Management.Database.get_relation db "users" with
+            match Management.Multigroup.get_relation db "users" with
             | None -> assert false
             | Some r -> r
           in
@@ -2863,7 +2863,7 @@ let%test_unit "ddl: execute ClearRelation" =
 let%test_unit "ddl: execute RegisterDomain" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"shop" with
+        match Memory.create_multigroup storage ~name:"shop" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2873,12 +2873,12 @@ let%test_unit "ddl: execute RegisterDomain" =
       in
       match Ddl.Executor.Memory.execute storage db stmt with
       | Error _ -> assert false
-      | Ok (db, _msg) -> assert (Management.Database.has_domain db "money"))
+      | Ok (db, _msg) -> assert (Management.Multigroup.has_domain db "money"))
 
 let%test_unit "dml: insert into nonexistent relation returns error" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"shop" with
+        match Memory.create_multigroup storage ~name:"shop" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2968,7 +2968,7 @@ let%test_unit "dcl: round-trip Not constraint" =
 let%test_unit "dcl: execute RegisterConstraint attaches constraint" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"shop" with
+        match Memory.create_multigroup storage ~name:"shop" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -2995,7 +2995,7 @@ let%test_unit "dcl: execute RegisterConstraint attaches constraint" =
       | Error _ -> assert false
       | Ok (db, _) ->
           let rel =
-            match Management.Database.get_relation db "order_items" with
+            match Management.Multigroup.get_relation db "order_items" with
             | None -> assert false
             | Some r -> r
           in
@@ -3004,7 +3004,7 @@ let%test_unit "dcl: execute RegisterConstraint attaches constraint" =
 let%test_unit "dcl: FK constraint enforced on insert" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"shop" with
+        match Memory.create_multigroup storage ~name:"shop" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -3067,7 +3067,7 @@ let%test_unit "dcl: FK constraint enforced on insert" =
         | Ok db -> db
       in
       let rel =
-        match Management.Database.get_relation db "order_items" with
+        match Management.Multigroup.get_relation db "order_items" with
         | None -> assert false
         | Some r -> r
       in
@@ -3173,7 +3173,7 @@ let%test_unit "branch: multiple branches are independent" =
 let%test_unit "diff: identical databases produce empty diff" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"db" with
+        match Memory.create_multigroup storage ~name:"db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -3183,7 +3183,7 @@ let%test_unit "diff: identical databases produce empty diff" =
 let%test_unit "diff: added relation detected" =
   with_storage (fun storage ->
       let ancestor =
-        match Memory.create_database storage ~name:"db" with
+        match Memory.create_multigroup storage ~name:"db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -3207,7 +3207,7 @@ let%test_unit "diff: removed relation detected" =
   with_storage (fun storage ->
       let schema = Schema.empty |> Schema.add "x" "natural" in
       let ancestor =
-        match Memory.create_database storage ~name:"db" with
+        match Memory.create_multigroup storage ~name:"db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -3233,7 +3233,7 @@ let%test_unit "diff: modified relation detected with added tuple" =
   with_storage (fun storage ->
       let schema = Schema.empty |> Schema.add "val" "natural" in
       let ancestor =
-        match Memory.create_database storage ~name:"db" with
+        match Memory.create_multigroup storage ~name:"db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -3242,7 +3242,7 @@ let%test_unit "diff: modified relation detected with added tuple" =
         | Error _ -> assert false
         | Ok p -> p
       in
-      let rel = Option.get (Management.Database.get_relation ancestor "r") in
+      let rel = Option.get (Management.Multigroup.get_relation ancestor "r") in
       let t : Tuple.materialized =
         {
           Tuple.relation = "r";
@@ -3273,7 +3273,7 @@ let%test_unit "merge: fast-forward when only one side changed" =
   with_storage (fun storage ->
       let schema = Schema.empty |> Schema.add "val" "natural" in
       let base_db =
-        match Memory.create_database storage ~name:"db" with
+        match Memory.create_multigroup storage ~name:"db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -3285,7 +3285,7 @@ let%test_unit "merge: fast-forward when only one side changed" =
       (match Memory.store_database storage base_db with
       | Error _ -> assert false
       | Ok () -> ());
-      let rel = Option.get (Management.Database.get_relation base_db "r") in
+      let rel = Option.get (Management.Multigroup.get_relation base_db "r") in
       let t1 : Tuple.materialized =
         {
           Tuple.relation = "r";
@@ -3303,14 +3303,14 @@ let%test_unit "merge: fast-forward when only one side changed" =
       | Ok () -> ());
       match
         MergeMemory.merge ~storage ~strategy:Management.Merge.PreferLeft
-          ~left_tip:left_db.Management.Database.hash
-          ~right_tip:base_db.Management.Database.hash
+          ~left_tip:left_db.Management.Multigroup.hash
+          ~right_tip:base_db.Management.Multigroup.hash
       with
       | Error _ -> assert false
       | Ok (Management.Merge.Failed _) -> assert false
       | Ok (Management.Merge.Clean merged) ->
           let merged_rel =
-            Option.get (Management.Database.get_relation merged "r")
+            Option.get (Management.Multigroup.get_relation merged "r")
           in
           assert (Memory.tuple_count merged_rel = 1))
 
@@ -3318,7 +3318,7 @@ let%test_unit "merge: independent tuple additions produce union" =
   with_storage (fun storage ->
       let schema = Schema.empty |> Schema.add "val" "natural" in
       let base_db =
-        match Memory.create_database storage ~name:"db" with
+        match Memory.create_multigroup storage ~name:"db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -3330,7 +3330,7 @@ let%test_unit "merge: independent tuple additions produce union" =
       (match Memory.store_database storage base_db with
       | Error _ -> assert false
       | Ok () -> ());
-      let rel = Option.get (Management.Database.get_relation base_db "r") in
+      let rel = Option.get (Management.Multigroup.get_relation base_db "r") in
       let t_left : Tuple.materialized =
         {
           Tuple.relation = "r";
@@ -3363,21 +3363,21 @@ let%test_unit "merge: independent tuple additions produce union" =
       | Ok () -> ());
       match
         MergeMemory.merge ~storage ~strategy:Management.Merge.PreferLeft
-          ~left_tip:left_db.Management.Database.hash
-          ~right_tip:right_db.Management.Database.hash
+          ~left_tip:left_db.Management.Multigroup.hash
+          ~right_tip:right_db.Management.Multigroup.hash
       with
       | Error _ -> assert false
       | Ok (Management.Merge.Failed _) -> assert false
       | Ok (Management.Merge.Clean merged) ->
           let merged_rel =
-            Option.get (Management.Database.get_relation merged "r")
+            Option.get (Management.Multigroup.get_relation merged "r")
           in
           assert (Memory.tuple_count merged_rel = 2))
 
 let%test_unit "merge: no-op when both sides are identical" =
   with_storage (fun storage ->
       let base_db =
-        match Memory.create_database storage ~name:"db" with
+        match Memory.create_multigroup storage ~name:"db" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -3386,15 +3386,15 @@ let%test_unit "merge: no-op when both sides are identical" =
       | Ok () -> ());
       match
         MergeMemory.merge ~storage ~strategy:Management.Merge.PreferLeft
-          ~left_tip:base_db.Management.Database.hash
-          ~right_tip:base_db.Management.Database.hash
+          ~left_tip:base_db.Management.Multigroup.hash
+          ~right_tip:base_db.Management.Multigroup.hash
       with
       | Error _ -> assert false
       | Ok (Management.Merge.Failed _) -> assert false
       | Ok (Management.Merge.Clean merged) ->
           assert (
-            Management.Database.get_relation_names merged
-            = Management.Database.get_relation_names base_db))
+            Management.Multigroup.get_relation_names merged
+            = Management.Multigroup.get_relation_names base_db))
 
 (* Helper: look up polarity for a relation name in the result map *)
 let find_polarity name pols = Constraint.polarity_find name pols
@@ -3808,7 +3808,7 @@ let%test_unit "substitute_transition: substitution applies through And and Not"
    Constraint on Employee: Exists d in Department, MemberOf Department (dept_id = Var "dept_id") *)
 let setup_fk_db storage =
   let db =
-    match Memory.create_database storage ~name:"hr" with
+    match Memory.create_multigroup storage ~name:"hr" with
     | Error _ -> assert false
     | Ok db -> db
   in
@@ -4009,7 +4009,7 @@ let%test_unit "cascade: Negative-polarity relation deletion is not checked" =
      DELETE from Blacklist should never trigger a cascade check. *)
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"hr" with
+        match Memory.create_multigroup storage ~name:"hr" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -4095,7 +4095,7 @@ let%test_unit "cascade: Negative-polarity relation deletion is not checked" =
 let%test_unit "cascade: deferred constraint not checked during retract_tuple" =
   with_storage (fun storage ->
       let db =
-        match Memory.create_database storage ~name:"hr" with
+        match Memory.create_multigroup storage ~name:"hr" with
         | Error _ -> assert false
         | Ok db -> db
       in
@@ -4201,7 +4201,7 @@ let%test_unit "cascade: deferred constraint not checked during retract_tuple" =
    must trigger a re-check of Employee tuples. *)
 let setup_blacklist_db storage =
   let db =
-    match Memory.create_database storage ~name:"hr" with
+    match Memory.create_multigroup storage ~name:"hr" with
     | Error _ -> assert false
     | Ok db -> db
   in
@@ -4310,7 +4310,7 @@ let%test_unit
    commit is the boundary where deferred violations are caught. *)
 let setup_deferred_fk_db storage =
   let db =
-    match Memory.create_database storage ~name:"hr" with
+    match Memory.create_multigroup storage ~name:"hr" with
     | Error _ -> assert false
     | Ok db -> db
   in
