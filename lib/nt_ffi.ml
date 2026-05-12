@@ -68,6 +68,28 @@ let rnt_cursor_next =
 let rnt_cursor_close =
   fn "rnt_cursor_close" (ptr void @-> returning int)
 
+(* VM plan builder --------------------------------------------------------- *)
+let rnt_plan_scan =
+  fn "rnt_plan_scan" (string @-> returning (ptr void))
+
+let rnt_plan_join =
+  fn "rnt_plan_join" (ptr void @-> ptr void @-> returning (ptr void))
+
+let rnt_plan_take =
+  fn "rnt_plan_take" (ptr void @-> size_t @-> returning (ptr void))
+
+let rnt_plan_free =
+  fn "rnt_plan_free" (ptr void @-> returning void)
+
+let rnt_vm_execute_plan =
+  fn "rnt_vm_execute_plan" (ptr void @-> returning (ptr void))
+
+let rnt_vm_cursor_next =
+  fn "rnt_vm_cursor_next" (ptr void @-> ptr (ptr char) @-> returning int)
+
+let rnt_vm_cursor_close =
+  fn "rnt_vm_cursor_close" (ptr void @-> returning int)
+
 (* Memory management ------------------------------------------------------- *)
 let rnt_free_string =
   fn "rnt_free_string" (ptr char @-> returning void)

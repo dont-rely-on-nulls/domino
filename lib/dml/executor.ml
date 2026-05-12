@@ -5,7 +5,7 @@ module Make (NT : Nt.S) = struct
     | ParseError of string
     | NtError of Nt.error
     | RelationNotFound of string
-    | AlgebraError of Algebra.error
+    | DrlError of DrlExec.error
 
   let sexp_of_error e =
     let open Sexplib.Sexp in
@@ -13,14 +13,10 @@ module Make (NT : Nt.S) = struct
     | ParseError s -> List [ Atom "parse-error"; Atom s ]
     | NtError e -> List [ Atom "nt-error"; Atom (Nt.string_of_error e) ]
     | RelationNotFound s -> List [ Atom "relation-not-found"; Atom s ]
-    | AlgebraError (Algebra.StorageError s) ->
-        List [ Atom "storage-error"; Atom s ]
-    | AlgebraError (Algebra.GeneratorError s) ->
-        List [ Atom "generator-error"; Atom s ]
+    | DrlError e -> List [ Atom "drl-error"; DrlExec.sexp_of_error e ]
 
   let ( let* ) = Result.bind
   let wrap_nt r = Result.map_error (fun e -> NtError e) r
-  let wrap_alg e = AlgebraError e
 
   let get_rel db name =
     match NT.get_relation db name with
@@ -30,8 +26,7 @@ module Make (NT : Nt.S) = struct
   let retarget target (t : Tuple.materialized) =
     { t with Tuple.relation = target }
 
-  let build_tuple ~relation (attributes : Ast.attr_value list) :
-      Tuple.materialized =
+  let build_tuple ~relation (attributes : Ast.attr_value list) : Tuple.materialized =
     let attr_map =
       List.fold_left
         (fun acc (name, value) ->
@@ -42,15 +37,47 @@ module Make (NT : Nt.S) = struct
     in
     { Tuple.relation; attributes = attr_map }
 
-  let eval_query bh db query =
-    match DrlExec.execute bh db query with
-    | Ok rel -> Ok rel
-    | Error (DrlExec.ParseError s) -> Error (ParseError s)
-    | Error (DrlExec.RelationNotFound s) -> Error (RelationNotFound s)
-    | Error (DrlExec.AlgebraError e) -> Error (AlgebraError e)
+  (* Compile a DRL query and drain ALL tuples via the VM.
+     Used internally by mutation operations that need to inspect query results. *)
+  let drain_query bh db query =
+    match DrlExec.compile db query with
+    | Error e -> Error (DrlError e)
+    | Ok plan ->
+        let* stream =
+          NT.execute_query bh plan ~rel_name:"dml_drain"
+          |> wrap_nt
+        in
+        let rec drain acc =
+          match NT.stream_next stream with
+          | Error _ -> List.rev acc
+          | Ok None -> List.rev acc
+          | Ok (Some t) -> drain (t :: acc)
+        in
+        let tuples = drain [] in
+        ignore (NT.stream_close stream);
+        Ok tuples
 
-  let materialize_tuples rel =
-    Result.map_error wrap_alg (Algebra.materialize rel)
+  (* In-memory semijoin: return target tuples whose common-attribute values
+     match at least one predicate tuple.  Used by DeleteWhere until the VM
+     has a native filter/equijoin operator. *)
+  let attr_val_eq a b =
+    Stdlib.( = ) a.Attribute.value b.Attribute.value
+
+  let tuple_matches_pred common (target_t : Tuple.materialized)
+      (pred_t : Tuple.materialized) =
+    List.for_all (fun attr ->
+      match
+        ( Tuple.AttributeMap.find_opt attr target_t.Tuple.attributes,
+          Tuple.AttributeMap.find_opt attr pred_t.Tuple.attributes )
+      with
+      | Some a, Some b -> attr_val_eq a b
+      | _ -> false)
+      common
+
+  let semijoin common target_tuples pred_tuples =
+    List.filter
+      (fun t -> List.exists (tuple_matches_pred common t) pred_tuples)
+      target_tuples
 
   let execute (bh : Nt.branch_handle) (db : Management.Multigroup.multigroup)
       (stmt : Ast.statement) :
@@ -83,9 +110,10 @@ module Make (NT : Nt.S) = struct
         Ok (bh, db)
     | Ast.Assign { target; body } ->
         let* rel = get_rel db target in
-        let* result_rel = eval_query bh db body in
-        let* tuples = materialize_tuples result_rel in
-        let* bh, db = NT.clear_relation bh db (rel :> Relation.relation) |> wrap_nt in
+        let* tuples = drain_query bh db body in
+        let* bh, db =
+          NT.clear_relation bh db (rel :> Relation.relation) |> wrap_nt
+        in
         let* _ =
           NT.create_tuples ~branch_name:db#name ~rel_name:rel#name
             (List.map (retarget rel#name) tuples)
@@ -94,8 +122,7 @@ module Make (NT : Nt.S) = struct
         Ok (bh, db)
     | Ast.InsertFrom { target; source } ->
         let* rel = get_rel db target in
-        let* result_rel = eval_query bh db source in
-        let* tuples = materialize_tuples result_rel in
+        let* tuples = drain_query bh db source in
         let* _ =
           NT.create_tuples ~branch_name:db#name ~rel_name:rel#name
             (List.map (retarget rel#name) tuples)
@@ -104,22 +131,18 @@ module Make (NT : Nt.S) = struct
         Ok (bh, db)
     | Ast.DeleteWhere { target; predicate } ->
         let* rel = get_rel db target in
-        let* pred_rel = eval_query bh db predicate in
-        let common =
-          List.filter_map
-            (fun (n, _) ->
-              if List.exists (fun (m, _) -> m = n) pred_rel#schema then Some n
-              else None)
-            rel#schema
+        let* target_tuples = drain_query bh db (Drl.Ast.Base rel#name) in
+        let* pred_tuples   = drain_query bh db predicate in
+        (* Derive common attribute names from the actual result sets. *)
+        let attr_names_of = function
+          | [] -> []
+          | t :: _ ->
+              List.map fst (Tuple.AttributeMap.bindings t.Tuple.attributes)
         in
-        let* joined =
-          Algebra.equijoin common rel pred_rel |> Result.map_error wrap_alg
-        in
-        let* to_delete =
-          Algebra.project (List.map fst rel#schema) joined
-          |> Result.map_error wrap_alg
-        in
-        let* tuples = materialize_tuples to_delete in
+        let target_attrs = attr_names_of target_tuples in
+        let pred_attrs   = attr_names_of pred_tuples in
+        let common = List.filter (fun n -> List.mem n pred_attrs) target_attrs in
+        let to_delete = semijoin common target_tuples pred_tuples in
         List.fold_left
           (fun acc t ->
             let* bh, db = acc in
@@ -129,7 +152,7 @@ module Make (NT : Nt.S) = struct
               |> wrap_nt
             in
             Ok (bh, db))
-          (Ok (bh, db)) tuples
+          (Ok (bh, db)) to_delete
 end
 
 module Memory = Make (Nt.Memory)

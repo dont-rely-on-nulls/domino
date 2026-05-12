@@ -59,29 +59,6 @@ functor
 
     let current_limit = 16
 
-    let materialize_generator gen limit =
-      let rec go gen pos acc count =
-        if count >= limit then (List.rev acc, true)
-        else
-          match gen (Some pos) with
-          | Generator.Done -> (List.rev acc, false)
-          | Generator.Error _ -> (List.rev acc, false)
-          | Generator.Value (t, next) -> (
-              let mat =
-                match t with
-                | Tuple.Materialized m -> Some m
-                | Tuple.NonMaterialized _ -> None
-              in
-              match mat with
-              | None -> go next (pos + 1) acc count
-              | Some m -> go next (pos + 1) (m :: acc) (count + 1))
-      in
-      go gen 0 [] 0
-
-    let materialize_relation (rel : Relation.relation) limit =
-      let gen = Algebra.to_generator rel in
-      materialize_generator gen limit
-
     let tuple_to_sexp (t : Tuple.materialized) =
       let open Sexplib.Sexp in
       List
@@ -137,26 +114,11 @@ functor
               List [ Atom "db_hash"; Atom db#hash ];
               List [ Atom "db_name"; Atom db#name ];
             ]
-      | Ok (Sublanguage_types.Query rel) ->
-          let tuples, truncated = materialize_relation rel current_limit in
-          let schema_sexp =
-            List
-              (List.map
-                 (fun (a, d) -> List [ Atom a; Atom d ])
-                 rel#schema)
-          in
-          let rows_sexp = List (List.map tuple_to_sexp tuples) in
-          List
-            [
-              Atom "relation";
-              List [ Atom "name"; Atom rel#name ];
-              List [ Atom "schema"; schema_sexp ];
-              List [ Atom "rows"; rows_sexp ];
-              List [ Atom "row_count"; Atom (string_of_int (List.length tuples)) ];
-              List [ Atom "truncated"; Atom (string_of_bool truncated) ];
-              List [ Atom "db_hash"; Atom db#hash ];
-              List [ Atom "db_name"; Atom db#name ];
-            ]
+      | Ok (Sublanguage_types.Query _rel) ->
+          (* Query results are now returned as Cursor by the DRL sublanguage.
+             This branch is retained for exhaustiveness but should not be reached. *)
+          ignore db;
+          List [ Atom "error"; Atom "unexpected Query result: use Cursor path" ]
       | Ok (Sublanguage_types.Transition new_db) ->
           List
             [

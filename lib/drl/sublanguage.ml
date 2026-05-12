@@ -13,10 +13,7 @@ module Make (NT : Nt.S) = struct
     | Ok r -> Ok r
     | Error (Parser.ParseError s) -> Error (Exec.ParseError s)
 
-  let execute bh db ast =
-    match Exec.execute bh db ast with
-    | Ok rel -> Ok (Sublanguage_types.Query (rel :> Relation.relation))
-    | Error e -> Error e
+  let execute bh db ast = Exec.execute bh db ast
 
   let sexp_of_error = Exec.sexp_of_error
 end

@@ -19,10 +19,14 @@ type branch_handle = nativeint
 (** Opaque handle to an open relation object in the NT registry. *)
 type relation_handle = nativeint
 
-(** A streaming cursor over tuples produced by the VM. *)
+(** Distinguishes a simple single-relation cursor from a full VM plan cursor. *)
+type cursor_kind = Simple | Vm
+
+(** A streaming cursor over tuples produced either by a simple scan or the VM. *)
 type tuple_stream = {
   ts_cursor   : nativeint;
   ts_relation : string;
+  ts_kind     : cursor_kind;
 }
 
 type path_arg = Var of string | Const of string
@@ -157,19 +161,48 @@ module Make (B : Backend) = struct
     if rc = 0 then Ok () else Error (HandleError "close_relation failed")
 
   (* --------------------------------------------------------------------------
-     Query execution (SCAN via CursorManager + Tarski VM)
+     Query execution via the Tarski VM plan builder
      -------------------------------------------------------------------------- *)
 
-  let execute_query (rh : relation_handle) (plan : plan_node) (rel_name : string) :
-      (tuple_stream, error) result =
+  (* Recursively builds a C-side PlanWrapper from an OCaml plan_node tree.
+     On partial failure the partially-built plan is freed before returning Error. *)
+  let rec build_plan (plan : plan_node) : (nativeint, error) result =
     match plan with
-    | Scan _ ->
-        let raw = Nt_ffi.rnt_cursor_open (Nt_ffi.nint_to_ptr rh) in
+    | Scan { path; _ } ->
+        let raw = Nt_ffi.rnt_plan_scan path in
         (match Nt_ffi.ptr_to_opt raw with
-         | None -> Error (CursorError "cursor_open failed")
-         | Some ts_cursor -> Ok { ts_cursor; ts_relation = rel_name })
-    | Join _  -> Error (NotSupported "JOIN via VM not yet exposed through C API")
-    | Take _  -> Error (NotSupported "TAKE via VM not yet exposed through C API")
+         | None   -> Error (CursorError ("plan_scan failed for path: " ^ path))
+         | Some p -> Ok p)
+    | Join { left; right; _ } ->
+        let* lp = build_plan left in
+        (match build_plan right with
+         | Error e ->
+             Nt_ffi.rnt_plan_free (Nt_ffi.nint_to_ptr lp);
+             Error e
+         | Ok rp ->
+             let raw = Nt_ffi.rnt_plan_join
+                         (Nt_ffi.nint_to_ptr lp) (Nt_ffi.nint_to_ptr rp) in
+             (* join takes ownership of both children — no manual free needed *)
+             (match Nt_ffi.ptr_to_opt raw with
+              | None   -> Error (CursorError "plan_join failed")
+              | Some p -> Ok p))
+    | Take { limit; source } ->
+        let* sp = build_plan source in
+        let raw = Nt_ffi.rnt_plan_take
+                    (Nt_ffi.nint_to_ptr sp)
+                    (Unsigned.Size_t.of_int limit) in
+        (* take takes ownership of source — no manual free needed *)
+        (match Nt_ffi.ptr_to_opt raw with
+         | None   -> Error (CursorError "plan_take failed")
+         | Some p -> Ok p)
+
+  let execute_query (_bh : branch_handle) (plan : plan_node) ~(rel_name : string) :
+      (tuple_stream, error) result =
+    let* plan_ptr = build_plan plan in
+    let raw = Nt_ffi.rnt_vm_execute_plan (Nt_ffi.nint_to_ptr plan_ptr) in
+    match Nt_ffi.ptr_to_opt raw with
+    | None           -> Error (CursorError "vm_execute_plan failed")
+    | Some ts_cursor -> Ok { ts_cursor; ts_relation = rel_name; ts_kind = Vm }
 
   let parse_kv_tuple (relation : string) (kv : string) : Tuple.materialized =
     let attributes =
@@ -188,9 +221,13 @@ module Make (B : Backend) = struct
 
   let stream_next (stream : tuple_stream) :
       (Tuple.materialized option, error) result =
+    let next_fn = match stream.ts_kind with
+      | Simple -> Nt_ffi.rnt_cursor_next
+      | Vm     -> Nt_ffi.rnt_vm_cursor_next
+    in
     let (rc, kv_opt) =
       Nt_ffi.with_out_string
-        (fun pp -> Nt_ffi.rnt_cursor_next (Nt_ffi.nint_to_ptr stream.ts_cursor) pp)
+        (fun pp -> next_fn (Nt_ffi.nint_to_ptr stream.ts_cursor) pp)
     in
     match rc with
     | 0 -> Ok None
@@ -200,7 +237,11 @@ module Make (B : Backend) = struct
     | _ -> Error (CursorError "cursor_next error")
 
   let stream_close (stream : tuple_stream) : (unit, error) result =
-    let rc = Nt_ffi.rnt_cursor_close (Nt_ffi.nint_to_ptr stream.ts_cursor) in
+    let close_fn = match stream.ts_kind with
+      | Simple -> Nt_ffi.rnt_cursor_close
+      | Vm     -> Nt_ffi.rnt_vm_cursor_close
+    in
+    let rc = close_fn (Nt_ffi.nint_to_ptr stream.ts_cursor) in
     if rc = 0 then Ok () else Error (CursorError "cursor_close failed")
 
   (* --------------------------------------------------------------------------
@@ -397,7 +438,7 @@ module type S = sig
   val open_relation  : string -> string -> (relation_handle, error) result
   val close_relation : relation_handle -> (unit, error) result
 
-  val execute_query : relation_handle -> plan_node -> string -> (tuple_stream, error) result
+  val execute_query : branch_handle -> plan_node -> rel_name:string -> (tuple_stream, error) result
   val stream_next   : tuple_stream -> (Tuple.materialized option, error) result
   val stream_close  : tuple_stream -> (unit, error) result
 
