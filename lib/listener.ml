@@ -66,25 +66,12 @@ functor
                 Atom k; Conventions.AbstractValue.sexp_of_t attr.Attribute.value;
               ]))
 
-    let print_with_time str =
-      let now = Unix.gettimeofday () in
-      let tm = Unix.localtime now in
-      let orange = "\027[38;5;208m" in
-      let reset = "\027[0m" in
-      let formatted_time =
-        Printf.sprintf "%04d-%02d-%02d %02d:%02d:%02d" (tm.Unix.tm_year + 1900)
-          (tm.Unix.tm_mon + 1) tm.Unix.tm_mday tm.Unix.tm_hour tm.Unix.tm_min
-          tm.Unix.tm_sec
-      in
-      print_endline
-      @@ Printf.sprintf "%s[%s]%s %s" orange formatted_time reset str
-
     let output_response out_ch sexp =
       let response = Sexplib.Sexp.to_string sexp in
       output_string out_ch response;
       output_string out_ch "\n";
       flush out_ch;
-      print_with_time response
+      Utilities.print_with_time response
 
     let send_error out_ch e =
       output_response out_ch
