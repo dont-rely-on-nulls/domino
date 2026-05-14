@@ -139,6 +139,7 @@ functor
        the connection alive. *)
     let switch_branch output state name =
       let { claims; branch_handle = old_handle; _ } = !state in
+      (* TODO: do not close the current branch until we're certain we can make the jump *)
       match NT.close_branch old_handle with
       | Error e ->
           send_error output (Error.SyntaxError (Nt.string_of_error e))
@@ -176,6 +177,7 @@ functor
         match NT.authenticate Nt.PlainText with
         | Ok c -> c
         | Error e ->
+           (* FIXME: do *not* proceed when auth fails! *)
             Printf.eprintf "Auth failed: %s\n%!" (Nt.string_of_error e); ""
       in
       (match NT.open_branch claims "master" with
