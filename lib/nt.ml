@@ -500,6 +500,7 @@ module Make (B : Backend) = struct
     | Some bh ->
         let pp = allocate (ptr uint8_t) (from_voidp uint8_t null) in
         let lp = allocate size_t Unsigned.Size_t.zero in
+        (* TODO: consider using a struct type, rather than a bag of bytes *)
         let rc = Nt_ffi.rnt_branch_payload (Nt_ffi.nint_to_ptr bh) pp lp in
         if rc <> 0 then (
           ignore (Nt_ffi.rnt_close_handle (Nt_ffi.nint_to_ptr bh));
