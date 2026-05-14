@@ -33,6 +33,8 @@ type path_arg = Var of string | Const of string
 
 type plan_node =
   | Scan of { path : string; args : (string * path_arg) list }
+  (* Given this is the query plan, this should probably specify a
+     concrete join algorithm (e.g. HashJoin, NestedLoop, LeapFrog, &c) *)
   | Join of { left : plan_node; right : plan_node; on_attrs : string list }
   | Take of { limit : int; source : plan_node }
 
