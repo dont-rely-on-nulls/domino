@@ -71,7 +71,7 @@ let assemble (config : Configuration.t) : (unit -> unit, string) result =
   let* packed_transport = transport_provider transport_body in
   let (NtParcel (module NT)) = packed_nt in
   let (TransportParcel ((module T), transport)) = packed_transport in
-  let* () = NT.init () |> Result.map_error Nt.string_of_error in
+  let* () = NT.initialize () |> Result.map_error Nt.string_of_error in
   let module L = Listener.Make (T) (NT) in
   Ok (fun () -> L.run transport)
 

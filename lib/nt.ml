@@ -1,12 +1,9 @@
-(* Clean interface to the RNT kernel.
-   This is the ONLY module in sakura that may call Nt_ffi. All ctypes types
-   are contained here; callers receive plain OCaml values. *)
+(* Interface to the RNT kernel.  This is the ONLY module in sakura
+   that may call Nt_ffi. All ctypes types are contained here. *)
 
 open Ctypes
 
-(* --------------------------------------------------------------------------
-   Shared types — independent of backend, shared across all Make instances
-   -------------------------------------------------------------------------- *)
+(* Shared types — independent of backend, shared across all Make instances *)
 
 type auth_method = Certificate | PlainText
 
@@ -39,16 +36,18 @@ type plan_node =
   | Take of { limit : int; source : plan_node }
 
 type error =
-  | AuthFailed    of string
-  | HandleError   of string
-  | CursorError   of string
-  | NotSupported  of string
+  | AuthFailed     of string
+  | HandleError    of string
+  | CursorError    of string
+  | NotSupported   of string
+  | InitializationError
 
 let string_of_error = function
   | AuthFailed  s -> "AuthFailed: "   ^ s
   | HandleError s -> "HandleError: "  ^ s
   | CursorError s -> "CursorError: "  ^ s
   | NotSupported s -> "NotSupported: " ^ s
+  | InitializationError -> "InitializationError"
 
 (* --------------------------------------------------------------------------
    Backend selector
@@ -490,11 +489,16 @@ module Make (B : Backend) = struct
     in
     sync_merkle_roots_and_commit bh mg
 
-  (* Seed or restore the master branch once, before any connections are
-     accepted.  Called by init() via do_init_ref so that seeding is
-     single-threaded and races between concurrent connection-open calls
-     are impossible. *)
-  let do_init () : (unit, error) result =
+  (* Runtime initialization *)
+
+  (* Seed or restore the master branch once, before any connections
+     are accepted. This is what seeds the singleton runtime instance
+     with a lock to coordinate races between new concurrent
+     connection-open. *)
+  let initialize () : (unit, error) result =
+    let open Utilities.Result in
+    let runtime_count = Nt_ffi.rnt_init B.driver B.init_arg in
+    let* () = if runtime_count <> 0 then Error (InitializationError) else Ok () in
     let path = "/system/branches/master" in
     let raw = Nt_ffi.rnt_open_handle path (from_voidp void null) in
     match Nt_ffi.ptr_to_opt raw with
@@ -524,15 +528,6 @@ module Make (B : Backend) = struct
           (match result with
            | Ok _ -> Ok ()
            | Error e -> Error e)
-
-  (* --------------------------------------------------------------------------
-     Runtime initialisation
-     -------------------------------------------------------------------------- *)
-
-  let init () =
-    let rc = Nt_ffi.rnt_init B.driver B.init_arg in
-    if rc <> 0 then Error (HandleError "rnt_init failed")
-    else do_init ()
 
   (* --------------------------------------------------------------------------
      Multigroup queries
@@ -567,12 +562,8 @@ module Make (B : Backend) = struct
 
 end
 
-(* --------------------------------------------------------------------------
-   Module type — output signature of Make; used by executors and listener
-   -------------------------------------------------------------------------- *)
-
 module type S = sig
-  val init         : unit -> (unit, error) result
+  val initialize   : unit -> (unit, error) result
   val authenticate : auth_method -> (claims, error) result
 
   val open_branch  : claims -> string -> (branch_handle * Management.Multigroup.multigroup, error) result
@@ -604,10 +595,6 @@ module type S = sig
   val relation_root   : string -> string -> (string, error) result
   val set_relation_root : string -> string -> string -> (unit, error) result
 end
-
-(* --------------------------------------------------------------------------
-   Concrete instances
-   -------------------------------------------------------------------------- *)
 
 module Sqlite = Make (struct
   let driver   = "sqlite"
