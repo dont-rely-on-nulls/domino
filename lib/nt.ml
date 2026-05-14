@@ -70,32 +70,6 @@ module Make (B : Backend) = struct
   let ( let* ) = Result.bind
 
   (* --------------------------------------------------------------------------
-     Forward references — both filled in at module-body end after all
-     dependencies are defined, avoiding OCaml's sequential-binding constraint.
-     -------------------------------------------------------------------------- *)
-
-  (* Filled in with seed_prelude once that function is defined below. *)
-  let seed_prelude_ref
-    : (branch_handle -> Management.Multigroup.multigroup
-       -> (branch_handle * Management.Multigroup.multigroup, error) result) ref =
-    ref (fun bh mg -> Ok (bh, mg))
-
-  (* Filled in with do_init once that function is defined below.
-     Called by init() to seed / restore the master branch before any
-     connections are accepted — eliminates the per-connection race. *)
-  let do_init_ref : (unit -> (unit, error) result) ref =
-    ref (fun () -> Ok ())
-
-  (* --------------------------------------------------------------------------
-     Runtime initialisation
-     -------------------------------------------------------------------------- *)
-
-  let init () =
-    let rc = Nt_ffi.rnt_init B.driver B.init_arg in
-    if rc <> 0 then Error (HandleError "rnt_init failed")
-    else !do_init_ref ()
-
-  (* --------------------------------------------------------------------------
      Authentication
      -------------------------------------------------------------------------- *)
 
@@ -514,8 +488,6 @@ module Make (B : Backend) = struct
     in
     sync_merkle_roots_and_commit bh mg
 
-  let () = seed_prelude_ref := seed_prelude
-
   (* Seed or restore the master branch once, before any connections are
      accepted.  Called by init() via do_init_ref so that seeding is
      single-threaded and races between concurrent connection-open calls
@@ -550,7 +522,14 @@ module Make (B : Backend) = struct
            | Ok _ -> Ok ()
            | Error e -> Error e)
 
-  let () = do_init_ref := do_init
+  (* --------------------------------------------------------------------------
+     Runtime initialisation
+     -------------------------------------------------------------------------- *)
+
+  let init () =
+    let rc = Nt_ffi.rnt_init B.driver B.init_arg in
+    if rc <> 0 then Error (HandleError "rnt_init failed")
+    else do_init ()
 
   (* --------------------------------------------------------------------------
      Multigroup queries
