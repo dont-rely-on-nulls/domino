@@ -58,6 +58,13 @@ let rnt_register_relation =
 let rnt_register_branch =
   fn "rnt_register_branch" (string @-> string @-> returning int)
 
+(* Branch / snapshot relation enumeration ----------------------------------- *)
+let rnt_list_relations =
+  fn "rnt_list_relations" (string @-> ptr (ptr char) @-> returning int)
+
+let rnt_list_snapshot_relations =
+  fn "rnt_list_snapshot_relations" (string @-> ptr (ptr char) @-> returning int)
+
 (* Tuple storage ----------------------------------------------------------- *)
 let rnt_link_tuple =
   fn "rnt_link_tuple"

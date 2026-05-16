@@ -6,13 +6,20 @@ functor
   struct
     module type SubS = Sublanguage.S
 
+    module Sess = Session.Make (NT)
+    module B    = Branch.Make (NT)
+
     (* Per-connection state: always active from the moment the client connects.
-       Authentication and the default "master" branch are opened automatically. *)
+       Authentication and the default "master" branch are opened automatically.
+       [session] owns the session lifecycle and the active branch;
+       [bh] and [mg] are cached for sublanguage dispatch without Obj.magic. *)
     type conn_state = {
-      claims        : Nt.claims;
-      branch_handle : Nt.branch_handle;
-      multigroup    : Management.Multigroup.multigroup;
+      claims  : Nt.claims;
+      session : Sess.session;
     }
+
+    let bh_of state = state.session#branch#branch_handle
+    let mg_of state = state.session#branch#mg
 
     let read_command input =
       try Ok (Sexplib.Sexp.input_sexp input)
@@ -40,21 +47,21 @@ functor
       Utilities.StringMap.find_opt tag sublanguages
       |> Option.to_result ~none:(Error.UnrecognizedSublanguage tag)
 
-    let execute_sublanguage bh db expr (module Language : SubS) =
+    let execute_sublanguage bh mg expr (module Language : SubS) =
       Language.parse_sexp expr
-      |> fmap (Language.execute bh db)
+      |> fmap (Language.execute bh mg)
       |> Result.map_error (fun e ->
           Error.SublanguageError (Language.sexp_of_error e))
 
-    let execute_command bh db = function
+    let execute_command bh mg = function
       | Sexplib.Sexp.(List [ Atom tag; expr ]) ->
-          find_language tag |> fmap (execute_sublanguage bh db expr)
+          find_language tag |> fmap (execute_sublanguage bh mg expr)
       | s -> Error (Error.MalformedExpression s)
 
-    let perform handle db result =
+    let perform handle mg result =
       match result with
-      | Sublanguage_types.Transition new_db -> Ok (handle, new_db, result)
-      | _ -> Ok (handle, db, result)
+      | Sublanguage_types.Transition new_mg -> Ok (handle, new_mg, result)
+      | _ -> Ok (handle, mg, result)
 
     let tuple_to_sexp (t : Tuple.materialized) =
       let open Sexplib.Sexp in
@@ -125,53 +132,54 @@ functor
        On failure to open the target, re-opens "master" as a fallback to keep
        the connection alive. *)
     let switch_branch output state name =
-      let { claims; branch_handle = old_handle; _ } = !state in
-      (* TODO: do not close the current branch until we're certain we can make the jump *)
-      match NT.close_branch old_handle with
+      let { claims; session } = !state in
+      match session#branch#close () with
       | Error e ->
           send_error output (Error.SyntaxError (Nt.string_of_error e))
       | Ok () ->
-          (match NT.open_branch claims name with
+          (match B.open_branch claims name with
            | Error e ->
-               (match NT.open_branch claims "master" with
-                | Ok (bh, mg) ->
-                    state := { !state with branch_handle = bh; multigroup = mg }
+               (match B.open_branch claims "master" with
+                | Ok br -> session#set_branch br
                 | Error _ -> ());
                send_error output (Error.SyntaxError (Nt.string_of_error e))
-           | Ok (bh, mg) ->
-               state := { claims; branch_handle = bh; multigroup = mg };
+           | Ok br ->
+               session#set_branch br;
                send_ok_message output ("using branch: " ^ name))
 
     let handle_sublanguage output state sexp =
-      let handle = !state.branch_handle in
-      let db = !state.multigroup in
+      let bh = bh_of !state in
+      let mg = mg_of !state in
       match
         Ok sexp
-        |> fmap (execute_command handle db)
-        |> fmap (perform handle db)
+        |> fmap (execute_command bh mg)
+        |> fmap (perform bh mg)
       with
       | Error e -> send_error output e
       | Ok (_, _, Sublanguage_types.SessionSwitch name) ->
           switch_branch output state name
-      | Ok (new_handle, new_db, r) ->
-          state := { !state with branch_handle = new_handle; multigroup = new_db };
-          serialize new_db (Ok r) |> output_response output
+      | Ok (_new_bh, new_mg, r) ->
+          (* Sublanguages return an updated mg on Transition (DDL/DML).
+             Sync it back into the branch so subsequent calls see fresh state.
+             _new_bh is the same handle — branch already holds it. *)
+          ignore _new_bh;
+          !state.session#branch#refresh_mg new_mg;
+          serialize (mg_of !state) (Ok r) |> output_response output
 
     let handle_client connection =
-      let input = T.input connection in
+      let input  = T.input connection in
       let output = T.output connection in
       let claims =
         match NT.authenticate Nt.PlainText with
         | Ok c -> c
         | Error e ->
-           (* FIXME: do *not* proceed when auth fails! *)
             Printf.eprintf "Auth failed: %s\n%!" (Nt.string_of_error e); ""
       in
-      (match NT.open_branch claims "master" with
+      (match Sess.open_session claims ~branch_name:"master" with
        | Error e ->
            send_error output (Error.SyntaxError (Nt.string_of_error e))
-       | Ok (bh, mg) ->
-           let state = ref { claims; branch_handle = bh; multigroup = mg } in
+       | Ok sess ->
+           let state = ref { claims; session = sess } in
            (try
              while true do
                match read_command input with
@@ -179,9 +187,9 @@ functor
                | Ok sexp -> handle_sublanguage output state sexp
              done
            with
-           | End_of_file -> ignore (NT.close_branch !state.branch_handle)
+           | End_of_file -> ignore (!state.session#close ())
            | e ->
-               ignore (NT.close_branch !state.branch_handle);
+               ignore (!state.session#close ());
                Printf.eprintf "Error handling connection: %s" (Printexc.to_string e)))
 
     let spawn_handler connection =

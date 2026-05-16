@@ -39,12 +39,12 @@ module Make (NT : Nt.S) = struct
 
   (* Compile a DRL query and drain ALL tuples via the VM.
      Used internally by mutation operations that need to inspect query results. *)
-  let drain_query bh db query =
-    match DrlExec.compile db query with
+  let drain_query db query =
+    match DrlExec.compile (DrlExec.make_resolver db#name) query with
     | Error e -> Error (DrlError e)
     | Ok plan ->
         let* stream =
-          NT.execute_query bh plan ~rel_name:"dml_drain"
+          NT.execute_query plan ~rel_name:"dml_drain"
           |> wrap_nt
         in
         let rec drain acc =
@@ -110,7 +110,7 @@ module Make (NT : Nt.S) = struct
         Ok (bh, db)
     | Ast.Assign { target; body } ->
         let* rel = get_rel db target in
-        let* tuples = drain_query bh db body in
+        let* tuples = drain_query db body in
         let* bh, db =
           NT.clear_relation bh db (rel :> Relation.relation) |> wrap_nt
         in
@@ -122,7 +122,7 @@ module Make (NT : Nt.S) = struct
         Ok (bh, db)
     | Ast.InsertFrom { target; source } ->
         let* rel = get_rel db target in
-        let* tuples = drain_query bh db source in
+        let* tuples = drain_query db source in
         let* _ =
           NT.create_tuples ~branch_name:db#name ~rel_name:rel#name
             (List.map (retarget rel#name) tuples)
@@ -131,8 +131,8 @@ module Make (NT : Nt.S) = struct
         Ok (bh, db)
     | Ast.DeleteWhere { target; predicate } ->
         let* rel = get_rel db target in
-        let* target_tuples = drain_query bh db (Drl.Ast.Base rel#name) in
-        let* pred_tuples   = drain_query bh db predicate in
+        let* target_tuples = drain_query db (Drl.Ast.Base rel#name) in
+        let* pred_tuples   = drain_query db predicate in
         (* Derive common attribute names from the actual result sets. *)
         let attr_names_of = function
           | [] -> []

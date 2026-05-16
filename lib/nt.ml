@@ -1,9 +1,8 @@
-(* Interface to the RNT kernel.  This is the ONLY module in sakura
-   that may call Nt_ffi. All ctypes types are contained here. *)
+(* Interface to the RNT kernel *)
 
 open Ctypes
 
-(* Shared types — independent of backend, shared across all Make instances *)
+(* Shared types independent of backend, shared across all Make instances *)
 
 type auth_method = Certificate | PlainText
 
@@ -121,6 +120,42 @@ module Make (B : Backend) = struct
     | (0, None)   -> Ok ""
     | _           -> Error (HandleError "branch_target read failed")
 
+  let list_relations (name : string) : ((string * string) list, error) result =
+    let path = branch_path name in
+    let (rc, out_opt) =
+      Nt_ffi.with_out_string (fun pp -> Nt_ffi.rnt_list_relations path pp)
+    in
+    match (rc, out_opt) with
+    | (0, Some s) ->
+        let pairs =
+          String.split_on_char '\n' s
+          |> List.filter_map (fun line ->
+              match String.split_on_char '\t' line with
+              | [n; r] when n <> "" -> Some (n, r)
+              | _ -> None)
+        in
+        Ok pairs
+    | (0, None)   -> Ok []
+    | _           -> Error (HandleError ("list_relations failed: " ^ name))
+
+  let session_open () : (string, error) result =
+    let (rc, id_opt) =
+      Nt_ffi.with_out_string
+        (fun pp -> Nt_ffi.rnt_session_open (from_voidp void null) pp)
+    in
+    match (rc, id_opt) with
+    | (0, Some id) -> Ok id
+    | _            -> Error (HandleError "session_open failed")
+
+  let session_close (sid : string) : (unit, error) result =
+    let rc = Nt_ffi.rnt_session_close sid in
+    if rc = 0 then Ok () else Error (HandleError "session_close failed")
+
+  let session_set_branch (sid : string) (branch_name : string)
+      (target_hash : string) : (unit, error) result =
+    let rc = Nt_ffi.rnt_session_set_branch sid branch_name target_hash in
+    if rc = 0 then Ok () else Error (HandleError "session_set_branch failed")
+
   let open_branch (_claims : claims) (name : string) :
       (branch_handle * Management.Multigroup.multigroup, error) result =
     let path = branch_path name in
@@ -129,16 +164,89 @@ module Make (B : Backend) = struct
     match Nt_ffi.ptr_to_opt raw with
     | None -> Error (HandleError ("branch not found: " ^ name))
     | Some bh ->
-        (* The caller drives the multigroup as a pure value from here on.
-           Returning an empty multigroup is the equivalent of opening a
-           connection in an as-yet-unpopulated session view — the caller
-           threads it through mutations and may seed/restore catalog state
-           on top of it. *)
-        Ok (bh, new Management.Multigroup.multigroup ~name)
+        let* snapshot_hash = branch_target_of_handle bh in
+        let* rel_entries   = list_relations name in
+        (* Populate mg with stored relations from RNT snapshot. Schema is not
+           persisted in the snapshot codec so relations start schema-less; the
+           session rebuilds schema state via DDL or catalog queries. *)
+        let mg =
+          List.fold_left
+            (fun mg (rel_name, root) ->
+              let rel =
+                (new Relation.stored
+                  ~name:rel_name
+                  ~schema:[]
+                  ~constraints:None
+                  ~cardinality:Conventions.Cardinality.AlephZero
+                  ~lineage:(Some (Relation.Lineage.Base rel_name))
+                  ~provenance:(Some (Relation.Provenance.base
+                                       ~relation:rel_name ~attributes:[]))
+                  ~membership_criteria:(fun _ -> true))
+                  #set_tree_pointer (Some root)
+              in
+              mg#add_relation (rel :> Relation.relation))
+            ((new Management.Multigroup.multigroup ~name)#with_hash snapshot_hash)
+            rel_entries
+        in
+        Ok (bh, mg)
 
   let close_branch (bh : branch_handle) : (unit, error) result =
     let rc = Nt_ffi.rnt_close_handle (Nt_ffi.nint_to_ptr bh) in
     if rc = 0 then Ok () else Error (HandleError "close_branch failed")
+
+  let list_snapshot_relations (snapshot_hash : string) :
+      ((string * string) list, error) result =
+    let (rc, out_opt) =
+      Nt_ffi.with_out_string
+        (fun pp -> Nt_ffi.rnt_list_snapshot_relations snapshot_hash pp)
+    in
+    match (rc, out_opt) with
+    | (0, Some s) ->
+        let pairs =
+          String.split_on_char '\n' s
+          |> List.filter_map (fun line ->
+              match String.split_on_char '\t' line with
+              | [n; r] when n <> "" -> Some (n, r)
+              | _ -> None)
+        in
+        Ok pairs
+    | (0, None)   -> Ok []
+    | _           -> Error (HandleError ("list_snapshot_relations failed: " ^ snapshot_hash))
+
+  (* Opens a read-only view pinned to a specific snapshot hash.
+     Returns (bh, mg) where bh is a handle on the snapshot object and mg
+     reflects exactly the relation set at that hash. The caller is
+     responsible for refusing mutations (see Branch.Detached). *)
+  let open_snapshot (_claims : claims) (branch_name : string)
+      (snapshot_hash : string) :
+      (branch_handle * Management.Multigroup.multigroup, error) result =
+    let snap_path = "/system/snapshots/" ^ snapshot_hash in
+    let raw = Nt_ffi.rnt_open_handle snap_path (from_voidp void null) in
+    match Nt_ffi.ptr_to_opt raw with
+    | None -> Error (HandleError ("snapshot not found: " ^ snapshot_hash))
+    | Some bh ->
+        let* rel_entries = list_snapshot_relations snapshot_hash in
+        let mg =
+          List.fold_left
+            (fun mg (rel_name, root) ->
+              let rel =
+                (new Relation.stored
+                  ~name:rel_name
+                  ~schema:[]
+                  ~constraints:None
+                  ~cardinality:Conventions.Cardinality.AlephZero
+                  ~lineage:(Some (Relation.Lineage.Base rel_name))
+                  ~provenance:(Some (Relation.Provenance.base
+                                       ~relation:rel_name ~attributes:[]))
+                  ~membership_criteria:(fun _ -> true))
+                  #set_tree_pointer (Some root)
+              in
+              mg#add_relation (rel :> Relation.relation))
+            ((new Management.Multigroup.multigroup ~name:branch_name)
+               #with_hash snapshot_hash)
+            rel_entries
+        in
+        Ok (bh, mg)
 
   (* --------------------------------------------------------------------------
      Relation handles
@@ -193,7 +301,7 @@ module Make (B : Backend) = struct
          | None   -> Error (CursorError "plan_take failed")
          | Some p -> Ok p)
 
-  let execute_query (_bh : branch_handle) (plan : plan_node) ~(rel_name : string) :
+  let execute_query (plan : plan_node) ~(rel_name : string) :
       (tuple_stream, error) result =
     let* plan_ptr = build_plan plan in
     let raw = Nt_ffi.rnt_vm_execute_plan (Nt_ffi.nint_to_ptr plan_ptr) in
@@ -270,7 +378,13 @@ module Make (B : Backend) = struct
     let rc   = Nt_ffi.rnt_register_relation path in
     if rc <> 0 then Error (HandleError ("register_relation failed: " ^ name))
     else
-      let rel = new Relation.stored
+      let rel_root =
+        let (rc, opt) =
+          Nt_ffi.with_out_string (fun pp -> Nt_ffi.rnt_relation_root path pp)
+        in
+        if rc = 0 then Option.value opt ~default:"" else ""
+      in
+      let rel = (new Relation.stored
         ~name
         ~schema
         ~constraints:None
@@ -278,9 +392,10 @@ module Make (B : Backend) = struct
         ~lineage:(Some (Relation.Lineage.Base name))
         ~provenance:(Some (Relation.Provenance.base ~relation:name
                              ~attributes:(List.map fst schema)))
-        ~membership_criteria:(fun _ -> true)
+        ~membership_criteria:(fun _ -> true))#set_tree_pointer (Some rel_root)
       in
-      Ok (bh, mg#add_relation (rel :> Relation.relation))
+      let* snapshot_hash = branch_target_of_handle bh in
+      Ok (bh, (mg#add_relation (rel :> Relation.relation))#with_hash snapshot_hash)
 
   let retract_relation (bh : branch_handle) (mg : Management.Multigroup.multigroup)
       ~(name : string) :
@@ -298,7 +413,9 @@ module Make (B : Backend) = struct
     let path = relation_path mg#name rel#name in
     let rc = Nt_ffi.rnt_clear_relation path in
     if rc <> 0 then Error (HandleError ("clear_relation failed: " ^ rel#name))
-    else Ok (bh, mg)
+    else
+      let* snapshot_hash = branch_target_of_handle bh in
+      Ok (bh, mg#with_hash snapshot_hash)
 
   let register_domain (_bh : branch_handle) (mg : Management.Multigroup.multigroup)
       (domain : Relation.domain) :
@@ -432,8 +549,7 @@ module Make (B : Backend) = struct
     Ok (branch_handle, multigroup)
 
   (* Runtime initialization
-
-     Seeds the master branch's catalog when the branch is unborn; otherwise
+     Seeds the catalog of the master branch when it doesn't exist yet; otherwise
      trusts the registry's existing snapshot. The seeded multigroup is
      discarded — each connection's [open_branch] starts from an empty mg
      and the caller threads catalog state from there. Persistence of the
@@ -496,13 +612,22 @@ module type S = sig
   val initialize   : unit -> (unit, error) result
   val authenticate : auth_method -> (claims, error) result
 
-  val open_branch  : claims -> string -> (branch_handle * Management.Multigroup.multigroup, error) result
-  val close_branch : branch_handle -> (unit, error) result
+  val session_open      : unit -> (string, error) result
+  val session_close     : string -> (unit, error) result
+  val session_set_branch : string -> string -> string -> (unit, error) result
+
+  val open_branch             : claims -> string -> (branch_handle * Management.Multigroup.multigroup, error) result
+  val open_snapshot           : claims -> string -> string -> (branch_handle * Management.Multigroup.multigroup, error) result
+  val close_branch            : branch_handle -> (unit, error) result
+  val branch_target_of_handle : branch_handle -> (string, error) result
+
+  val list_relations          : string -> ((string * string) list, error) result
+  val list_snapshot_relations : string -> ((string * string) list, error) result
 
   val open_relation  : string -> string -> (relation_handle, error) result
   val close_relation : relation_handle -> (unit, error) result
 
-  val execute_query : branch_handle -> plan_node -> rel_name:string -> (tuple_stream, error) result
+  val execute_query : plan_node -> rel_name:string -> (tuple_stream, error) result
   val stream_next   : tuple_stream -> (Tuple.materialized option, error) result
   val stream_close  : tuple_stream -> (unit, error) result
 

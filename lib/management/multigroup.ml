@@ -4,19 +4,14 @@
 
 
 class multigroup ~name:(init_name : Conventions.Name.t) =
-  let init_hash = Conventions.Hash.hash_text init_name in
-  object (self)
+  object (_self)
     val name : Conventions.Name.t = init_name
-    val hash : Conventions.Hash.t = init_hash
-    val previous_version : Conventions.Hash.t option = None
-    val tree_pointer : Conventions.Hash.t option = None
+    val hash : Conventions.Hash.t = ""
     val relations : Relation.relation BatMap.String.t = BatMap.String.empty
     val timestamp : float = Unix.gettimeofday ()
 
     method name = name
     method hash = hash
-    method previous_version = previous_version
-    method tree_pointer = tree_pointer
     method relations = relations
     method timestamp = timestamp
 
@@ -24,35 +19,17 @@ class multigroup ~name:(init_name : Conventions.Name.t) =
     method get_relation_names = BatMap.String.fold (fun n _ acc -> n :: acc) relations []
     method has_relation rel_name = BatMap.String.mem rel_name relations
 
-    (* Derive the B+ tree root hash from sorted relation hashes. *)
-    method private compute_tree_pointer rels =
-      BatMap.String.fold
-        (fun _n (r : Relation.relation) acc -> acc ^ r#hash)
-        rels ""
-      |> Conventions.Hash.hash_text
-
-    method private compute_hash tp =
-      Conventions.Hash.hash_text (name ^ tp)
-
-    method private advance rels =
-      let tp = self#compute_tree_pointer rels in
-      {< hash = self#compute_hash tp;
-         previous_version = (if hash = "" then None else Some hash);
-         tree_pointer = Some tp;
-         relations = rels;
-         timestamp = Unix.gettimeofday () >}
+    method with_hash h = {< hash = h >}
 
     method add_relation (rel : Relation.relation) =
-      let rels = BatMap.String.add rel#name rel relations in
-      self#advance rels
+      {< relations = BatMap.String.add rel#name rel relations >}
 
     method remove_relation rel_name =
-      if not (BatMap.String.mem rel_name relations) then self
-      else self#advance (BatMap.String.remove rel_name relations)
+      {< relations = BatMap.String.remove rel_name relations >}
 
     method update_relation (rel : Relation.relation) =
-      if not (BatMap.String.mem rel#name relations) then self
-      else self#advance (BatMap.String.add rel#name rel relations)
+      if not (BatMap.String.mem rel#name relations) then {< >}
+      else {< relations = BatMap.String.add rel#name rel relations >}
 
     method serialize () : Storable.Multigroup.t =
       {
