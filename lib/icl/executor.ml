@@ -38,18 +38,17 @@ module Make (NT : Nt.S) = struct
     | Ast.Forall { variable; quantifier; body } ->
         Constraint.forall ~variable ~quantifier (convert_body body)
 
-  let execute (bh : Nt.branch_handle) (db : Management.Multigroup.multigroup)
-      (stmt : Ast.statement) :
-      (Nt.branch_handle * Management.Multigroup.multigroup * string, error) result =
+  let execute (ctx : Sublanguage_context.t) (stmt : Ast.statement) :
+      (Management.Multigroup.multigroup * string, error) result =
     match stmt with
     | Ast.RegisterConstraint { constraint_name; relation_name; body } ->
         let runtime_body = convert_body body in
-        let* bh, new_db =
-          NT.register_constraint bh db ~constraint_name ~relation_name
-            ~body:runtime_body
+        let* _bh, new_cache =
+          NT.register_constraint ctx.write_handle ctx.schema_cache
+            ~constraint_name ~relation_name ~body:runtime_body
           |> wrap_nt
         in
-        Ok (bh, new_db, "Constraint registered: " ^ constraint_name)
+        Ok (new_cache, "Constraint registered: " ^ constraint_name)
 end
 
 module Memory = Make (Nt.Memory)

@@ -13,7 +13,7 @@ module Make (NT : Nt.S) = struct
     | Ok r -> Ok r
     | Error (Parser.ParseError s) -> Error (Exec.ParseError s)
 
-  let execute _bh db ast = Exec.execute (Exec.make_resolver db#name) ast
+  let execute ctx ast = Exec.execute ctx ast
 
   let sexp_of_error = Exec.sexp_of_error
 end

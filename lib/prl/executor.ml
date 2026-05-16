@@ -25,19 +25,18 @@ module Make (NT : Nt.S) = struct
      requires a `rnt_register_ephemeral_relation` C API call that does not
      yet exist.  Disable PRL execution until that bridge is in place. *)
 
-  let execute (_bh : Nt.branch_handle) (_db : Management.Multigroup.multigroup)
-      (_stmt : Ast.statement) :
+  let execute (_ctx : Sublanguage_context.t) (_stmt : Ast.statement) :
       (Sublanguage_types.result, error) result =
     Error (RuntimeError
       "PRL execution is temporarily disabled pending VM callback-cursor support")
 
-  let _execute_load_library _bh _db _path =
+  let _execute_load_library _ctx _path =
     Error (RuntimeError "PRL disabled")
 
-  let _execute_define_function_predicate _bh _db (_spec : Ast.function_predicate) =
+  let _execute_define_function_predicate _ctx (_spec : Ast.function_predicate) =
     let* _ = Ok () in
     Error (RuntimeError "PRL disabled")
 
-  let _execute_list_function_predicates _db =
+  let _execute_list_function_predicates _ctx =
     Error (RuntimeError "PRL disabled")
 end

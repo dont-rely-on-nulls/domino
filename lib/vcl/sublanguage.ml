@@ -1,7 +1,9 @@
 module Make (NT : Nt.S) = struct
+  module Exec = Executor.Make (NT)
+
   type configuration = unit
   type ast = Ast.statement
-  type error = ParseError of string
+  type error = Exec.error
 
   let name = "vcl"
   let parse _ = Ok ()
@@ -9,11 +11,9 @@ module Make (NT : Nt.S) = struct
   let parse_sexp = function
     | Sexplib.Sexp.(List [ Atom "use"; Atom branch ]) -> Ok (Ast.Use branch)
     | sexp ->
-        Error (ParseError ("unrecognized vcl command: " ^ Sexplib.Sexp.to_string sexp))
+        Error (Exec.ParseError ("unrecognized vcl command: " ^ Sexplib.Sexp.to_string sexp))
 
-  let execute _bh _db (Ast.Use branch_name) =
-    Ok (Sublanguage_types.SessionSwitch branch_name)
+  let execute = Exec.execute
 
-  let sexp_of_error (ParseError s) =
-    Sexplib.Sexp.(List [ Atom "vcl-error"; Atom s ])
+  let sexp_of_error = Exec.sexp_of_error
 end

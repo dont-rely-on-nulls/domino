@@ -9,17 +9,39 @@ functor
     module Sess = Session.Make (NT)
     module B    = Branch.Make (NT)
 
-    (* Per-connection state: always active from the moment the client connects.
-       Authentication and the default "master" branch are opened automatically.
-       [session] owns the session lifecycle and the active branch;
-       [bh] and [mg] are cached for sublanguage dispatch without Obj.magic. *)
+    (* Per-connection state: session owns the active branch (write target).
+       The branch's [relation_path] becomes the context resolver, so all
+       sublanguages address the full RNT namespace rather than a single mg. *)
     type conn_state = {
       claims  : Nt.claims;
       session : Sess.session;
     }
 
-    let bh_of state = state.session#branch#branch_handle
-    let mg_of state = state.session#branch#mg
+    (* Build a fresh execution context from the current session state.
+       Called at the top of every handle_sublanguage so it always reflects
+       the live branch after any prior VCL switch. *)
+    let make_ctx (state : conn_state) : Sublanguage_context.t =
+      let br      = state.session#branch in
+      let claims  = state.claims in
+      let session = state.session in
+      {
+        Sublanguage_context.write_handle  = br#branch_handle;
+        resolve                           = br#relation_path;
+        schema_cache                      = br#mg;
+        switch_branch = fun name ->
+          match br#close () with
+          | Error e -> Error e
+          | Ok () ->
+              (match B.open_branch claims name with
+               | Error e ->
+                   (match B.open_branch claims "master" with
+                    | Ok mbr -> session#set_branch mbr
+                    | Error _ -> ());
+                   Error e
+               | Ok new_br ->
+                   session#set_branch new_br;
+                   Ok new_br#mg);
+      }
 
     let read_command input =
       try Ok (Sexplib.Sexp.input_sexp input)
@@ -47,31 +69,23 @@ functor
       Utilities.StringMap.find_opt tag sublanguages
       |> Option.to_result ~none:(Error.UnrecognizedSublanguage tag)
 
-    let execute_sublanguage bh mg expr (module Language : SubS) =
+    let execute_sublanguage ctx expr (module Language : SubS) =
       Language.parse_sexp expr
-      |> fmap (Language.execute bh mg)
+      |> fmap (Language.execute ctx)
       |> Result.map_error (fun e ->
           Error.SublanguageError (Language.sexp_of_error e))
 
-    let execute_command bh mg = function
+    let execute_command ctx = function
       | Sexplib.Sexp.(List [ Atom tag; expr ]) ->
-          find_language tag |> fmap (execute_sublanguage bh mg expr)
+          find_language tag |> fmap (execute_sublanguage ctx expr)
       | s -> Error (Error.MalformedExpression s)
-
-    let perform handle mg result =
-      match result with
-      | Sublanguage_types.Transition new_mg -> Ok (handle, new_mg, result)
-      | _ -> Ok (handle, mg, result)
 
     let tuple_to_sexp (t : Tuple.materialized) =
       let open Sexplib.Sexp in
       List
         (Tuple.AttributeMap.bindings t.Tuple.attributes
         |> List.map (fun (k, attr) ->
-            List
-              [
-                Atom k; Conventions.AbstractValue.sexp_of_t attr.Attribute.value;
-              ]))
+            List [ Atom k; Conventions.AbstractValue.sexp_of_t attr.Attribute.value ]))
 
     let output_response out_ch sexp =
       let response = Sexplib.Sexp.to_string sexp in
@@ -84,113 +98,80 @@ functor
       output_response out_ch
         Sexplib.Sexp.(List [ Atom "error"; Error.sexp_of_error e ])
 
-    let send_ok_message out_ch msg =
-      output_response out_ch
-        Sexplib.Sexp.(List [ Atom "ok"; List [ Atom "message"; Atom msg ] ])
-
-    let serialize (db : Management.Multigroup.multigroup) =
+    (* Serializes a sublanguage result.  [cache] is the write target's current
+       schema_cache — used for snapshot/branch metadata in Cursor responses.
+       Transition carries its own new_cache so [cache] is unused there. *)
+    let serialize (cache : Management.Multigroup.multigroup) =
       let open Sexplib.Sexp in
       function
       | Error e -> List [ Atom "error"; Error.sexp_of_error e ]
       | Ok (Sublanguage_types.Cursor { cursor_id; rows; has_more }) ->
           let row_sexps = List.map tuple_to_sexp rows in
-          let rows_sexp = List row_sexps in
           List
             [
               Atom "cursor";
-              List [ Atom "id"; Atom cursor_id ];
-              List [ Atom "rows"; rows_sexp ];
+              List [ Atom "id";        Atom cursor_id ];
+              List [ Atom "rows";      List row_sexps ];
               List [ Atom "row_count"; Atom (string_of_int (List.length row_sexps)) ];
-              List [ Atom "has_more"; Atom (string_of_bool has_more) ];
-              List [ Atom "db_hash"; Atom db#hash ];
-              List [ Atom "db_name"; Atom db#name ];
+              List [ Atom "has_more";  Atom (string_of_bool has_more) ];
+              List [ Atom "snapshot";  Atom cache#hash ];
+              List [ Atom "branch";    Atom cache#name ];
             ]
       | Ok (Sublanguage_types.Query _rel) ->
-          ignore db;
+          ignore cache;
           List [ Atom "error"; Atom "unexpected Query result: use Cursor path" ]
-      | Ok (Sublanguage_types.Transition new_db) ->
+      | Ok (Sublanguage_types.Transition new_cache) ->
           List
             [
               Atom "ok";
-              List [ Atom "db_hash"; Atom new_db#hash ];
-              List [ Atom "db_name"; Atom new_db#name ];
+              List [ Atom "snapshot"; Atom new_cache#hash ];
+              List [ Atom "branch";   Atom new_cache#name ];
             ]
-      | Ok (Sublanguage_types.SessionSwitch multigroup) ->
-          List
-            [
-              Atom "ok";
-              List [ Atom "message"; Atom ("Switched to multigroup " ^ multigroup) ];
-            ]
+      | Ok (Sublanguage_types.SessionSwitch branch) ->
+          ignore cache;
+          List [ Atom "ok"; List [ Atom "message"; Atom ("Switched to branch " ^ branch) ] ]
       | Ok (Sublanguage_types.CreateMultigroup name) ->
-          List
-            [
-              Atom "ok";
-              List [ Atom "message"; Atom ("Multigroup " ^ name ^ " created") ];
-            ]
-
-    (* Close the current branch and open a new one by name.
-       On failure to open the target, re-opens "master" as a fallback to keep
-       the connection alive. *)
-    let switch_branch output state name =
-      let { claims; session } = !state in
-      match session#branch#close () with
-      | Error e ->
-          send_error output (Error.SyntaxError (Nt.string_of_error e))
-      | Ok () ->
-          (match B.open_branch claims name with
-           | Error e ->
-               (match B.open_branch claims "master" with
-                | Ok br -> session#set_branch br
-                | Error _ -> ());
-               send_error output (Error.SyntaxError (Nt.string_of_error e))
-           | Ok br ->
-               session#set_branch br;
-               send_ok_message output ("using branch: " ^ name))
+          ignore cache;
+          List [ Atom "ok"; List [ Atom "message"; Atom ("Multigroup " ^ name ^ " created") ] ]
 
     let handle_sublanguage output state sexp =
-      let bh = bh_of !state in
-      let mg = mg_of !state in
-      match
-        Ok sexp
-        |> fmap (execute_command bh mg)
-        |> fmap (perform bh mg)
-      with
+      let ctx = make_ctx !state in
+      match execute_command ctx sexp with
       | Error e -> send_error output e
-      | Ok (_, _, Sublanguage_types.SessionSwitch name) ->
-          switch_branch output state name
-      | Ok (_new_bh, new_mg, r) ->
-          (* Sublanguages return an updated mg on Transition (DDL/DML).
-             Sync it back into the branch so subsequent calls see fresh state.
-             _new_bh is the same handle — branch already holds it. *)
-          ignore _new_bh;
-          !state.session#branch#refresh_mg new_mg;
-          serialize (mg_of !state) (Ok r) |> output_response output
+      | Ok result ->
+          (* Sync updated schema_cache back into the branch mirror on any
+             state-advancing result (DDL, ICL, VCL).  For VCL the session
+             already holds the new branch; refresh_mg is a no-op on it but
+             correct for DDL/ICL which stay on the same branch. *)
+          (match result with
+           | Sublanguage_types.Transition new_cache ->
+               !state.session#branch#refresh_mg new_cache
+           | _ -> ());
+          serialize ctx.schema_cache (Ok result) |> output_response output
 
     let handle_client connection =
       let input  = T.input connection in
       let output = T.output connection in
-      let claims =
-        match NT.authenticate Nt.PlainText with
-        | Ok c -> c
-        | Error e ->
-            Printf.eprintf "Auth failed: %s\n%!" (Nt.string_of_error e); ""
-      in
-      (match Sess.open_session claims ~branch_name:"master" with
-       | Error e ->
-           send_error output (Error.SyntaxError (Nt.string_of_error e))
-       | Ok sess ->
-           let state = ref { claims; session = sess } in
-           (try
-             while true do
-               match read_command input with
-               | Error e -> send_error output e
-               | Ok sexp -> handle_sublanguage output state sexp
-             done
-           with
-           | End_of_file -> ignore (!state.session#close ())
-           | e ->
-               ignore (!state.session#close ());
-               Printf.eprintf "Error handling connection: %s" (Printexc.to_string e)))
+      match NT.authenticate Nt.PlainText with
+      | Error e ->
+          send_error output (Error.SyntaxError (Nt.string_of_error e))
+      | Ok claims ->
+          (match Sess.open_session claims ~branch_name:"master" with
+           | Error e ->
+               send_error output (Error.SyntaxError (Nt.string_of_error e))
+           | Ok sess ->
+               let state = ref { claims; session = sess } in
+               (try
+                 while true do
+                   match read_command input with
+                   | Error e -> send_error output e
+                   | Ok sexp -> handle_sublanguage output state sexp
+                 done
+               with
+               | End_of_file -> ignore (!state.session#close ())
+               | e ->
+                   ignore (!state.session#close ());
+                   Printf.eprintf "Error handling connection: %s" (Printexc.to_string e)))
 
     let spawn_handler connection =
       Stdlib.Domain.spawn (fun () -> handle_client connection)

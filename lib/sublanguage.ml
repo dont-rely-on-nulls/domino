@@ -25,8 +25,7 @@ module type S = sig
   val name : string
   val parse_sexp : Sexplib.Sexp.t -> (ast, error) Result.t
 
-  val execute :
-    Nt.branch_handle -> Management.Multigroup.multigroup -> ast -> (result, error) Result.t
+  val execute : Sublanguage_context.t -> ast -> (result, error) Result.t
 
   val sexp_of_error : error -> Sexplib.Sexp.t
 end

@@ -13,9 +13,9 @@ module Make (NT : Nt.S) = struct
     | Ok r -> Ok r
     | Error (Parser.ParseError s) -> Error (Exec.ParseError s)
 
-  let execute bh db ast =
-    match Exec.execute bh db ast with
-    | Ok (_bh, new_db, _msg) -> Ok (Sublanguage_types.Transition new_db)
+  let execute ctx ast =
+    match Exec.execute ctx ast with
+    | Ok (new_cache, _msg) -> Ok (Sublanguage_types.Transition new_cache)
     | Error e -> Error e
 
   let sexp_of_error = Exec.sexp_of_error

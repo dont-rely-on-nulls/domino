@@ -15,23 +15,21 @@ module Make (NT : Nt.S) = struct
 
   let ( let* ) = Result.bind
 
-  (* Constructs a resolver for a single branch: default to the given branch
-     name, override with ~branch_name for cross-branch references. *)
-  let make_resolver (default_branch : string)
-      ?(branch_name = default_branch) (rel_name : string) : string =
-    "/system/branches/" ^ branch_name ^ "/relations/" ^ rel_name
+  (* Resolver for a single branch: [None] → default branch, [Some b] → explicit. *)
+  let make_resolver (default_branch : string) (branch_override : string option)
+      (rel_name : string) : string =
+    let branch = Option.value branch_override ~default:default_branch in
+    "/system/branches/" ^ branch ^ "/relations/" ^ rel_name
 
   (* Compile a DRL AST query to a Tarski VM plan node tree.
-     [resolve] maps a relation name (optionally branch-qualified) to its
-     full RNT path.  Pass the branch's [relation_path] method, or a custom
-     resolver for cross-branch queries.
-     Only Base (SCAN), Join (JOIN), and Take (TAKE) are supported for now. *)
+     [resolve] maps (branch_override, rel_name) → full RNT path, enabling
+     cross-multigroup reads without scope restriction. *)
   let rec compile
-      (resolve : ?branch_name:string -> string -> string)
+      (resolve : string option -> string -> string)
       (q : Ast.query) : (Nt.plan_node, error) result =
     match q with
     | Ast.Base name ->
-        Ok (Nt.Scan { path = resolve name; args = [] })
+        Ok (Nt.Scan { path = resolve None name; args = [] })
     | Ast.Join (on_attrs, q1, q2) ->
         let* p1 = compile resolve q1 in
         let* p2 = compile resolve q2 in
@@ -48,15 +46,9 @@ module Make (NT : Nt.S) = struct
 
   let page_limit = 16
 
-  (* Execute a compiled plan: submit to VM, drain up to page_limit tuples,
-     return a Cursor result.  The VM cursor is closed after draining.
-
-     [resolve] is the path resolver — pass [branch#relation_path] for
-     single-branch queries, or a custom fn for cross-branch joins. *)
-  let execute
-      (resolve : ?branch_name:string -> string -> string)
-      (q : Ast.query) : (Sublanguage_types.result, error) result =
-    let* plan = compile resolve q in
+  let execute (ctx : Sublanguage_context.t) (q : Ast.query) :
+      (Sublanguage_types.result, error) result =
+    let* plan = compile ctx.resolve q in
     let rel_name = "query_result" in
     let* stream =
       NT.execute_query plan ~rel_name
@@ -66,8 +58,8 @@ module Make (NT : Nt.S) = struct
       if count >= page_limit then (List.rev acc, true)
       else
         match NT.stream_next stream with
-        | Error _    -> (List.rev acc, false)
-        | Ok None    -> (List.rev acc, false)
+        | Error _     -> (List.rev acc, false)
+        | Ok None     -> (List.rev acc, false)
         | Ok (Some t) -> drain (t :: acc) (count + 1)
     in
     let (rows, has_more) = drain [] 0 in

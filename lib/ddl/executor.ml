@@ -21,37 +21,42 @@ module Make (NT : Nt.S) = struct
     | Ast.Continuum -> Conventions.Cardinality.Continuum
     | Ast.ConstrainedFinite -> Conventions.Cardinality.ConstrainedFinite
 
-  let execute (bh : Nt.branch_handle) (db : Management.Multigroup.multigroup)
-      (stmt : Ast.statement) :
-      (Nt.branch_handle * Management.Multigroup.multigroup * string, error) result =
+  (* Returns the updated schema_cache (reflecting the new snapshot state) and
+     a human-readable message.  The write target branch is ctx.schema_cache#name. *)
+  let execute (ctx : Sublanguage_context.t) (stmt : Ast.statement) :
+      (Management.Multigroup.multigroup * string, error) result =
+    let bh = ctx.write_handle in
+    let db = ctx.schema_cache in
     match stmt with
     | Ast.CreateMultigroup name ->
-        let* bh, db =
+        let* _bh, new_db =
           NT.create_multigroup "" name |> wrap_nt
         in
-        Ok (bh, db, "Multigroup created: " ^ name)
+        Ok (new_db, "Multigroup created: " ^ name)
     | Ast.CreateRelation { name; schema = schema_pairs } ->
         let schema =
           List.fold_left
             (fun s (attr, dom) -> Schema.add attr dom s)
             Schema.empty schema_pairs
         in
-        let* bh, db =
+        let* _bh, new_db =
           NT.create_relation bh db ~branch_name:db#name ~name ~schema
           |> wrap_nt
         in
-        Ok (bh, db, "Relation created: " ^ name)
+        Ok (new_db, "Relation created: " ^ name)
     | Ast.RetractRelation name ->
-        let* bh, db =
+        let* _bh, new_db =
           NT.retract_relation bh db ~name |> wrap_nt
         in
-        Ok (bh, db, "Relation retracted: " ^ name)
+        Ok (new_db, "Relation retracted: " ^ name)
     | Ast.ClearRelation name -> (
         match NT.get_relation db name with
         | None -> Error (RelationNotFound name)
         | Some rel ->
-            let* bh, db = NT.clear_relation bh db (rel :> Relation.relation) |> wrap_nt in
-            Ok (bh, db, "Relation cleared: " ^ name))
+            let* _bh, new_db =
+              NT.clear_relation bh db (rel :> Relation.relation) |> wrap_nt
+            in
+            Ok (new_db, "Relation cleared: " ^ name))
     | Ast.RegisterDomain { name; cardinality } ->
         let domain : Relation.domain =
           new Relation.domain ~name
@@ -61,6 +66,6 @@ module Make (NT : Nt.S) = struct
             ~schema:Schema.empty ~provenance:None ~lineage:None
             ~constraints:None
         in
-        let* bh, db = NT.register_domain bh db domain |> wrap_nt in
-        Ok (bh, db, "Domain registered: " ^ name)
+        let* _bh, new_db = NT.register_domain bh db domain |> wrap_nt in
+        Ok (new_db, "Domain registered: " ^ name)
 end

@@ -29,17 +29,15 @@ module Make (NT : Nt.S) = struct
     method branch_handle  = bh
 
     (* Path for a relation on this branch (Live) or its pinned snapshot
-       (Detached).  Pass ~branch_name to reference a relation on a different
-       live branch (cross-branch joins). *)
-    method relation_path ?(branch_name : string option) (rel_name : string) =
-      match branch_name with
+       (Detached).  Pass [Some branch_name] to reference a relation on a
+       different live branch (cross-multigroup reads). *)
+    method relation_path (branch_override : string option) (rel_name : string) =
+      match branch_override with
       | Some b -> "/system/branches/" ^ b ^ "/relations/" ^ rel_name
       | None ->
           match mode with
-          | Live ->
-              "/system/branches/" ^ mg#name ^ "/relations/" ^ rel_name
-          | Detached hash ->
-              "/system/snapshots/" ^ hash ^ "/relations/" ^ rel_name
+          | Live      -> "/system/branches/" ^ mg#name ^ "/relations/" ^ rel_name
+          | Detached hash -> "/system/snapshots/" ^ hash ^ "/relations/" ^ rel_name
 
     method private assert_live op =
       match mode with

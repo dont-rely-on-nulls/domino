@@ -25,8 +25,8 @@ module Make (NT : Nt.S) = struct
 
   let ( let* ) = Result.bind
 
-  let execute (_bh : Nt.branch_handle) (db : Management.Multigroup.multigroup)
-      (stmt : Ast.statement) : (exec_result, error) result =
+  let execute (ctx : Sublanguage_context.t) (stmt : Ast.statement) :
+      (exec_result, error) result =
     ignore default_batch;
     match stmt with
     | Ast.Begin _ ->
@@ -35,7 +35,7 @@ module Make (NT : Nt.S) = struct
         Error (CursorError "cursors not yet implemented")
     | Ast.Close _ ->
         let* () = Ok () in
-        Ok (Closed db)
+        Ok (Closed ctx.schema_cache)
 end
 
 module Memory = Make (Nt.Memory)

@@ -13,12 +13,12 @@ module Make (NT : Nt.S) = struct
     | Ok r -> Ok r
     | Error (Parser.ParseError s) -> Error (Exec.ParseError s)
 
-  let execute bh db ast =
-    Exec.execute bh db ast
+  let execute ctx ast =
+    Exec.execute ctx ast
     |> Result.map (function
          | Executor.Batch { cursor_id; rows; has_more } ->
              Sublanguage_types.Cursor { cursor_id; rows; has_more }
-         | Executor.Closed db -> Sublanguage_types.Transition db)
+         | Executor.Closed cache -> Sublanguage_types.Transition cache)
 
   let sexp_of_error = Exec.sexp_of_error
 end

@@ -18,8 +18,8 @@ module Make (NT : Nt.S) = struct
   let ( let* ) = Result.bind
   let wrap_nt r = Result.map_error (fun e -> NtError e) r
 
-  let get_rel db name =
-    match NT.get_relation db name with
+  let get_rel (ctx : Sublanguage_context.t) name =
+    match NT.get_relation ctx.schema_cache name with
     | Some r -> Ok r
     | None -> Error (RelationNotFound name)
 
@@ -37,10 +37,10 @@ module Make (NT : Nt.S) = struct
     in
     { Tuple.relation; attributes = attr_map }
 
-  (* Compile a DRL query and drain ALL tuples via the VM.
-     Used internally by mutation operations that need to inspect query results. *)
-  let drain_query db query =
-    match DrlExec.compile (DrlExec.make_resolver db#name) query with
+  (* Drain all tuples from a DRL query using ctx.resolve for path resolution.
+     Cross-multigroup reads work transparently here. *)
+  let drain_query (ctx : Sublanguage_context.t) query =
+    match DrlExec.compile ctx.resolve query with
     | Error e -> Error (DrlError e)
     | Ok plan ->
         let* stream =
@@ -57,9 +57,6 @@ module Make (NT : Nt.S) = struct
         ignore (NT.stream_close stream);
         Ok tuples
 
-  (* In-memory semijoin: return target tuples whose common-attribute values
-     match at least one predicate tuple.  Used by DeleteWhere until the VM
-     has a native filter/equijoin operator. *)
   let attr_val_eq a b =
     Stdlib.( = ) a.Attribute.value b.Attribute.value
 
@@ -79,61 +76,64 @@ module Make (NT : Nt.S) = struct
       (fun t -> List.exists (tuple_matches_pred common t) pred_tuples)
       target_tuples
 
-  let execute (bh : Nt.branch_handle) (db : Management.Multigroup.multigroup)
-      (stmt : Ast.statement) :
-      (Nt.branch_handle * Management.Multigroup.multigroup, error) result =
+  (* Returns the (unchanged) schema_cache — DML does not change schema,
+     only tuple content.  The cache is threaded through for API symmetry
+     with DDL. *)
+  let execute (ctx : Sublanguage_context.t) (stmt : Ast.statement) :
+      (Management.Multigroup.multigroup, error) result =
+    let bh = ctx.write_handle in
+    let db = ctx.schema_cache in
     match stmt with
     | Ast.InsertTuple { relation; attributes } ->
-        let* rel = get_rel db relation in
+        let* rel = get_rel ctx relation in
         let tuple = build_tuple ~relation:rel#name attributes in
         let* _ =
           NT.create_tuple ~branch_name:db#name ~rel_name:rel#name tuple
           |> wrap_nt
         in
-        Ok (bh, db)
+        Ok db
     | Ast.InsertTuples { relation; tuples } ->
-        let* rel = get_rel db relation in
+        let* rel = get_rel ctx relation in
         let tuple_list = List.map (build_tuple ~relation:rel#name) tuples in
         let* _ =
           NT.create_tuples ~branch_name:db#name ~rel_name:rel#name tuple_list
           |> wrap_nt
         in
-        Ok (bh, db)
+        Ok db
     | Ast.DeleteTuple { relation; attributes } ->
-        let* rel = get_rel db relation in
+        let* rel = get_rel ctx relation in
         let tuple = build_tuple ~relation:rel#name attributes in
         let hash = Hashing.hash_tuple tuple in
         let* () =
           NT.retract_tuple ~branch_name:db#name ~rel_name:rel#name hash
           |> wrap_nt
         in
-        Ok (bh, db)
+        Ok db
     | Ast.Assign { target; body } ->
-        let* rel = get_rel db target in
-        let* tuples = drain_query db body in
-        let* bh, db =
+        let* rel = get_rel ctx target in
+        let* tuples = drain_query ctx body in
+        let* _bh, new_db =
           NT.clear_relation bh db (rel :> Relation.relation) |> wrap_nt
         in
         let* _ =
-          NT.create_tuples ~branch_name:db#name ~rel_name:rel#name
+          NT.create_tuples ~branch_name:new_db#name ~rel_name:rel#name
             (List.map (retarget rel#name) tuples)
           |> wrap_nt
         in
-        Ok (bh, db)
+        Ok new_db
     | Ast.InsertFrom { target; source } ->
-        let* rel = get_rel db target in
-        let* tuples = drain_query db source in
+        let* rel = get_rel ctx target in
+        let* tuples = drain_query ctx source in
         let* _ =
           NT.create_tuples ~branch_name:db#name ~rel_name:rel#name
             (List.map (retarget rel#name) tuples)
           |> wrap_nt
         in
-        Ok (bh, db)
+        Ok db
     | Ast.DeleteWhere { target; predicate } ->
-        let* rel = get_rel db target in
-        let* target_tuples = drain_query db (Drl.Ast.Base rel#name) in
-        let* pred_tuples   = drain_query db predicate in
-        (* Derive common attribute names from the actual result sets. *)
+        let* rel = get_rel ctx target in
+        let* target_tuples = drain_query ctx (Drl.Ast.Base rel#name) in
+        let* pred_tuples   = drain_query ctx predicate in
         let attr_names_of = function
           | [] -> []
           | t :: _ ->
@@ -145,14 +145,14 @@ module Make (NT : Nt.S) = struct
         let to_delete = semijoin common target_tuples pred_tuples in
         List.fold_left
           (fun acc t ->
-            let* bh, db = acc in
+            let* db = acc in
             let hash = Hashing.hash_tuple (retarget rel#name t) in
             let* () =
               NT.retract_tuple ~branch_name:db#name ~rel_name:rel#name hash
               |> wrap_nt
             in
-            Ok (bh, db))
-          (Ok (bh, db)) to_delete
+            Ok db)
+          (Ok db) to_delete
 end
 
 module Memory = Make (Nt.Memory)
