@@ -25,6 +25,17 @@ let rnt_init =
 let rnt_firewall =
   fn "rnt_firewall" (string @-> ptr (ptr char) @-> returning int)
 
+(* Session lifecycle ------------------------------------------------------- *)
+let rnt_session_open =
+  fn "rnt_session_open" (ptr void @-> ptr (ptr char) @-> returning int)
+
+let rnt_session_close =
+  fn "rnt_session_close" (string @-> returning int)
+
+let rnt_session_set_branch =
+  fn "rnt_session_set_branch"
+    (string @-> string @-> string @-> returning int)
+
 (* Handle lifecycle -------------------------------------------------------- *)
 let rnt_open_handle =
   fn "rnt_open_handle" (string @-> ptr void @-> returning (ptr void))
@@ -32,22 +43,20 @@ let rnt_open_handle =
 let rnt_close_handle =
   fn "rnt_close_handle" (ptr void @-> returning int)
 
-(* Branch payload ---------------------------------------------------------- *)
-let rnt_branch_payload =
-  fn "rnt_branch_payload"
-    (ptr void @-> ptr (ptr uint8_t) @-> ptr size_t @-> returning int)
+(* Branch hash-pointer ----------------------------------------------------- *)
+let rnt_branch_target =
+  fn "rnt_branch_target"
+    (ptr void @-> ptr (ptr char) @-> returning int)
 
-let rnt_branch_set_payload =
-  fn "rnt_branch_set_payload"
-    (ptr void @-> ptr uint8_t @-> size_t @-> returning int)
+let rnt_branch_advance =
+  fn "rnt_branch_advance" (string @-> string @-> returning int)
 
 (* Object registration ----------------------------------------------------- *)
 let rnt_register_relation =
   fn "rnt_register_relation" (string @-> returning int)
 
 let rnt_register_branch =
-  fn "rnt_register_branch"
-    (string @-> ptr uint8_t @-> size_t @-> returning int)
+  fn "rnt_register_branch" (string @-> string @-> returning int)
 
 (* Tuple storage ----------------------------------------------------------- *)
 let rnt_link_tuple =
@@ -63,9 +72,6 @@ let rnt_clear_relation =
 let rnt_relation_root =
   fn "rnt_relation_root"
     (string @-> ptr (ptr char) @-> returning int)
-
-let rnt_set_relation_root =
-  fn "rnt_set_relation_root" (string @-> string @-> returning int)
 
 (* Cursor and VM ----------------------------------------------------------- *)
 let rnt_cursor_open =
@@ -137,27 +143,3 @@ let ptr_to_opt (p : unit ptr) : nativeint option =
 (* Converts a stored nativeint back to a void* for API calls. *)
 let nint_to_ptr (n : nativeint) : unit ptr =
   ptr_of_raw_address n
-
-(* Converts an OCaml bytes value to a uint8_t CArray for passing to C. *)
-let bytes_to_uint8_array (b : bytes) =
-  let len = Bytes.length b in
-  if len = 0 then (from_voidp uint8_t null, Unsigned.Size_t.zero)
-  else
-    let arr = CArray.make uint8_t len in
-    for i = 0 to len - 1 do
-      CArray.set arr i
-        (Unsigned.UInt8.of_int (Char.code (Bytes.get b i)))
-    done;
-    (CArray.start arr, Unsigned.Size_t.of_int len)
-
-(* Reads [len] bytes from a uint8_t pointer into an OCaml bytes value and
-   frees the C buffer. *)
-let consume_uint8_array p (len : Unsigned.size_t) : bytes =
-  let n = Unsigned.Size_t.to_int len in
-  let b = Bytes.create n in
-  for i = 0 to n - 1 do
-    Bytes.set b i
-      (Char.chr (Unsigned.UInt8.to_int !@(p +@ i)))
-  done;
-  rnt_free_bytes p;
-  b
