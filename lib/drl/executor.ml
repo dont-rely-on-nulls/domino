@@ -4,6 +4,7 @@ module Make (NT : Nt.S) = struct
     | RelationNotFound of string
     | NtError of Nt.error
     | UnsupportedOperator of string
+    | UnqualifiedName of string
 
   let sexp_of_error e =
     let open Sexplib.Sexp in
@@ -12,24 +13,21 @@ module Make (NT : Nt.S) = struct
     | RelationNotFound s -> List [ Atom "relation-not-found"; Atom s ]
     | NtError e -> List [ Atom "nt-error"; Atom (Nt.string_of_error e) ]
     | UnsupportedOperator s -> List [ Atom "unsupported-operator"; Atom s ]
+    | UnqualifiedName s -> List [ Atom "unqualified-name"; Atom s ]
 
   let ( let* ) = Result.bind
 
-  (* Resolver for a single branch: [None] → default branch, [Some b] → explicit. *)
-  let make_resolver (default_branch : string) (branch_override : string option)
-      (rel_name : string) : string =
-    let branch = Option.value branch_override ~default:default_branch in
-    "/system/branches/" ^ branch ^ "/relations/" ^ rel_name
-
   (* Compile a DRL AST query to a Tarski VM plan node tree.
-     [resolve] maps (branch_override, rel_name) → full RNT path, enabling
-     cross-multigroup reads without scope restriction. *)
+     Every base relation reference must be fully qualified ([<mg>:<rel>]);
+     [resolve] maps an FQN to its absolute RNT path. *)
   let rec compile
-      (resolve : string option -> string -> string)
+      (resolve : ?branch:string -> Qualified_name.t -> string)
       (q : Ast.query) : (Nt.plan_node, error) result =
     match q with
     | Ast.Base name ->
-        Ok (Nt.Scan { path = resolve None name; args = [] })
+        (match Qualified_name.try_parse name with
+         | Error s -> Error (UnqualifiedName s)
+         | Ok fqn  -> Ok (Nt.Scan { path = resolve fqn; args = [] }))
     | Ast.Join (on_attrs, q1, q2) ->
         let* p1 = compile resolve q1 in
         let* p2 = compile resolve q2 in

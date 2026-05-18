@@ -98,7 +98,7 @@ let rational : Relation.domain =
     | Some n ->
         let a, b = cantor_unpair n in
         let num = nat_to_int a in
-        (* Map b → non-zero integer: 0→1, 1→-1, 2→2, 3→-2, … *)
+        (* Map b -> non-zero integer: 0->1, 1->-1, 2->2, 3->-2, … *)
         let den = if b mod 2 = 0 then (b / 2) + 1 else -((b + 1) / 2) in
         let attributes =
           Tuple.AttributeMap.of_list

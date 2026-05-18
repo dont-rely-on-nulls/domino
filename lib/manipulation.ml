@@ -30,11 +30,13 @@ module Make (Storage : Management.Physical.S) = struct
       | Error _ -> Error (Error.StorageError "Failed to store relation")
       | Ok () -> Ok ()
 
-  (** Store a database state to storage *)
+  (** Store a database state to storage.
+      Keyed by [db#name]; content-hashing of mgs is no longer maintained on the
+      Sakura side — the kernel owns mg content addressing. *)
   let store_multigroup (storage : storage) (db : Management.Multigroup.multigroup) :
       (unit, error) Result.t =
       match
-        Storage.store_raw storage db#hash (Storable.Multigroup.to_bytes @@ db#serialize ())
+        Storage.store_raw storage db#name (Storable.Multigroup.to_bytes @@ db#serialize ())
       with
       | Error _ -> Error (Error.StorageError "Failed to store multigroup")
       | Ok () -> Ok ()

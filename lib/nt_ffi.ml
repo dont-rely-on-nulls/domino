@@ -62,6 +62,9 @@ let rnt_register_branch =
 let rnt_list_relations =
   fn "rnt_list_relations" (string @-> ptr (ptr char) @-> returning int)
 
+let rnt_list_branch_multigroups =
+  fn "rnt_list_branch_multigroups" (string @-> ptr (ptr char) @-> returning int)
+
 let rnt_list_snapshot_relations =
   fn "rnt_list_snapshot_relations" (string @-> ptr (ptr char) @-> returning int)
 

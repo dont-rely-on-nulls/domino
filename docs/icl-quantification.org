@@ -101,8 +101,8 @@ Generator-based relations with no tree return ~Some []~.
 
 The materialisation path:
 1. ~Merkle.keys tree~ — loads all tuple hashes.
-2. For each hash: ~Storage.load_raw~ → ~Storable.Tuple.of_bytes~ → attribute hash list.
-3. For each attribute hash: ~Storage.load_raw~ → ~Marshal.from_bytes~.
+2. For each hash: ~Storage.load_raw~ -> ~Storable.Tuple.of_bytes~ -> attribute hash list.
+3. For each attribute hash: ~Storage.load_raw~ -> ~Marshal.from_bytes~.
 
 This eagerly materialises the *entire* quantifier relation into memory before
 evaluation begins. For a relation of cardinality /n/ with /k/ attributes each,

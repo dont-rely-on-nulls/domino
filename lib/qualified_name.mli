@@ -1,20 +1,18 @@
-(** Fully qualified relation name: [multigroup:schema:relation].
+(** Fully qualified relation reference: [mg:rel_name].
 
-    Unqualified names fill in defaults: empty multigroup, ["public"] schema. *)
+    The first colon separates the multigroup name from the relation name; any
+    further colons are part of the relation name verbatim. *)
 
-type t = { multigroup : string; schema : string; relation : string }
+type t = { mg : string; name : string }
 
-val default_schema : string
+exception Unqualified of string
 
 val parse : string -> t
-(** Split on [:] with default filling.
-    - ["rel"] -> multigroup="", schema="public", relation="rel"
-    - ["s:rel"] -> multigroup="", schema="s", relation="rel"
-    - ["mg:s:rel"] -> multigroup="mg", schema="s", relation="rel" *)
+(** Splits on the first [:].  Raises [Unqualified] when no mg segment is
+    present (i.e. no colon, or empty mg / empty name). *)
 
-val make : ?multigroup:string -> ?schema:string -> string -> t
+val try_parse : string -> (t, string) result
+
+val make : mg:string -> name:string -> t
+
 val to_string : t -> string
-
-val to_key : t -> string
-(** Composite key for [RelationMap] lookup within a single database:
-    ["schema:relation"]. *)

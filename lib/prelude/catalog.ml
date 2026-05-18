@@ -7,6 +7,11 @@
    written to by any executor. They appear to be stubs for trigger/timing
    metadata that was never implemented. *)
 
+(** Dedicated multigroup hosting the system catalog.  The catalog's relation
+    names keep the [public:] prefix — that prefix is part of the relation name
+    inside this mg, not a separate namespace. *)
+let prelude_mg = "sakura"
+
 let catalog_prefix = "public:"
 let relation_rel_name = catalog_prefix ^ "relation"
 let domain_rel_name = catalog_prefix ^ "domain"

@@ -15,7 +15,7 @@ module Make (NT : Nt.S) = struct
 
   let execute ctx ast =
     match Exec.execute ctx ast with
-    | Ok new_cache -> Ok (Sublanguage_types.Transition new_cache)
+    | Ok delta -> Ok (Sublanguage_types.Transition delta)
     | Error e -> Error e
 
   let sexp_of_error = Exec.sexp_of_error

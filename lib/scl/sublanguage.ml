@@ -18,7 +18,7 @@ module Make (NT : Nt.S) = struct
     |> Result.map (function
          | Executor.Batch { cursor_id; rows; has_more } ->
              Sublanguage_types.Cursor { cursor_id; rows; has_more }
-         | Executor.Closed cache -> Sublanguage_types.Transition cache)
+         | Executor.Closed delta -> Sublanguage_types.Transition delta)
 
   let sexp_of_error = Exec.sexp_of_error
 end

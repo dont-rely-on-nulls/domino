@@ -9,38 +9,42 @@ functor
     module Sess = Session.Make (NT)
     module B    = Branch.Make (NT)
 
-    (* Per-connection state: session owns the active branch (write target).
-       The branch's [relation_path] becomes the context resolver, so all
-       sublanguages address the full RNT namespace rather than a single mg. *)
+    (** Per-connection state: session owns the active branch. The
+        branch's [relation_path] becomes the context resolver, so all
+        sublanguages address the full RNT namespace rather than a
+        single multigroup. **)
     type conn_state = {
       claims  : Nt.claims;
       session : Sess.session;
     }
 
-    (* Build a fresh execution context from the current session state.
-       Called at the top of every handle_sublanguage so it always reflects
-       the live branch after any prior VCL switch. *)
+    (** Build a fresh execution context from the current session
+        state. Called at the top of every handle_sublanguage so it
+        always reflects the live branch after any prior VCL
+        switch. **)
     let make_ctx (state : conn_state) : Sublanguage_context.t =
       let br      = state.session#branch in
       let claims  = state.claims in
       let session = state.session in
       {
         Sublanguage_context.write_handle  = br#branch_handle;
-        resolve                           = br#relation_path;
-        schema_cache                      = br#mg;
+        branch                            = (br :> Sublanguage_context.branch_view);
+        resolve                           = br#path;
         switch_branch = fun name ->
           match br#close () with
           | Error e -> Error e
           | Ok () ->
-              (match B.open_branch claims name with
+              begin match B.open_branch claims name with
                | Error e ->
-                   (match B.open_branch claims "master" with
-                    | Ok mbr -> session#set_branch mbr
-                    | Error _ -> ());
-                   Error e
+                  begin match B.open_branch claims "master" with
+                  | Ok mbr -> session#set_branch mbr
+                  | Error _ -> ()
+                  end;
+                  Error e
                | Ok new_br ->
                    session#set_branch new_br;
-                   Ok new_br#mg);
+                   Ok new_br#multigroups
+              end
       }
 
     let read_command input =
@@ -63,21 +67,19 @@ functor
         ]
         Utilities.StringMap.empty
 
-    let fmap f m = Result.bind m f
-
     let find_language tag =
       Utilities.StringMap.find_opt tag sublanguages
       |> Option.to_result ~none:(Error.UnrecognizedSublanguage tag)
 
     let execute_sublanguage ctx expr (module Language : SubS) =
       Language.parse_sexp expr
-      |> fmap (Language.execute ctx)
+      |> Utilities.Result.fmap (Language.execute ctx)
       |> Result.map_error (fun e ->
           Error.SublanguageError (Language.sexp_of_error e))
 
     let execute_command ctx = function
       | Sexplib.Sexp.(List [ Atom tag; expr ]) ->
-          find_language tag |> fmap (execute_sublanguage ctx expr)
+          find_language tag |> Utilities.Result.fmap (execute_sublanguage ctx expr)
       | s -> Error (Error.MalformedExpression s)
 
     let tuple_to_sexp (t : Tuple.materialized) =
@@ -98,10 +100,9 @@ functor
       output_response out_ch
         Sexplib.Sexp.(List [ Atom "error"; Error.sexp_of_error e ])
 
-    (* Serializes a sublanguage result.  [cache] is the write target's current
-       schema_cache — used for snapshot/branch metadata in Cursor responses.
-       Transition carries its own new_cache so [cache] is unused there. *)
-    let serialize (cache : Management.Multigroup.multigroup) =
+    (* Serializes a sublanguage result.  [branch] is the write target whose
+       tip and name surface in Cursor / Transition responses. *)
+    let serialize (branch : B.branch) =
       let open Sexplib.Sexp in
       function
       | Error e -> List [ Atom "error"; Error.sexp_of_error e ]
@@ -114,24 +115,21 @@ functor
               List [ Atom "rows";      List row_sexps ];
               List [ Atom "row_count"; Atom (string_of_int (List.length row_sexps)) ];
               List [ Atom "has_more";  Atom (string_of_bool has_more) ];
-              List [ Atom "snapshot";  Atom cache#hash ];
-              List [ Atom "branch";    Atom cache#name ];
+              List [ Atom "snapshot";  Atom branch#tip ];
+              List [ Atom "branch";    Atom branch#name ];
             ]
       | Ok (Sublanguage_types.Query _rel) ->
-          ignore cache;
           List [ Atom "error"; Atom "unexpected Query result: use Cursor path" ]
-      | Ok (Sublanguage_types.Transition new_cache) ->
+      | Ok (Sublanguage_types.Transition _new_cache) ->
           List
             [
               Atom "ok";
-              List [ Atom "snapshot"; Atom new_cache#hash ];
-              List [ Atom "branch";   Atom new_cache#name ];
+              List [ Atom "snapshot"; Atom branch#tip ];
+              List [ Atom "branch";   Atom branch#name ];
             ]
-      | Ok (Sublanguage_types.SessionSwitch branch) ->
-          ignore cache;
-          List [ Atom "ok"; List [ Atom "message"; Atom ("Switched to branch " ^ branch) ] ]
+      | Ok (Sublanguage_types.SessionSwitch name) ->
+          List [ Atom "ok"; List [ Atom "message"; Atom ("Switched to branch " ^ name) ] ]
       | Ok (Sublanguage_types.CreateMultigroup name) ->
-          ignore cache;
           List [ Atom "ok"; List [ Atom "message"; Atom ("Multigroup " ^ name ^ " created") ] ]
 
     let handle_sublanguage output state sexp =
@@ -144,10 +142,10 @@ functor
              already holds the new branch; refresh_mg is a no-op on it but
              correct for DDL/ICL which stay on the same branch. *)
           (match result with
-           | Sublanguage_types.Transition new_cache ->
-               !state.session#branch#refresh_mg new_cache
+           | Sublanguage_types.Transition delta ->
+               !state.session#branch#apply_delta delta
            | _ -> ());
-          serialize ctx.schema_cache (Ok result) |> output_response output
+          serialize !state.session#branch (Ok result) |> output_response output
 
     let handle_client connection =
       let input  = T.input connection in

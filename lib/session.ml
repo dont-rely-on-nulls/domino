@@ -1,6 +1,6 @@
 (* Session: outermost connection object.
    Each user connection mints a session registered in RNT at
-   /system/sessions/<id>.  The session owns exactly one branch at a time;
+   /system/sessions/<id>. The session owns exactly one branch at a time;
    DDL / DML / DRL sublanguages operate through that branch. *)
 
 module Make (NT : Nt.S) = struct
@@ -17,7 +17,8 @@ module Make (NT : Nt.S) = struct
 
     method id       = sid
     method branch   = br
-    method snapshot = br#snapshot
+    method snapshot = br#tip
+    method tip      = br#tip
 
     (* Switch to a different branch within the same session. *)
     method set_branch (b : B.branch) = br <- b

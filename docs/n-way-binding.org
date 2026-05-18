@@ -75,7 +75,7 @@ to fire when suites referencing its rooms are inserted.
 * ICL — Constraints
 
 Binary FK constraints compose to enforce referential integrity along the chain
-~Suite → Room → Building~. Each link is declared independently.
+~Suite -> Room -> Building~. Each link is declared independently.
 
 #+begin_src lisp
 ;; FK: every Room must belong to an existing Building
@@ -140,7 +140,7 @@ However, some constraints require joining through intermediate variables before 
 membership check can be made. These cannot be decomposed.
 
 Example: /a suite is only valid if its room belongs to a building with more than 3 floors/.
-The chain ~suite.room_id → room.building_id → building.floors~ requires two intermediate
+The chain ~suite.room_id -> room.building_id -> building.floors~ requires two intermediate
 variables — it is inherently a 3-wise constraint.
 
 Each ~Exists~ record field must be wrapped by name when written in s-expression form, as

@@ -39,4 +39,4 @@ let sexp_of_error e =
   | MultigroupNotFound s -> error "multigroup-not-found" [ "name" <+> Atom s ]
   | Conflict { old_db; new_db } ->
       error "conflict"
-        [ "old-hash" <+> Atom old_db#hash; "new-hash" <+> Atom new_db#hash ]
+        [ "old" <+> Atom old_db#name; "new" <+> Atom new_db#name ]

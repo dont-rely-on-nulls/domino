@@ -14,7 +14,7 @@ module Make (NT : Nt.S) = struct
     match stmt with
     | Ast.Use branch_name ->
         match ctx.switch_branch branch_name with
-        | Ok new_cache -> Ok (Sublanguage_types.Transition new_cache)
+        | Ok delta     -> Ok (Sublanguage_types.Transition delta)
         | Error e      -> Error (NtError e)
 
   let _ = (module NT : Nt.S)
