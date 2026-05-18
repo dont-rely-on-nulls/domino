@@ -1,19 +1,31 @@
-module Make (Storage : Management.Physical.S) = struct
-  module Ops = Manipulation.Make (Storage)
-
+module Make (NT : Nt.S) = struct
   type error =
     | ParseError of string
-    | ManipulationError of Error.t
+    | NtError of Nt.error
     | ConversionError of string
+    | MultigroupNotFound of string
+    | UnqualifiedName of string
 
   let sexp_of_error e =
     let open Sexplib.Sexp in
     match e with
     | ParseError s -> List [ Atom "parse-error"; Atom s ]
-    | ManipulationError e -> Error.sexp_of_error e
+    | NtError e -> List [ Atom "nt-error"; Atom (Nt.string_of_error e) ]
     | ConversionError s -> List [ Atom "conversion-error"; Atom s ]
+    | MultigroupNotFound s -> List [ Atom "multigroup-not-found"; Atom s ]
+    | UnqualifiedName s -> List [ Atom "unqualified-name"; Atom s ]
 
-  let wrap_manip = Result.map_error (fun e -> ManipulationError e)
+  let ( let* ) = Result.bind
+  let wrap_nt = Result.map_error (fun e -> NtError e)
+
+  let parse_fqn (s : string) : (Qualified_name.t, error) result =
+    Qualified_name.try_parse s |> Result.map_error (fun s -> UnqualifiedName s)
+
+  let lookup_mg (ctx : Sublanguage_context.t) (mg_name : string) :
+      (Management.Multigroup.multigroup, error) result =
+    match ctx.branch#mg_of mg_name with
+    | Some mg -> Ok mg
+    | None -> Error (MultigroupNotFound mg_name)
 
   let convert_binding_expr : Ast.binding_expr -> Constraint.binding_expr =
     function
@@ -39,18 +51,20 @@ module Make (Storage : Management.Physical.S) = struct
     | Ast.Forall { variable; quantifier; body } ->
         Constraint.forall ~variable ~quantifier (convert_body body)
 
-  let execute (storage : Storage.t) (db : Management.Multigroup.multigroup)
-      (stmt : Ast.statement) : (Management.Multigroup.multigroup * string, error) result =
+  let execute (ctx : Sublanguage_context.t) (stmt : Ast.statement) :
+      (Sublanguage_types.transition_delta * string, error) result =
     match stmt with
-    | Ast.RegisterConstraint { constraint_name; relation_name; body } -> (
+    | Ast.RegisterConstraint { constraint_name; relation_name; body } ->
+        let* fqn = parse_fqn relation_name in
+        let* mg  = lookup_mg ctx fqn.mg in
         let runtime_body = convert_body body in
-        match
-          Ops.register_constraint storage db ~constraint_name ~relation_name
-            ~body:runtime_body
-          |> wrap_manip
-        with
-        | Ok new_db -> Ok (new_db, "Constraint registered: " ^ constraint_name)
-        | Error e -> Error e)
+        let* _bh, new_mg =
+          NT.register_constraint ctx.write_handle mg
+            ~constraint_name ~relation_name:fqn.name ~body:runtime_body
+          |> wrap_nt
+        in
+        ctx.branch#set_mg ~name:fqn.mg new_mg;
+        Ok ([ (fqn.mg, new_mg) ], "Constraint registered: " ^ constraint_name)
 end
 
-module Memory = Make (Management.Physical.Memory)
+module Memory = Make (Nt.Memory)

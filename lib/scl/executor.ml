@@ -6,11 +6,12 @@ type cursor_batch = {
   has_more : bool;
 }
 
-type exec_result = Batch of cursor_batch | Closed of Management.Multigroup.multigroup
+type exec_result =
+  | Batch of cursor_batch
+  | Closed of Sublanguage_types.transition_delta
 
-module Make (Storage : Management.Physical.S) = struct
-  module DrlExec = Drl.Executor.Make (Storage)
-  module Alg = Algebra.Make (Storage)
+module Make (NT : Nt.S) = struct
+  module DrlExec = Drl.Executor.Make (NT)
 
   type error =
     | ParseError of string
@@ -26,8 +27,8 @@ module Make (Storage : Management.Physical.S) = struct
 
   let ( let* ) = Result.bind
 
-  let execute (_storage : Storage.t) (db : Management.Multigroup.multigroup)
-      (stmt : Ast.statement) : (exec_result, error) result =
+  let execute (ctx : Sublanguage_context.t) (stmt : Ast.statement) :
+      (exec_result, error) result =
     ignore default_batch;
     match stmt with
     | Ast.Begin _ ->
@@ -36,7 +37,7 @@ module Make (Storage : Management.Physical.S) = struct
         Error (CursorError "cursors not yet implemented")
     | Ast.Close _ ->
         let* () = Ok () in
-        Ok (Closed db)
+        Ok (Closed ctx.branch#multigroups)
 end
 
-module Memory = Make (Management.Physical.Memory)
+module Memory = Make (Nt.Memory)

@@ -76,14 +76,10 @@ class stored
   ~membership_criteria:(init_membership : Tuple.t -> bool)
   ~lineage:(init_lineage : Lineage.t option)
   ~provenance:(init_provenance : Provenance.t option) =
-  let init_hash =
-    Conventions.Hash.hash_text (init_name ^ Schema.to_string init_schema)
-  in
-  object (self)
+  object
     inherit relation
 
     val name = init_name
-    val hash = init_hash
     val schema = init_schema
     val tree_pointer : Conventions.Hash.t option = None
     val constraints = init_constraints
@@ -96,7 +92,7 @@ class stored
 
     method name = name
     method kind = `Stored
-    method hash = hash
+    method hash = Option.value tree_pointer ~default:""
     method schema = schema
     method tree_pointer = tree_pointer
     method constraints = constraints
@@ -106,19 +102,13 @@ class stored
     method lineage = lineage
     method provenance = provenance
 
-    method private compute_hash tp =
-      let tree_hash = match tp with Some h -> h | None -> "" in
-      Conventions.Hash.hash_text (name ^ Schema.to_string schema ^ tree_hash)
-
-    method private advance tp =
-      {< hash = self#compute_hash tp;
-         tree_pointer = tp;
-         timestamp = Unix.gettimeofday () >}
-
-    method set_tree_pointer tp = self#advance tp
+    method set_tree_pointer tp = {< tree_pointer = tp; timestamp = Unix.gettimeofday () >}
     method set_cardinality c = {< cardinality = c >}
     method set_constraints c = {< constraints = c >}
-    method serialize () = { Storable.Relation.name = name; schema }
+    method serialize () =
+      { Storable.Relation.name;
+        schema;
+        tree_pointer = Option.value tree_pointer ~default:"" }
 end
 
 class ephemeral 

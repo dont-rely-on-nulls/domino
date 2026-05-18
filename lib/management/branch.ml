@@ -1,8 +1,8 @@
 (** Branch registry: named pointers to database tip hashes, plus HEAD tracking.
     Stored in the Physical backend under reserved key prefixes:
-    - "branch:<name>" → serialized { name; tip }
-    - "branch_names"  → serialized string list (index for enumeration)
-    - "head"          → branch name as raw bytes *)
+    - "branch:<name>" -> serialized { name; tip }
+    - "branch_names"  -> serialized string list (index for enumeration)
+    - "head"          -> branch name as raw bytes *)
 
 type t = { name : string; tip : Conventions.Hash.t }
 type head = string

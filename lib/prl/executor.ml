@@ -1,10 +1,8 @@
-module Make (Storage : Management.Physical.S) = struct
-  module Ops = Manipulation.Make (Storage)
-
+module Make (NT : Nt.S) = struct
   type error =
     | ParseError of string
     | RuntimeError of string
-    | RelationError of Error.t
+    | NtError of Nt.error
     | UnknownPluginSymbol of string
     | RelationNotFound of string
 
@@ -13,77 +11,32 @@ module Make (Storage : Management.Physical.S) = struct
     match e with
     | ParseError s -> List [ Atom "parse-error"; Atom s ]
     | RuntimeError s -> List [ Atom "runtime-error"; Atom s ]
-    | RelationError err -> Error.sexp_of_error err
+    | NtError e -> List [ Atom "nt-error"; Atom (Nt.string_of_error e) ]
     | UnknownPluginSymbol s -> List [ Atom "unknown-plugin-symbol"; Atom s ]
     | RelationNotFound s -> List [ Atom "relation-not-found"; Atom s ]
 
   let ( let* ) = Result.bind
-  let map_rel_error r = Result.map_error (fun e -> RelationError e) r
+  let _map_nt r = Result.map_error (fun e -> NtError e) r
 
-  let require_relation (db : Management.Multigroup.multigroup) rel_name =
-    match Ops.get_relation db#hash rel_name with
-    | Some rel -> Ok rel
-    | None -> Error (RelationNotFound rel_name)
+  (* TODO: PRL function predicates are OCaml shared-library callbacks that
+     produce tuples at runtime.  To make their output joinable inside the
+     Tarski VM they need to be materialised into a temporary relation in the
+     InMemoryBackend and then SCANned like any other stored relation.  This
+     requires a `rnt_register_ephemeral_relation` C API call that does not
+     yet exist.  Disable PRL execution until that bridge is in place. *)
 
-  let execute_load_library storage db path =
-    match Runtime.load_library path with
-    | Error e -> Error (RuntimeError e)
-    | Ok () -> (
-        let* ll_rel =
-          require_relation db Prelude.Catalog.loaded_library_rel_name
-        in
-        let tuple = Prelude.Catalog.build_loaded_library_tuple path in
-        match Ops.create_tuple storage db ll_rel tuple with
-        | Ok (new_db, _, _) -> Ok (Sublanguage_types.Transition new_db)
-        | Error (Error.DuplicateTuple _) -> Ok (Sublanguage_types.Transition db)
-        | Error e -> Error (RelationError e))
+  let execute (_ctx : Sublanguage_context.t) (_stmt : Ast.statement) :
+      (Sublanguage_types.result, error) result =
+    Error (RuntimeError
+      "PRL execution is temporarily disabled pending VM callback-cursor support")
 
-  let execute_define_function_predicate storage db
-      (spec : Ast.function_predicate) =
-    match Sakura_prl_api.find spec.symbol with
-    | None -> Error (UnknownPluginSymbol spec.symbol)
-    | Some impl ->
-        let schema =
-          List.fold_left
-            (fun s (a, d) -> Schema.add a d s)
-            Schema.empty spec.schema
-        in
-        let name = Qualified_name.(parse spec.name |> to_key) in
-        let generator = Runtime.make_generator name schema impl [] in
-        let producer = Runtime.make_producer name schema impl in
-        let membership_criteria =
-          Runtime.make_membership_criteria schema impl
-        in
-        let* new_db, _ =
-          Ops.create_immutable_relation storage db ~name ~schema ~generator
-            ~membership_criteria ~cardinality:spec.cardinality
-            ~producer:(Some producer)
-          |> map_rel_error
-        in
-        let* fp_rel =
-          require_relation new_db Prelude.Catalog.function_predicate_rel_name
-        in
-        let fp_tuple =
-          Prelude.Catalog.build_function_predicate_tuple ~name
-            ~symbol:spec.symbol ~cardinality:spec.cardinality
-            ~purity:spec.purity
-        in
-        let* final_db =
-          Ops.create_tuple storage new_db fp_rel fp_tuple
-          |> map_rel_error
-          |> Result.map (fun (db, _, _) -> db)
-        in
-        Ok (Sublanguage_types.Transition final_db)
+  let _execute_load_library _ctx _path =
+    Error (RuntimeError "PRL disabled")
 
-  let execute_list_function_predicates db =
-    require_relation db Prelude.Catalog.function_predicate_rel_name
-    |> Result.map (fun rel -> Sublanguage_types.Query rel)
+  let _execute_define_function_predicate _ctx (_spec : Ast.function_predicate) =
+    let* _ = Ok () in
+    Error (RuntimeError "PRL disabled")
 
-  let execute storage db = function
-    | Ast.LoadLibrary path -> execute_load_library storage db path
-    | Ast.DefineFunctionPredicate spec ->
-        execute_define_function_predicate storage db spec
-    | Ast.ListFunctionPredicates -> execute_list_function_predicates db
+  let _execute_list_function_predicates _ctx =
+    Error (RuntimeError "PRL disabled")
 end
-
-module Memory = Make (Management.Physical.Memory)

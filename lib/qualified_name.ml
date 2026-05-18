@@ -1,27 +1,32 @@
-(** Fully qualified relation name: [multigroup:schema:relation].
+(** Fully qualified relation reference: [mg:rel_name].
 
-    Splits on [:], fills defaults for missing parts.
-    - ["relation"]             -> { multigroup=""; schema="public"; relation }
-    - ["schema:relation"]      -> { multigroup=""; schema; relation }
-    - ["mg:schema:relation"]   -> { multigroup=mg; schema; relation }
-*)
+    The first colon separates the multigroup name from the relation name; any
+    further colons are part of the relation name verbatim.
 
-type t = { multigroup : string; schema : string; relation : string }
+    Examples:
+    - ["warehouse:orders"]        -> mg=["warehouse"], name=["orders"]
+    - ["warehouse:public:orders"] -> mg=["warehouse"], name=["public:orders"]
+    - ["sakura:public:relation"]  -> mg=["sakura"],    name=["public:relation"]
 
-let default_schema = "public"
+    A reference with no leading [<mg>:] segment is a parse error — callers must
+    supply the mg explicitly. *)
 
-let parse s =
-  match String.split_on_char ':' s with
-  | [ rel ] -> { multigroup = ""; schema = default_schema; relation = rel }
-  | [ schema; rel ] -> { multigroup = ""; schema; relation = rel }
-  | [ mg; schema; rel ] -> { multigroup = mg; schema; relation = rel }
-  | _ -> { multigroup = ""; schema = default_schema; relation = s }
+type t = { mg : string; name : string }
 
-let make ?(multigroup = "") ?(schema = default_schema) relation =
-  { multigroup; schema; relation }
+exception Unqualified of string
 
-let to_string { multigroup; schema; relation } =
-  if multigroup = "" then schema ^ ":" ^ relation
-  else multigroup ^ ":" ^ schema ^ ":" ^ relation
+let parse (s : string) : t =
+  match String.index_opt s ':' with
+  | None -> raise (Unqualified s)
+  | Some i ->
+      let mg = String.sub s 0 i in
+      let name = String.sub s (i + 1) (String.length s - i - 1) in
+      if mg = "" || name = "" then raise (Unqualified s)
+      else { mg; name }
 
-let to_key { schema; relation; _ } = schema ^ ":" ^ relation
+let try_parse (s : string) : (t, string) result =
+  try Ok (parse s) with Unqualified s -> Error s
+
+let make ~mg ~name = { mg; name }
+
+let to_string { mg; name } = mg ^ ":" ^ name

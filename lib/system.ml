@@ -1,36 +1,40 @@
-(** System assembly: registry-based configuration dispatch. This module is the
-    composition root. It owns the mapping from configuration tags to concrete
-    implemenations and assembles a server from a configuration file. *)
+(** System assembly: registry-based configuration dispatch.
+    This module is the composition root. It owns the mapping from configuration
+    tags to concrete implementations and assembles a server from a config file. *)
 
-type storage_parcel =
-  | StorageParcel :
-      (module Management.Physical.S with type t = 't and type error = string)
-      * 't
-      -> storage_parcel
+type nt_parcel = NtParcel : (module Nt.S) -> nt_parcel
 
 type transport_parcel =
   | TransportParcel :
       (module Transport.TRANSPORT with type t = 't) * 't
       -> transport_parcel
 
-type storage_provider = Sexplib.Sexp.t -> (storage_parcel, string) result
+type nt_provider        = Sexplib.Sexp.t -> (nt_parcel, string) result
 type transport_provider = Sexplib.Sexp.t -> (transport_parcel, string) result
 
 type registry = {
-  storage : storage_provider Utilities.StringMap.t;
+  nt        : nt_provider        Utilities.StringMap.t;
   transport : transport_provider Utilities.StringMap.t;
 }
 
 let registry : registry =
   let open Utilities.StringMap in
   {
-    storage =
+    nt =
       empty
-      |> add "memory" (fun sexp ->
-          let ( let* ) = Result.bind in
-          let* config = Management.Physical.MemoryBackend.parse sexp in
-          let* storage = Management.Physical.Memory.create config in
-          Ok (StorageParcel ((module Management.Physical.Memory), storage)));
+      |> add "memory" (fun _sexp ->
+          Ok (NtParcel (module Nt.Memory : Nt.S)))
+      |> add "sqlite" (fun sexp ->
+          (* Accept (sqlite) for :memory: or (sqlite "/path/to/db") for a file. *)
+          let path = match sexp with
+            | Sexplib.Sexp.(List [ Atom p ]) -> p
+            | _ -> ":memory:"
+          in
+          let module M = Nt.Make (struct
+            let driver   = "sqlite"
+            let init_arg = path
+          end) in
+          Ok (NtParcel (module M : Nt.S)));
     transport =
       empty
       |> add "tcp" (fun sexp ->
@@ -42,17 +46,17 @@ let registry : registry =
 
 let assemble (config : Configuration.t) : (unit -> unit, string) result =
   let open Utilities.Result in
-  let* storage_tag, storage_body =
-    Configuration.require_section ~name:"storage"
-      ~valid_tags:(Utilities.StringMap.bindings registry.storage |> List.map fst)
+  let* nt_tag, nt_body =
+    Configuration.require_section ~name:"nt"
+      ~valid_tags:(Utilities.StringMap.bindings registry.nt |> List.map fst)
       config
   in
-  let* storage_provider =
-    Utilities.StringMap.find_opt storage_tag registry.storage
+  let* nt_provider =
+    Utilities.StringMap.find_opt nt_tag registry.nt
     |> Option.to_result
-         ~none:(Printf.sprintf "Unknown storage backend: %s" storage_tag)
+         ~none:(Printf.sprintf "Unknown NT backend: %s" nt_tag)
   in
-  let* packed_storage = storage_provider storage_body in
+  let* packed_nt = nt_provider nt_body in
   let* transport_tag, transport_body =
     Configuration.require_section ~name:"transport"
       ~valid_tags:
@@ -65,14 +69,15 @@ let assemble (config : Configuration.t) : (unit -> unit, string) result =
          ~none:(Printf.sprintf "Unknown transport backend: %s" transport_tag)
   in
   let* packed_transport = transport_provider transport_body in
-  let (StorageParcel ((module S), storage)) = packed_storage in
+  let (NtParcel (module NT)) = packed_nt in
   let (TransportParcel ((module T), transport)) = packed_transport in
-  let module L = Listener.Make (T) (S) in
-  Ok (fun () -> L.run transport storage)
+  let* () = NT.initialize () |> Result.map_error Nt.string_of_error in
+  let module L = Listener.Make (T) (NT) in
+  Ok (fun () -> L.run transport)
 
 let run_from_config (path : string) : (unit -> unit, string) result =
   let ( let* ) = Result.bind in
   let* config =
-    Configuration.load ~expected_keys:[ "storage"; "transport" ] path
+    Configuration.load ~expected_keys:[ "nt"; "transport" ] path
   in
   assemble config

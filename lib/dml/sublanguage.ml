@@ -1,8 +1,7 @@
-module Make (Storage : Management.Physical.S) = struct
-  module Exec = Executor.Make (Storage)
+module Make (NT : Nt.S) = struct
+  module Exec = Executor.Make (NT)
 
   type configuration = unit
-  type storage = Storage.t
   type ast = Ast.statement
   type error = Exec.error
 
@@ -14,12 +13,10 @@ module Make (Storage : Management.Physical.S) = struct
     | Ok r -> Ok r
     | Error (Parser.ParseError s) -> Error (Exec.ParseError s)
 
-  let execute storage db ast =
-    match Exec.execute storage db ast with
-    | Ok db -> Ok (Sublanguage_types.Transition db)
+  let execute ctx ast =
+    match Exec.execute ctx ast with
+    | Ok delta -> Ok (Sublanguage_types.Transition delta)
     | Error e -> Error e
 
   let sexp_of_error = Exec.sexp_of_error
 end
-
-module Memory = Make (Management.Physical.Memory)

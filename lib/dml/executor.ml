@@ -1,40 +1,46 @@
-module Make (Storage : Management.Physical.S) = struct
-  module Ops = Manipulation.Make (Storage)
-  module Alg = Algebra.Make (Storage)
-  module DrlExec = Drl.Executor.Make (Storage)
+module Make (NT : Nt.S) = struct
+  module DrlExec = Drl.Executor.Make (NT)
 
   type error =
     | ParseError of string
-    | ManipulationError of Error.t
+    | NtError of Nt.error
     | RelationNotFound of string
-    | AlgebraError of Algebra.error
+    | MultigroupNotFound of string
+    | UnqualifiedName of string
+    | DrlError of DrlExec.error
 
   let sexp_of_error e =
     let open Sexplib.Sexp in
     match e with
     | ParseError s -> List [ Atom "parse-error"; Atom s ]
-    | ManipulationError e -> Error.sexp_of_error e
+    | NtError e -> List [ Atom "nt-error"; Atom (Nt.string_of_error e) ]
     | RelationNotFound s -> List [ Atom "relation-not-found"; Atom s ]
-    | AlgebraError (Algebra.StorageError s) ->
-        List [ Atom "storage-error"; Atom s ]
-    | AlgebraError (Algebra.GeneratorError s) ->
-        List [ Atom "generator-error"; Atom s ]
+    | MultigroupNotFound s -> List [ Atom "multigroup-not-found"; Atom s ]
+    | UnqualifiedName s -> List [ Atom "unqualified-name"; Atom s ]
+    | DrlError e -> List [ Atom "drl-error"; DrlExec.sexp_of_error e ]
 
   let ( let* ) = Result.bind
-  let wrap_manip r = Result.map_error (fun e -> ManipulationError e) r
-  let wrap_alg e = AlgebraError e
+  let wrap_nt r = Result.map_error (fun e -> NtError e) r
 
-  let get_rel db name =
-    match Ops.get_relation db name with
+  let parse_fqn (s : string) : (Qualified_name.t, error) result =
+    Qualified_name.try_parse s |> Result.map_error (fun s -> UnqualifiedName s)
+
+  let lookup_mg (ctx : Sublanguage_context.t) (mg_name : string) :
+      (Management.Multigroup.multigroup, error) result =
+    match ctx.branch#mg_of mg_name with
+    | Some mg -> Ok mg
+    | None -> Error (MultigroupNotFound mg_name)
+
+  let get_rel (ctx : Sublanguage_context.t) (fqn : Qualified_name.t) =
+    let* mg = lookup_mg ctx fqn.mg in
+    match NT.get_relation mg fqn.name with
     | Some r -> Ok r
-    | None -> Error (RelationNotFound name)
+    | None -> Error (RelationNotFound (Qualified_name.to_string fqn))
 
   let retarget target (t : Tuple.materialized) =
     { t with Tuple.relation = target }
 
-  (** Build a materialized tuple from a list of (attr_name, ast_value) pairs *)
-  let build_tuple ~relation (attributes : Ast.attr_value list) :
-      Tuple.materialized =
+  let build_tuple ~relation (attributes : Ast.attr_value list) : Tuple.materialized =
     let attr_map =
       List.fold_left
         (fun acc (name, value) ->
@@ -45,93 +51,135 @@ module Make (Storage : Management.Physical.S) = struct
     in
     { Tuple.relation; attributes = attr_map }
 
-  let eval_query storage db query =
-    match DrlExec.execute storage db query with
-    | Ok rel -> Ok rel
-    | Error (DrlExec.ParseError s) -> Error (ParseError s)
-    | Error (DrlExec.RelationNotFound s) -> Error (RelationNotFound s)
-    | Error (DrlExec.AlgebraError e) -> Error (AlgebraError e)
+  (* Drain all tuples from a DRL query using ctx.resolve for path resolution.
+     Cross-multigroup reads work transparently here. *)
+  let drain_query (ctx : Sublanguage_context.t) query =
+    match DrlExec.compile ctx.resolve query with
+    | Error e -> Error (DrlError e)
+    | Ok plan ->
+        let* stream =
+          NT.execute_query plan ~rel_name:"dml_drain"
+          |> wrap_nt
+        in
+        let rec drain acc =
+          match NT.stream_next stream with
+          | Error _ -> List.rev acc
+          | Ok None -> List.rev acc
+          | Ok (Some t) -> drain (t :: acc)
+        in
+        let tuples = drain [] in
+        ignore (NT.stream_close stream);
+        Ok tuples
 
-  let materialize_tuples storage rel =
-    Result.map_error wrap_alg (Alg.materialize storage rel)
+  let attr_val_eq a b =
+    Stdlib.( = ) a.Attribute.value b.Attribute.value
 
-  let execute (storage : Storage.t) (db : Management.Multigroup.multigroup)
-      (stmt : Ast.statement) : (Management.Multigroup.multigroup, error) result =
+  let tuple_matches_pred common (target_t : Tuple.materialized)
+      (pred_t : Tuple.materialized) =
+    List.for_all (fun attr ->
+      match
+        ( Tuple.AttributeMap.find_opt attr target_t.Tuple.attributes,
+          Tuple.AttributeMap.find_opt attr pred_t.Tuple.attributes )
+      with
+      | Some a, Some b -> attr_val_eq a b
+      | _ -> false)
+      common
+
+  let semijoin common target_tuples pred_tuples =
+    List.filter
+      (fun t -> List.exists (tuple_matches_pred common t) pred_tuples)
+      target_tuples
+
+  (* DML mutates tuples in a single mg per statement.  Returns a
+     single-element transition delta keyed by that mg's name. *)
+  let execute (ctx : Sublanguage_context.t) (stmt : Ast.statement) :
+      (Sublanguage_types.transition_delta, error) result =
+    let bh = ctx.write_handle in
+    let branch_name = ctx.branch#name in
+    let after fqn = Result.bind (lookup_mg ctx fqn.Qualified_name.mg)
+        (fun mg -> Ok [ (fqn.Qualified_name.mg, mg) ])
+    in
     match stmt with
     | Ast.InsertTuple { relation; attributes } ->
-        let* rel = get_rel db relation in
+        let* fqn = parse_fqn relation in
+        let* rel = get_rel ctx fqn in
         let tuple = build_tuple ~relation:rel#name attributes in
-        let* db, _, _ = Ops.create_tuple storage db rel tuple |> wrap_manip in
-        Ok db
+        let* _ =
+          NT.create_tuple ~branch_name ~mg_name:fqn.mg ~rel_name:rel#name tuple
+          |> wrap_nt
+        in
+        after fqn
     | Ast.InsertTuples { relation; tuples } ->
-        let* rel = get_rel db relation in
-        let tuple_list =
-          List.map (build_tuple ~relation:rel#name) tuples
+        let* fqn = parse_fqn relation in
+        let* rel = get_rel ctx fqn in
+        let tuple_list = List.map (build_tuple ~relation:rel#name) tuples in
+        let* _ =
+          NT.create_tuples ~branch_name ~mg_name:fqn.mg ~rel_name:rel#name
+            tuple_list
+          |> wrap_nt
         in
-        let* db, _, _ =
-          Ops.create_tuples storage db rel tuple_list |> wrap_manip
-        in
-        Ok db
+        after fqn
     | Ast.DeleteTuple { relation; attributes } ->
-        let* rel = get_rel db relation in
+        let* fqn = parse_fqn relation in
+        let* rel = get_rel ctx fqn in
         let tuple = build_tuple ~relation:rel#name attributes in
-        let tuple_hash = Hashing.hash_tuple tuple in
-        let* db, _ =
-          Ops.retract_tuple storage db rel tuple_hash |> wrap_manip
+        let hash = Hashing.hash_tuple tuple in
+        let* () =
+          NT.retract_tuple ~branch_name ~mg_name:fqn.mg ~rel_name:rel#name hash
+          |> wrap_nt
         in
-        Ok db
+        after fqn
     | Ast.Assign { target; body } ->
-        let* rel = get_rel db target in
-        let* result_rel = eval_query storage db body in
-        let* tuples = materialize_tuples storage result_rel in
-        let* db, rel = Ops.clear_relation storage db rel |> wrap_manip in
-        let* db, _, _ =
-          Ops.create_tuples storage db rel
-            (List.map (retarget rel#name) tuples)
-          |> wrap_manip
+        let* fqn = parse_fqn target in
+        let* mg  = lookup_mg ctx fqn.mg in
+        let* rel = get_rel ctx fqn in
+        let* tuples = drain_query ctx body in
+        let* _bh, new_mg =
+          NT.clear_relation bh mg ~branch_name ~mg_name:fqn.mg
+            (rel :> Relation.relation) |> wrap_nt
         in
-        Ok db
+        ctx.branch#set_mg ~name:fqn.mg new_mg;
+        let* _ =
+          NT.create_tuples ~branch_name ~mg_name:fqn.mg ~rel_name:rel#name
+            (List.map (retarget rel#name) tuples)
+          |> wrap_nt
+        in
+        Ok [ (fqn.mg, new_mg) ]
     | Ast.InsertFrom { target; source } ->
-        let* rel = get_rel db target in
-        let* result_rel = eval_query storage db source in
-        let* tuples = materialize_tuples storage result_rel in
-        let* db, _, _ =
-          Ops.create_tuples storage db rel
+        let* fqn = parse_fqn target in
+        let* rel = get_rel ctx fqn in
+        let* tuples = drain_query ctx source in
+        let* _ =
+          NT.create_tuples ~branch_name ~mg_name:fqn.mg ~rel_name:rel#name
             (List.map (retarget rel#name) tuples)
-          |> wrap_manip
+          |> wrap_nt
         in
-        Ok db
+        after fqn
     | Ast.DeleteWhere { target; predicate } ->
-        let* rel = get_rel db target in
-        let* pred_rel = eval_query storage db predicate in
-        let common =
-          List.filter_map
-            (fun (n, _) ->
-              if List.exists (fun (m, _) -> m = n) pred_rel#schema then
-                Some n
-              else None)
-            rel#schema
+        let* fqn = parse_fqn target in
+        let* rel = get_rel ctx fqn in
+        let* target_tuples = drain_query ctx (Drl.Ast.Base target) in
+        let* pred_tuples   = drain_query ctx predicate in
+        let attr_names_of = function
+          | [] -> []
+          | t :: _ ->
+              List.map fst (Tuple.AttributeMap.bindings t.Tuple.attributes)
         in
-        let* joined =
-          Alg.equijoin storage common rel pred_rel |> Result.map_error wrap_alg
+        let target_attrs = attr_names_of target_tuples in
+        let pred_attrs   = attr_names_of pred_tuples in
+        let common = List.filter (fun n -> List.mem n pred_attrs) target_attrs in
+        let to_delete = semijoin common target_tuples pred_tuples in
+        let* () =
+          List.fold_left
+            (fun acc t ->
+              let* () = acc in
+              let hash = Hashing.hash_tuple (retarget rel#name t) in
+              NT.retract_tuple ~branch_name ~mg_name:fqn.mg ~rel_name:rel#name
+                hash
+              |> wrap_nt)
+            (Ok ()) to_delete
         in
-        let* to_delete =
-          Alg.project storage (List.map fst rel#schema) joined
-          |> Result.map_error wrap_alg
-        in
-        let* tuples = materialize_tuples storage to_delete in
-        List.fold_left
-          (fun acc t ->
-            let* db = acc in
-            let* rel = get_rel db target in
-            let tuple_hash =
-              Hashing.hash_tuple (retarget rel#name t)
-            in
-            let* db, _ =
-              Ops.retract_tuple storage db rel tuple_hash |> wrap_manip
-            in
-            Ok db)
-          (Ok db) tuples
+        after fqn
 end
 
-module Memory = Make (Management.Physical.Memory)
+module Memory = Make (Nt.Memory)

@@ -5,11 +5,3 @@
  (libraries relational_engine unix)
  (link_deps ../shared/shabptree/sakura_shabptree.dll)
  (modes byte exe))
-
-(executable
- (name tree)
- (public_name sakura-tree)
- (modules tree)
- (libraries relational_engine unix)
- (link_deps ../shared/shabptree/sakura_shabptree.dll)
- (modes byte exe))
