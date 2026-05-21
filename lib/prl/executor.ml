@@ -1,22 +1,14 @@
 module Make (NT : Nt.S) = struct
-  type error =
-    | ParseError of string
-    | RuntimeError of string
-    | NtError of Nt.error
-    | UnknownPluginSymbol of string
-    | RelationNotFound of string
-
-  let sexp_of_error e =
-    let open Sexplib.Sexp in
-    match e with
-    | ParseError s -> List [ Atom "parse-error"; Atom s ]
-    | RuntimeError s -> List [ Atom "runtime-error"; Atom s ]
-    | NtError e -> List [ Atom "nt-error"; Atom (Nt.string_of_error e) ]
-    | UnknownPluginSymbol s -> List [ Atom "unknown-plugin-symbol"; Atom s ]
-    | RelationNotFound s -> List [ Atom "relation-not-found"; Atom s ]
+  module Error = struct
+    open Condition
+    (* TODO: more structure *)
+    let parse_error msg = condition "parse-error" ("message" |=| (of_string msg))
+    let runtime_error msg = condition "runtime-error" ("message" |=| (of_string msg))
+    let unknown_plugin_symbol name = condition "unknown-plugin-symbol" ("name" |=| (of_string name))
+    let relation_not_found name = condition "relation-not-found" ("name" |=| (of_string name))
+  end
 
   let ( let* ) = Result.bind
-  let _map_nt r = Result.map_error (fun e -> NtError e) r
 
   (* TODO: PRL function predicates are OCaml shared-library callbacks that
      produce tuples at runtime.  To make their output joinable inside the
@@ -26,17 +18,17 @@ module Make (NT : Nt.S) = struct
      yet exist.  Disable PRL execution until that bridge is in place. *)
 
   let execute (_ctx : Sublanguage_context.t) (_stmt : Ast.statement) :
-      (Sublanguage_types.result, error) result =
-    Error (RuntimeError
+      (Sublanguage_types.result, Condition.t) result =
+    Error (Error.runtime_error
       "PRL execution is temporarily disabled pending VM callback-cursor support")
 
   let _execute_load_library _ctx _path =
-    Error (RuntimeError "PRL disabled")
+    Error (Error.runtime_error "PRL disabled")
 
   let _execute_define_function_predicate _ctx (_spec : Ast.function_predicate) =
     let* _ = Ok () in
-    Error (RuntimeError "PRL disabled")
+    Error (Error.runtime_error "PRL disabled")
 
   let _execute_list_function_predicates _ctx =
-    Error (RuntimeError "PRL disabled")
+    Error (Error.runtime_error "PRL disabled")
 end
