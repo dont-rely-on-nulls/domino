@@ -35,5 +35,5 @@ type t = {
   branch        : branch_view;
   resolve       : ?branch:string -> Qualified_name.t -> string;
   switch_branch : string ->
-                  (Sublanguage_types.transition_delta, Nt.error) result;
+                  (Sublanguage_types.transition_delta, Condition.t) result;
 }

@@ -20,12 +20,9 @@ module type S = sig
   include Configuration.CONFIGURABLE
 
   type ast
-  type error
 
   val name : string
-  val parse_sexp : Sexplib.Sexp.t -> (ast, error) Result.t
+  val parse_sexp : Sexplib.Sexp.t -> (ast, Condition.t) Result.t
 
-  val execute : Sublanguage_context.t -> ast -> (result, error) Result.t
-
-  val sexp_of_error : error -> Sexplib.Sexp.t
+  val execute : Sublanguage_context.t -> ast -> (result, Condition.t) Result.t
 end
