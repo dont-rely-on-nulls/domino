@@ -22,6 +22,7 @@ let condition name ?parent props =
 
 let ( |=| ) name value = (fun p -> BatMap.add name value p)
 let ( & ) l r = (fun p -> r (l p))
+let empty = (fun p -> p)
 
 let to_sexp { name; properties } =
   let open Sexplib.Sexp in
