@@ -15,7 +15,7 @@
 (** Functor to create manipulation operations with a storage backend *)
 module Make (Storage : Management.Physical.S) = struct
   type storage = Storage.t
-  type error = Condition.condition
+  type error = Condition.t
 
   module Error = struct
     open Condition

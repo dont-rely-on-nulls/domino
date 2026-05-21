@@ -10,7 +10,7 @@ end
 let of_sexp (expr : Sexplib.Sexp.t) = new literal expr
 let of_string (s : string) = new literal (Sexplib.Sexp.Atom s)
 
-type condition = { name : string; properties : (string, serializable) BatMap.t }
+type t = { name : string; properties : (string, serializable) BatMap.t }
 
 let condition name ?parent props =
   { name;
