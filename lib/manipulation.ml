@@ -15,7 +15,16 @@
 (** Functor to create manipulation operations with a storage backend *)
 module Make (Storage : Management.Physical.S) = struct
   type storage = Storage.t
-  type error = Error.t
+  type error = Condition.condition
+
+  module Error = struct
+    open Condition
+
+    (* TODO: more specific errors *)
+    let storage_error message =
+      condition "storage-error"
+        ("message" |=| (of_string message))
+  end
 
   let ( let* ) = Result.bind
 
@@ -27,7 +36,7 @@ module Make (Storage : Management.Physical.S) = struct
       match
         Storage.store_raw storage relation#hash (Storable.Relation.to_bytes @@ relation#serialize ())
       with
-      | Error _ -> Error (Error.StorageError "Failed to store relation")
+      | Error _ -> Error (Error.storage_error "Failed to store relation")
       | Ok () -> Ok ()
 
   (** Store a database state to storage.
@@ -38,13 +47,13 @@ module Make (Storage : Management.Physical.S) = struct
       match
         Storage.store_raw storage db#name (Storable.Multigroup.to_bytes @@ db#serialize ())
       with
-      | Error _ -> Error (Error.StorageError "Failed to store multigroup")
+      | Error _ -> Error (Error.storage_error "Failed to store multigroup")
       | Ok () -> Ok ()
 
   (** Load a relation state from storage by hash *)
   let load_relation (storage : storage) (rel_hash : Conventions.Hash.t) : (Relation.stored option, error) Result.t =
     match Storage.load_raw storage rel_hash with
-    | Error _ -> Error (Error.StorageError "Failed to load relation")
+    | Error _ -> Error (Error.storage_error "Failed to load relation")
     | Ok None -> Ok None
     | Ok (Some bytes) ->
         let _stored = Storable.Relation.of_bytes bytes in
@@ -68,7 +77,7 @@ module Make (Storage : Management.Physical.S) = struct
   let load_multigroup (storage : storage) (mg_hash : Conventions.Hash.t) :
       (Management.Multigroup.multigroup option, error) Result.t =
     match Storage.load_raw storage mg_hash with
-    | Error _ -> Error (Error.StorageError "Failed to load multigroup")
+    | Error _ -> Error (Error.storage_error "Failed to load multigroup")
     | Ok None -> Ok None
     | Ok (Some bytes) ->
         (* TODO: Properly deserialize multigroup state *)
@@ -87,7 +96,7 @@ module Make (Storage : Management.Physical.S) = struct
   let load_tuple (storage : storage) (tuple_hash : Conventions.Hash.t) :
       (Tuple.materialized option, error) Result.t =
     match Storage.load_raw storage tuple_hash with
-    | Error _ -> Error (Error.StorageError "Failed to load tuple")
+    | Error _ -> Error (Error.storage_error "Failed to load tuple")
     | Ok None -> Ok None
     | Ok (Some tuple_bytes) ->
         let _stored = Storable.Tuple.of_bytes tuple_bytes in
@@ -99,9 +108,9 @@ module Make (Storage : Management.Physical.S) = struct
               match Storage.load_raw storage attr_hash with
               | Error _ ->
                   Error
-                    (Error.StorageError ("Failed to load attribute: " ^ name))
+                    (Error.storage_error ("Failed to load attribute: " ^ name))
               | Ok None ->
-                  Error (Error.StorageError ("Attribute not found: " ^ name))
+                  Error (Error.storage_error ("Attribute not found: " ^ name))
               | Ok (Some value_bytes) ->
                   let value : Conventions.AbstractValue.t =
                     Marshal.from_bytes value_bytes 0
