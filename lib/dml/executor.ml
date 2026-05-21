@@ -13,7 +13,7 @@ module Make (NT : Nt.S) = struct
   let ( let* ) = Result.bind
 
   let parse_fqn (s : string) : (Qualified_name.t, Condition.t) result =
-    Qualified_name.try_parse s |> Result.map_error (fun s -> Error.unqualified_name s)
+    Qualified_name.try_parse s
 
   let lookup_mg (ctx : Sublanguage_context.t) (mg_name : string) :
       (Management.Multigroup.multigroup, Condition.t) result =

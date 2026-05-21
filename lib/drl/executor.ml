@@ -5,7 +5,6 @@ module Make (NT : Nt.S) = struct
     let parse_error error = condition "parse-error" ("message" |=| (of_string error))
     let relation_not_found name = condition "relation-not-found" ("name" |=| (of_string name))
     let unsupported_operator msg = condition "unsupported-operator" ("message" |=| (of_string msg))
-    let unqualified_name name = condition "unqualified-name" ("name" |=| (of_string name))
   end
 
   let ( let* ) = Result.bind
@@ -18,9 +17,8 @@ module Make (NT : Nt.S) = struct
       (q : Ast.query) : (Nt.plan_node, Condition.t) result =
     match q with
     | Ast.Base name ->
-        (match Qualified_name.try_parse name with
-         | Error s -> Error (Error.unqualified_name s)
-         | Ok fqn  -> Ok (Nt.Scan { path = resolve fqn; args = [] }))
+       let* fqn = Qualified_name.try_parse name in
+       Ok (Nt.Scan { path = resolve fqn; args = [] })
     | Ast.Join (on_attrs, q1, q2) ->
         let* p1 = compile resolve q1 in
         let* p2 = compile resolve q2 in

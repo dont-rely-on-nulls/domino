@@ -11,7 +11,7 @@ val parse : string -> t
 (** Splits on the first [:].  Raises [Unqualified] when no mg segment is
     present (i.e. no colon, or empty mg / empty name). *)
 
-val try_parse : string -> (t, string) result
+val try_parse : string -> (t, Condition.t) result
 
 val make : mg:string -> name:string -> t
 
