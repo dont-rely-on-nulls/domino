@@ -3,6 +3,12 @@
    bound to that branch.  Each mutation names its target mg explicitly. *)
 
 module Make (NT : Nt.S) = struct
+  module Error = struct
+    open Condition
+    (* TODO: more structure *)
+    let not_supported msg = condition "not-supported" ("message" |=| (of_string msg))
+    let handle_error msg = condition "handle-error" ("message" |=| (of_string msg))
+  end
 
   let ( let* ) = Result.bind
 
@@ -68,7 +74,7 @@ module Make (NT : Nt.S) = struct
       match mode with
       | Live         -> Ok ()
       | Detached _   ->
-          Error (Nt.NotSupported (op ^ ": detached snapshot is read-only"))
+          Error (Error.not_supported (op ^ ": detached snapshot is read-only"))
 
     method private sync_tip () =
       match mode with
@@ -79,10 +85,10 @@ module Make (NT : Nt.S) = struct
           | Ok h     -> tip <- h
 
     method private get_mg op (mg_name : string) :
-        (Management.Multigroup.multigroup, Nt.error) result =
+        (Management.Multigroup.multigroup, Condition.t) result =
       match Hashtbl.find_opt mgs mg_name with
       | Some mg -> Ok mg
-      | None    -> Error (Nt.HandleError
+      | None    -> Error (Error.handle_error
                             (op ^ ": multigroup not found: " ^ mg_name))
 
     method create_relation ~(mg : string) ~(rel_name : string) ~schema =
@@ -104,7 +110,7 @@ module Make (NT : Nt.S) = struct
       let* () = self#assert_live "clear_relation" in
       let* mg_val = self#get_mg "clear_relation" mg in
       match mg_val#get_relation rel_name with
-      | None     -> Error (Nt.HandleError ("relation not found: " ^ rel_name))
+      | None     -> Error (Error.handle_error ("relation not found: " ^ rel_name))
       | Some rel ->
           let* (bh', mg') =
             NT.clear_relation bh mg_val
