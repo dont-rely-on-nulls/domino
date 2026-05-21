@@ -13,28 +13,22 @@ type exec_result =
 module Make (NT : Nt.S) = struct
   module DrlExec = Drl.Executor.Make (NT)
 
-  type error =
-    | ParseError of string
-    | QueryError of DrlExec.error
-    | CursorError of string
-
-  let sexp_of_error e =
-    let open Sexplib.Sexp in
-    match e with
-    | ParseError s -> List [ Atom "parse-error"; Atom s ]
-    | QueryError e -> DrlExec.sexp_of_error e
-    | CursorError s -> List [ Atom "cursor-error"; Atom s ]
+  module Error = struct
+    open Condition
+    (* TODO: more structure *)
+    let cursor_error msg = condition "cursor-error" ("message" |=| (of_string msg))
+  end
 
   let ( let* ) = Result.bind
 
   let execute (ctx : Sublanguage_context.t) (stmt : Ast.statement) :
-      (exec_result, error) result =
+      (exec_result, Condition.t) result =
     ignore default_batch;
     match stmt with
     | Ast.Begin _ ->
-        Error (CursorError "cursors not yet implemented")
+        Error (Error.cursor_error "cursors not yet implemented")
     | Ast.Fetch _ ->
-        Error (CursorError "cursors not yet implemented")
+        Error (Error.cursor_error "cursors not yet implemented")
     | Ast.Close _ ->
         let* () = Ok () in
         Ok (Closed ctx.branch#multigroups)
