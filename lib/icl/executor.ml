@@ -1,31 +1,19 @@
 module Make (NT : Nt.S) = struct
-  type error =
-    | ParseError of string
-    | NtError of Nt.error
-    | ConversionError of string
-    | MultigroupNotFound of string
-    | UnqualifiedName of string
-
-  let sexp_of_error e =
-    let open Sexplib.Sexp in
-    match e with
-    | ParseError s -> List [ Atom "parse-error"; Atom s ]
-    | NtError e -> List [ Atom "nt-error"; Atom (Nt.string_of_error e) ]
-    | ConversionError s -> List [ Atom "conversion-error"; Atom s ]
-    | MultigroupNotFound s -> List [ Atom "multigroup-not-found"; Atom s ]
-    | UnqualifiedName s -> List [ Atom "unqualified-name"; Atom s ]
+  module Error = struct
+    open Condition
+    let multigroup_not_found name = condition "multigroup-not-found" ("name" |=| (of_string name))
+  end
 
   let ( let* ) = Result.bind
-  let wrap_nt = Result.map_error (fun e -> NtError e)
 
-  let parse_fqn (s : string) : (Qualified_name.t, error) result =
-    Qualified_name.try_parse s |> Result.map_error (fun s -> UnqualifiedName s)
+  let parse_fqn (s : string) : (Qualified_name.t, Condition.t) result =
+    Qualified_name.try_parse s
 
   let lookup_mg (ctx : Sublanguage_context.t) (mg_name : string) :
-      (Management.Multigroup.multigroup, error) result =
+      (Management.Multigroup.multigroup, Condition.t) result =
     match ctx.branch#mg_of mg_name with
     | Some mg -> Ok mg
-    | None -> Error (MultigroupNotFound mg_name)
+    | None -> Error (Error.multigroup_not_found mg_name)
 
   let convert_binding_expr : Ast.binding_expr -> Constraint.binding_expr =
     function
@@ -52,7 +40,7 @@ module Make (NT : Nt.S) = struct
         Constraint.forall ~variable ~quantifier (convert_body body)
 
   let execute (ctx : Sublanguage_context.t) (stmt : Ast.statement) :
-      (Sublanguage_types.transition_delta * string, error) result =
+      (Sublanguage_types.transition_delta * string, Condition.t) result =
     match stmt with
     | Ast.RegisterConstraint { constraint_name; relation_name; body } ->
         let* fqn = parse_fqn relation_name in
@@ -61,7 +49,6 @@ module Make (NT : Nt.S) = struct
         let* _bh, new_mg =
           NT.register_constraint ctx.write_handle mg
             ~constraint_name ~relation_name:fqn.name ~body:runtime_body
-          |> wrap_nt
         in
         ctx.branch#set_mg ~name:fqn.mg new_mg;
         Ok ([ (fqn.mg, new_mg) ], "Constraint registered: " ^ constraint_name)
