@@ -20,10 +20,6 @@ functor
         condition "unrecognized-sublanguage"
           ("tag" |=| (of_string tag))
 
-      let sublanguage_error expr = (* FIXME: do away with this *)
-        condition "sublanguage-error"
-          ("error" |=| (of_sexp expr))
-
       let malformed_expression expr =
         condition "malformed-expression"
           ("expression" |=| (of_sexp expr))
@@ -94,8 +90,6 @@ functor
     let execute_sublanguage ctx expr (module Language : SubS) =
       Language.parse_sexp expr
       |> Utilities.Result.fmap (Language.execute ctx)
-      |> Result.map_error (fun e ->
-          Error.sublanguage_error (Language.sexp_of_error e))
 
     let execute_command ctx = function
       | Sexplib.Sexp.(List [ Atom tag; expr ]) ->
@@ -173,11 +167,11 @@ functor
       match NT.authenticate Nt.PlainText with
       | Error e ->
           (* FIXME: why is this a syntax error? *)
-          send_error output (Error.syntax_error (Nt.string_of_error e))
+          send_error output e
       | Ok claims ->
           (match Sess.open_session claims ~branch_name:"master" with
            | Error e ->
-               send_error output (Error.syntax_error (Nt.string_of_error e))
+               send_error output e
            | Ok sess ->
                let state = ref { claims; session = sess } in
                (try
