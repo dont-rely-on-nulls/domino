@@ -20,6 +20,12 @@ module TCP : TRANSPORT = struct
   type t = Unix.file_descr
   type connection = Unix.file_descr
 
+  module Error = struct
+    open Condition
+    (* TODO: more structure *)
+    let parse_error msg = condition "parse-error" ("message" |=| (of_string msg))
+  end
+
   let sockaddr_of_fields = function
     | `Inet (addr, port) ->
         Ok
@@ -50,8 +56,8 @@ module TCP : TRANSPORT = struct
       | bad :: _ -> errorf "transport/tcp: unexpected: %s" (to_string bad)
     in
     match sexp with
-    | List children -> go None None None children
-    | _ -> Error "transport/tcp: expected a list of fields"
+    | List children -> go None None None children |> Result.map_error Error.parse_error
+    | _ -> Error (Error.parse_error "transport/tcp: expected a list of fields")
 
   let string_of_sockaddr = function
     | Unix.ADDR_INET (host, port) ->
