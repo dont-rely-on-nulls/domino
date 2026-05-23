@@ -12,7 +12,12 @@ let branch_key name = "branch:" ^ name
 let head_key = "head"
 let names_key = "branch_names"
 
-module Make (Storage : Physical.S with type error = string) = struct
+module Make (Storage : Physical.S) = struct
+  module Error = struct
+    open Condition
+    let branch_not_found name = condition "branch-not-found" ("name" |=| (of_string name))
+  end
+
   let load_names storage =
     match Storage.load_raw storage names_key with
     | Ok (Some bytes) -> (Marshal.from_bytes bytes 0 : string list)
@@ -56,7 +61,7 @@ module Make (Storage : Physical.S with type error = string) = struct
         let record = { name; tip } in
         let bytes = Marshal.to_bytes record [] in
         Storage.store_raw storage (branch_key name) bytes
-    | Ok None -> Error ("Branch not found: " ^ name)
+    | Ok None -> Error (Error.branch_not_found name)
     | Error e -> Error e
 
   let list storage =
@@ -70,7 +75,7 @@ module Make (Storage : Physical.S with type error = string) = struct
         names
     in
     Ok branches
-(* 
+(*
   let branch_relation storage : Relation.t =
     let schema =
       Schema.empty |> Schema.add "name" "string" |> Schema.add "hash" "string"
