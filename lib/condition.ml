@@ -9,6 +9,8 @@ end
 
 let of_sexp (expr : Sexplib.Sexp.t) = new literal expr
 let of_string (s : string) = new literal (Sexplib.Sexp.Atom s)
+let of_list (f : 'a -> serializable) (l : 'a list) : serializable =
+  new literal (Sexplib.Sexp.List (List.map (fun e -> (f e)#as_sexp) l))
 
 type t = { name : string; properties : (string, serializable) BatMap.t }
 

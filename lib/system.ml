@@ -9,8 +9,8 @@ type transport_parcel =
       (module Transport.TRANSPORT with type t = 't) * 't
       -> transport_parcel
 
-type nt_provider        = Sexplib.Sexp.t -> (nt_parcel, string) result
-type transport_provider = Sexplib.Sexp.t -> (transport_parcel, string) result
+type nt_provider        = Sexplib.Sexp.t -> (nt_parcel, Condition.t) result
+type transport_provider = Sexplib.Sexp.t -> (transport_parcel, Condition.t) result
 
 type registry = {
   nt        : nt_provider        Utilities.StringMap.t;
@@ -44,7 +44,7 @@ let registry : registry =
           Ok (TransportParcel ((module Transport.TCP), transport)));
   }
 
-let assemble (config : Configuration.t) : (unit -> unit, string) result =
+let assemble (config : Configuration.t) : (unit -> unit, Condition.t) result =
   let open Utilities.Result in
   let* nt_tag, nt_body =
     Configuration.require_section ~name:"nt"
@@ -71,11 +71,11 @@ let assemble (config : Configuration.t) : (unit -> unit, string) result =
   let* packed_transport = transport_provider transport_body in
   let (NtParcel (module NT)) = packed_nt in
   let (TransportParcel ((module T), transport)) = packed_transport in
-  let* () = NT.initialize () |> Result.map_error Nt.string_of_error in
+  let* () = NT.initialize () in
   let module L = Listener.Make (T) (NT) in
   Ok (fun () -> L.run transport)
 
-let run_from_config (path : string) : (unit -> unit, string) result =
+let run_from_config (path : string) : (unit -> unit, Condition.t) result =
   let ( let* ) = Result.bind in
   let* config =
     Configuration.load ~expected_keys:[ "nt"; "transport" ] path
