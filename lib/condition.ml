@@ -1,10 +1,12 @@
 
 class type serializable = object
   method as_sexp : Sexplib.Sexp.t
+  method as_string : string
 end
 
 class literal (expr : Sexplib.Sexp.t) : serializable = object
   method as_sexp = expr
+  method as_string = Sexplib.Sexp.to_string_hum expr
 end
 
 let of_sexp (expr : Sexplib.Sexp.t) = new literal expr
@@ -32,10 +34,16 @@ let empty = (fun p -> p)
 let to_sexp { name; message; properties } =
   let open Sexplib.Sexp in
   let properties' =
-    BatMap.to_seq properties
+    properties
+    |> BatMap.to_seq
     |> BatSeq.map (fun (k, v) -> List [Atom k; v#as_sexp])
     |> BatList.of_seq in
   List (Atom name :: Atom message :: properties')
 
-let to_string e =               (* FIXME *)
-  Sexplib.Sexp.to_string_hum (to_sexp e)
+let to_string { name; message; properties } =
+  let properties' =
+    properties
+    |> BatMap.to_seq
+    |> BatSeq.to_string ~sep:"\n" (fun (k, v) -> "\t" ^ k ^ ": " ^ v#as_string)
+  in
+  name ^ ": " ^ message ^ properties'
