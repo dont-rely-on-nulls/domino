@@ -17,6 +17,13 @@ type registry = {
   transport : transport_provider Utilities.StringMap.t;
 }
 
+module Error = struct
+  open Condition
+  let unknown_backend component tag = condition "unknown-backend"
+                                        ("component" |=| (of_string component) &
+                                         "tag" |=| (of_string tag))
+end
+
 let registry : registry =
   let open Utilities.StringMap in
   {
@@ -54,7 +61,7 @@ let assemble (config : Configuration.t) : (unit -> unit, Condition.t) result =
   let* nt_provider =
     Utilities.StringMap.find_opt nt_tag registry.nt
     |> Option.to_result
-         ~none:(Printf.sprintf "Unknown NT backend: %s" nt_tag)
+         ~none:(Error.unknown_backend "nt" nt_tag)
   in
   let* packed_nt = nt_provider nt_body in
   let* transport_tag, transport_body =
@@ -66,7 +73,7 @@ let assemble (config : Configuration.t) : (unit -> unit, Condition.t) result =
   let* transport_provider =
     Utilities.StringMap.find_opt transport_tag registry.transport
     |> Option.to_result
-         ~none:(Printf.sprintf "Unknown transport backend: %s" transport_tag)
+         ~none:(Error.unknown_backend "transport" transport_tag)
   in
   let* packed_transport = transport_provider transport_body in
   let (NtParcel (module NT)) = packed_nt in
