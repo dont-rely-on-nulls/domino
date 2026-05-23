@@ -33,3 +33,6 @@ let to_sexp { name; properties } =
     |> BatSeq.map (fun (k, v) -> List [Atom k; v#as_sexp])
     |> BatList.of_seq in
   List (Atom name :: properties')
+
+let to_string e =               (* FIXME *)
+  Sexplib.Sexp.to_string_hum (to_sexp e)

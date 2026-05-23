@@ -7,6 +7,6 @@ let () =
   end;
   match System.run_from_config Sys.argv.(1) with
   | Error e ->
-      Printf.eprintf "Couldn't initialize: %s\n%!" e;
+      Printf.eprintf "Couldn't initialize: %s\n%!" e.name;
       exit 1
   | Ok run -> run ()
