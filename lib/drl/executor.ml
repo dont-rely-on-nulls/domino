@@ -2,9 +2,9 @@ module Make (NT : Nt.S) = struct
   module Error = struct
     open Condition
 
-    let parse_error error = condition "parse-error" ("message" |=| (of_string error))
-    let relation_not_found name = condition "relation-not-found" ("name" |=| (of_string name))
-    let unsupported_operator msg = condition "unsupported-operator" ("message" |=| (of_string msg))
+    let parse_error error = condition "parse-error" error empty
+    let relation_not_found name = condition "relation-not-found" "Relation not found" ("name" |=| (of_string name))
+    let unsupported_operator msg = condition "unsupported-operator" msg empty
   end
 
   let ( let* ) = Result.bind

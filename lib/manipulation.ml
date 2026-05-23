@@ -22,8 +22,7 @@ module Make (Storage : Management.Physical.S) = struct
 
     (* TODO: more specific errors *)
     let storage_error message =
-      condition "storage-error"
-        ("message" |=| (of_string message))
+      condition "storage-error" message empty
   end
 
   let ( let* ) = Result.bind

@@ -37,11 +37,11 @@ type plan_node =
 module Error = struct
   open Condition
   (* TODO: better error structure *)
-  let auth_failed msg = condition "auth-failed" ("message" |=| (of_string msg))
-  let handle_error msg = condition "handle-error" ("message" |=| (of_string msg))
-  let cursor_error msg = condition "cursor-error" ("message" |=| (of_string msg))
-  let not_supported msg = condition "not-supported" ("message" |=| (of_string msg))
-  let initialization_error = condition "initialization-error" empty
+  let auth_failed msg = condition "auth-failed" msg empty
+  let handle_error msg = condition "handle-error" msg empty
+  let cursor_error msg = condition "cursor-error" msg empty
+  let not_supported msg = condition "not-supported" msg empty
+  let initialization_error = condition "initialization-error" "Couldn't initialize" empty
 end
 
 (* --------------------------------------------------------------------------

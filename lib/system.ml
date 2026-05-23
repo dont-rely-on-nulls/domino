@@ -19,7 +19,7 @@ type registry = {
 
 module Error = struct
   open Condition
-  let unknown_backend component tag = condition "unknown-backend"
+  let unknown_backend component tag = condition "unknown-backend" "Unknown backend for component"
                                         ("component" |=| (of_string component) &
                                          "tag" |=| (of_string tag))
 end

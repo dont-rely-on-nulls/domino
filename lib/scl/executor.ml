@@ -16,7 +16,7 @@ module Make (NT : Nt.S) = struct
   module Error = struct
     open Condition
     (* TODO: more structure *)
-    let cursor_error msg = condition "cursor-error" ("message" |=| (of_string msg))
+    let cursor_error msg = condition "cursor-error" msg empty
   end
 
   let ( let* ) = Result.bind

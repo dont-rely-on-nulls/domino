@@ -1,7 +1,7 @@
 module Make (NT : Nt.S) = struct
   module Error = struct
     open Condition
-    let multigroup_not_found name = condition "multigroup-not-found" ("name" |=| (of_string name))
+    let multigroup_not_found name = condition "multigroup-not-found" "Multigroup not found" ("name" |=| (of_string name))
   end
 
   let ( let* ) = Result.bind

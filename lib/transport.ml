@@ -23,7 +23,7 @@ module TCP : TRANSPORT = struct
   module Error = struct
     open Condition
     (* TODO: more structure *)
-    let parse_error msg = condition "parse-error" ("message" |=| (of_string msg))
+    let parse_error msg = condition "parse-error" msg empty
   end
 
   let sockaddr_of_fields = function

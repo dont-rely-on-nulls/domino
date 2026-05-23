@@ -2,10 +2,10 @@ module Make (NT : Nt.S) = struct
   module Error = struct
     open Condition
     (* TODO: more structure *)
-    let parse_error msg = condition "parse-error" ("message" |=| (of_string msg))
-    let runtime_error msg = condition "runtime-error" ("message" |=| (of_string msg))
-    let unknown_plugin_symbol name = condition "unknown-plugin-symbol" ("name" |=| (of_string name))
-    let relation_not_found name = condition "relation-not-found" ("name" |=| (of_string name))
+    let parse_error msg = condition "parse-error" msg empty
+    let runtime_error msg = condition "runtime-error" msg empty
+    let unknown_plugin_symbol name = condition "unknown-plugin-symbol" "Unknown plugin" ("name" |=| (of_string name))
+    let relation_not_found name = condition "relation-not-found" "Relation not found" ("name" |=| (of_string name))
   end
 
   let ( let* ) = Result.bind

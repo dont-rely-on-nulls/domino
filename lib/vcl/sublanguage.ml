@@ -1,7 +1,7 @@
 module Make (NT : Nt.S) = struct
   module Error = struct
     open Condition
-    let unrecognized_command expr = condition "unrecognized-command" ("expression" |=| (of_sexp expr))
+    let unrecognized_command expr = condition "unrecognized-command" "Unrecognized command" ("expression" |=| (of_sexp expr))
   end
 
   module Exec = Executor.Make (NT)

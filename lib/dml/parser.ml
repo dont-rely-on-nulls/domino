@@ -1,6 +1,6 @@
 module Error = struct
   open Condition
-  let parse_error msg = condition "parse-error" ("message" |=| (of_string msg))
+  let parse_error msg = condition "parse-error" msg empty
 end
 
 let of_sexp sexp =

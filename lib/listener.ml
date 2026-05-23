@@ -13,15 +13,14 @@ functor
       open Condition
 
       let syntax_error msg =
-        condition "syntax-error"
-          ("message" |=| (of_string msg))
+        condition "syntax-error" msg empty
 
       let unrecognized_sublanguage tag =
-        condition "unrecognized-sublanguage"
+        condition "unrecognized-sublanguage" "Unrecognized sublanguage"
           ("tag" |=| (of_string tag))
 
       let malformed_expression expr =
-        condition "malformed-expression"
+        condition "malformed-expression" "Malformed expression"
           ("expression" |=| (of_sexp expr))
     end
 

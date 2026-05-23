@@ -6,8 +6,8 @@ module Make (NT : Nt.S) = struct
   module Error = struct
     open Condition
     (* TODO: more structure *)
-    let not_supported msg = condition "not-supported" ("message" |=| (of_string msg))
-    let handle_error msg = condition "handle-error" ("message" |=| (of_string msg))
+    let not_supported msg = condition "not-supported" msg empty
+    let handle_error msg = condition "handle-error" msg empty
   end
 
   let ( let* ) = Result.bind

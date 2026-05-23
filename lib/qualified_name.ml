@@ -15,7 +15,8 @@ type t = { mg : string; name : string }
 
 module Error = struct
   open Condition
-  let unqualified_name name = condition "unqualified-name" ("name" |=| (of_string name))
+  let unqualified_name name = condition "unqualified-name" "A qualified name was expected, but an unqualified one was given"
+                                ("name" |=| (of_string name))
 end
 
 exception Unqualified of string

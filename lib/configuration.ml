@@ -6,21 +6,28 @@ end
 
 module Error = struct
   open Condition
-  let unknown_section key = condition "unknown-section" ("key" |=| (of_string key))
-  let duplicate_section key = condition "duplicate-section" ("key" |=| (of_string key))
-  let empty_section key = condition "empty-section" ("key" |=| (of_string key))
-  let multiple_values_in_section key = condition "multiple-values-in-section" ("key" |=| (of_string key))
-  let invalid_toplevel toplevel = condition "invalid-toplevel" ("expression" |=| (of_sexp toplevel))
-  let malformed_section expr = condition "malformed-section" ("expression" |=| (of_sexp expr))
-  let missing_section name = condition "missing-section" ("name" |=| (of_string name))
-  let invalid_tag section tag valid_options = condition "invalid-tag"
+  let unknown_section key = condition "unknown-section" "Unknown configuration section"
+                              ("key" |=| (of_string key))
+  let duplicate_section key = condition "duplicate-section" "Duplicate configuration section"
+                                ("key" |=| (of_string key))
+  let empty_section key = condition "empty-section" "Empty configuration section (expected a tagged value)"
+                            ("key" |=| (of_string key))
+  let multiple_values_in_section key = condition "multiple-values-in-section" "Configuration section contains multiple values (expected exactly one)"
+                                         ("key" |=| (of_string key))
+  let invalid_toplevel toplevel = condition "invalid-toplevel" "Configuration must be a (server ...) s-expression"
+                                    ("expression" |=| (of_sexp toplevel))
+  let malformed_section expr = condition "malformed-section" "Section must be a (tag ...) s-expression"
+                                 ("expression" |=| (of_sexp expr))
+  let missing_section name = condition "missing-section" "Missing section in configuration"
+                               ("name" |=| (of_string name))
+  let invalid_tag section tag valid_options = condition "invalid-tag" "Invalid tag for section"
                                                 ("section" |=| (of_string section) &
                                                  "tag" |=| (of_string tag) &
                                                  "valid-options" |=| (of_list of_string valid_options))
-  let failed_to_load_file path msg = condition "failed-to-load-file"
+  let failed_to_load_file path msg = condition "failed-to-load-file" "Failed to load configuration file"
                                        ("path" |=| (of_string path) &
                                         "message" |=| (of_string msg))
-  let syntax_error path msg = condition "syntax-error"
+  let syntax_error path msg = condition "syntax-error" "Failed to parse configuration file"
                                 ("path" |=| (of_string path) &
                                  "message" |=| (of_string msg))
 end

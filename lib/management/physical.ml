@@ -132,9 +132,9 @@ module MemoryBackend :
   module Error = struct
     open Condition
     (* TODO: more structure *)
-    let parse_error msg = condition "parse-error" ("message" |=| (of_string msg))
-    let already_in_transaction = condition "already-in-transaction" empty
-    let not_in_transaction = condition "not-in-transaction" empty
+    let parse_error msg = condition "parse-error" msg empty
+    let already_in_transaction = condition "already-in-transaction" "Already inside a transaction" empty
+    let not_in_transaction = condition "not-in-transaction" "Not inside a transaction" empty
   end
 
   let parse sexp =

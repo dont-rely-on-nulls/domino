@@ -15,7 +15,7 @@ let names_key = "branch_names"
 module Make (Storage : Physical.S) = struct
   module Error = struct
     open Condition
-    let branch_not_found name = condition "branch-not-found" ("name" |=| (of_string name))
+    let branch_not_found name = condition "branch-not-found" "Branch not found" ("name" |=| (of_string name))
   end
 
   let load_names storage =
