@@ -13,6 +13,12 @@
 
 type t = { mg : string; name : string }
 
+module Error = struct
+  open Condition
+  let unqualified_name name = condition "unqualified-name" "A qualified name was expected, but an unqualified one was given"
+                                ("name" |=| (of_string name))
+end
+
 exception Unqualified of string
 
 let parse (s : string) : t =
@@ -24,8 +30,8 @@ let parse (s : string) : t =
       if mg = "" || name = "" then raise (Unqualified s)
       else { mg; name }
 
-let try_parse (s : string) : (t, string) result =
-  try Ok (parse s) with Unqualified s -> Error s
+let try_parse (s : string) : (t, Condition.t) result =
+  try Ok (parse s) with Unqualified s -> Error (Error.unqualified_name s)
 
 let make ~mg ~name = { mg; name }
 

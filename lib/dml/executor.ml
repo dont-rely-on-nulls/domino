@@ -1,41 +1,30 @@
 module Make (NT : Nt.S) = struct
   module DrlExec = Drl.Executor.Make (NT)
 
-  type error =
-    | ParseError of string
-    | NtError of Nt.error
-    | RelationNotFound of string
-    | MultigroupNotFound of string
-    | UnqualifiedName of string
-    | DrlError of DrlExec.error
-
-  let sexp_of_error e =
-    let open Sexplib.Sexp in
-    match e with
-    | ParseError s -> List [ Atom "parse-error"; Atom s ]
-    | NtError e -> List [ Atom "nt-error"; Atom (Nt.string_of_error e) ]
-    | RelationNotFound s -> List [ Atom "relation-not-found"; Atom s ]
-    | MultigroupNotFound s -> List [ Atom "multigroup-not-found"; Atom s ]
-    | UnqualifiedName s -> List [ Atom "unqualified-name"; Atom s ]
-    | DrlError e -> List [ Atom "drl-error"; DrlExec.sexp_of_error e ]
+  module Error = struct
+    open Condition
+    (* TODO: more structure *)
+    let parse_error msg = condition "parse-error" msg empty
+    let relation_not_found name = condition "relation-not-found" "Relation not found" ("name" |=| (of_string name))
+    let multigroup_not_found name = condition "multigroup-not-found" "Multigroup not found" ("name" |=| (of_string name))
+  end
 
   let ( let* ) = Result.bind
-  let wrap_nt r = Result.map_error (fun e -> NtError e) r
 
-  let parse_fqn (s : string) : (Qualified_name.t, error) result =
-    Qualified_name.try_parse s |> Result.map_error (fun s -> UnqualifiedName s)
+  let parse_fqn (s : string) : (Qualified_name.t, Condition.t) result =
+    Qualified_name.try_parse s
 
   let lookup_mg (ctx : Sublanguage_context.t) (mg_name : string) :
-      (Management.Multigroup.multigroup, error) result =
+      (Management.Multigroup.multigroup, Condition.t) result =
     match ctx.branch#mg_of mg_name with
     | Some mg -> Ok mg
-    | None -> Error (MultigroupNotFound mg_name)
+    | None -> Error (Error.multigroup_not_found mg_name)
 
   let get_rel (ctx : Sublanguage_context.t) (fqn : Qualified_name.t) =
     let* mg = lookup_mg ctx fqn.mg in
     match NT.get_relation mg fqn.name with
     | Some r -> Ok r
-    | None -> Error (RelationNotFound (Qualified_name.to_string fqn))
+    | None -> Error (Error.relation_not_found (Qualified_name.to_string fqn))
 
   let retarget target (t : Tuple.materialized) =
     { t with Tuple.relation = target }
@@ -54,22 +43,19 @@ module Make (NT : Nt.S) = struct
   (* Drain all tuples from a DRL query using ctx.resolve for path resolution.
      Cross-multigroup reads work transparently here. *)
   let drain_query (ctx : Sublanguage_context.t) query =
-    match DrlExec.compile ctx.resolve query with
-    | Error e -> Error (DrlError e)
-    | Ok plan ->
-        let* stream =
-          NT.execute_query plan ~rel_name:"dml_drain"
-          |> wrap_nt
-        in
-        let rec drain acc =
-          match NT.stream_next stream with
-          | Error _ -> List.rev acc
-          | Ok None -> List.rev acc
-          | Ok (Some t) -> drain (t :: acc)
-        in
-        let tuples = drain [] in
-        ignore (NT.stream_close stream);
-        Ok tuples
+    let* plan = DrlExec.compile ctx.resolve query in
+    let* stream =
+      NT.execute_query plan ~rel_name:"dml_drain"
+    in
+    let rec drain acc =
+      match NT.stream_next stream with
+      | Error _ -> List.rev acc
+      | Ok None -> List.rev acc
+      | Ok (Some t) -> drain (t :: acc)
+    in
+    let tuples = drain [] in
+    ignore (NT.stream_close stream);
+    Ok tuples
 
   let attr_val_eq a b =
     Stdlib.( = ) a.Attribute.value b.Attribute.value
@@ -93,7 +79,7 @@ module Make (NT : Nt.S) = struct
   (* DML mutates tuples in a single mg per statement.  Returns a
      single-element transition delta keyed by that mg's name. *)
   let execute (ctx : Sublanguage_context.t) (stmt : Ast.statement) :
-      (Sublanguage_types.transition_delta, error) result =
+      (Sublanguage_types.transition_delta, Condition.t) result =
     let bh = ctx.write_handle in
     let branch_name = ctx.branch#name in
     let after fqn = Result.bind (lookup_mg ctx fqn.Qualified_name.mg)
@@ -106,7 +92,6 @@ module Make (NT : Nt.S) = struct
         let tuple = build_tuple ~relation:rel#name attributes in
         let* _ =
           NT.create_tuple ~branch_name ~mg_name:fqn.mg ~rel_name:rel#name tuple
-          |> wrap_nt
         in
         after fqn
     | Ast.InsertTuples { relation; tuples } ->
@@ -116,7 +101,6 @@ module Make (NT : Nt.S) = struct
         let* _ =
           NT.create_tuples ~branch_name ~mg_name:fqn.mg ~rel_name:rel#name
             tuple_list
-          |> wrap_nt
         in
         after fqn
     | Ast.DeleteTuple { relation; attributes } ->
@@ -126,7 +110,6 @@ module Make (NT : Nt.S) = struct
         let hash = Hashing.hash_tuple tuple in
         let* () =
           NT.retract_tuple ~branch_name ~mg_name:fqn.mg ~rel_name:rel#name hash
-          |> wrap_nt
         in
         after fqn
     | Ast.Assign { target; body } ->
@@ -136,13 +119,12 @@ module Make (NT : Nt.S) = struct
         let* tuples = drain_query ctx body in
         let* _bh, new_mg =
           NT.clear_relation bh mg ~branch_name ~mg_name:fqn.mg
-            (rel :> Relation.relation) |> wrap_nt
+            (rel :> Relation.relation)
         in
         ctx.branch#set_mg ~name:fqn.mg new_mg;
         let* _ =
           NT.create_tuples ~branch_name ~mg_name:fqn.mg ~rel_name:rel#name
             (List.map (retarget rel#name) tuples)
-          |> wrap_nt
         in
         Ok [ (fqn.mg, new_mg) ]
     | Ast.InsertFrom { target; source } ->
@@ -152,7 +134,6 @@ module Make (NT : Nt.S) = struct
         let* _ =
           NT.create_tuples ~branch_name ~mg_name:fqn.mg ~rel_name:rel#name
             (List.map (retarget rel#name) tuples)
-          |> wrap_nt
         in
         after fqn
     | Ast.DeleteWhere { target; predicate } ->
@@ -175,8 +156,7 @@ module Make (NT : Nt.S) = struct
               let* () = acc in
               let hash = Hashing.hash_tuple (retarget rel#name t) in
               NT.retract_tuple ~branch_name ~mg_name:fqn.mg ~rel_name:rel#name
-                hash
-              |> wrap_nt)
+                hash)
             (Ok ()) to_delete
         in
         after fqn

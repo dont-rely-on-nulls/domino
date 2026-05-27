@@ -1,19 +1,11 @@
 module Make (NT : Nt.S) = struct
-  type error =
-    | ParseError of string
-    | RelationNotFound of string
-    | NtError of Nt.error
-    | UnsupportedOperator of string
-    | UnqualifiedName of string
+  module Error = struct
+    open Condition
 
-  let sexp_of_error e =
-    let open Sexplib.Sexp in
-    match e with
-    | ParseError s -> List [ Atom "parse-error"; Atom s ]
-    | RelationNotFound s -> List [ Atom "relation-not-found"; Atom s ]
-    | NtError e -> List [ Atom "nt-error"; Atom (Nt.string_of_error e) ]
-    | UnsupportedOperator s -> List [ Atom "unsupported-operator"; Atom s ]
-    | UnqualifiedName s -> List [ Atom "unqualified-name"; Atom s ]
+    let parse_error error = condition "parse-error" error empty
+    let relation_not_found name = condition "relation-not-found" "Relation not found" ("name" |=| (of_string name))
+    let unsupported_operator msg = condition "unsupported-operator" msg empty
+  end
 
   let ( let* ) = Result.bind
 
@@ -22,12 +14,11 @@ module Make (NT : Nt.S) = struct
      [resolve] maps an FQN to its absolute RNT path. *)
   let rec compile
       (resolve : ?branch:string -> Qualified_name.t -> string)
-      (q : Ast.query) : (Nt.plan_node, error) result =
+      (q : Ast.query) : (Nt.plan_node, Condition.t) result =
     match q with
     | Ast.Base name ->
-        (match Qualified_name.try_parse name with
-         | Error s -> Error (UnqualifiedName s)
-         | Ok fqn  -> Ok (Nt.Scan { path = resolve fqn; args = [] }))
+       let* fqn = Qualified_name.try_parse name in
+       Ok (Nt.Scan { path = resolve fqn; args = [] })
     | Ast.Join (on_attrs, q1, q2) ->
         let* p1 = compile resolve q1 in
         let* p2 = compile resolve q2 in
@@ -36,21 +27,19 @@ module Make (NT : Nt.S) = struct
         let* p = compile resolve q in
         Ok (Nt.Take { limit = n; source = p })
     | Ast.Const _ ->
-        Error (UnsupportedOperator
+        Error (Error.unsupported_operator
           "Const: literal relations not yet reachable by VM; use Base")
     | _ ->
-        Error (UnsupportedOperator
+        Error (Error.unsupported_operator
           "Select/Project/Rename/Union/Diff/Cartesian require VM operators not yet implemented")
 
   let page_limit = 16
 
   let execute (ctx : Sublanguage_context.t) (q : Ast.query) :
-      (Sublanguage_types.result, error) result =
+      (Sublanguage_types.result, Condition.t) result =
     let* plan = compile ctx.resolve q in
     let rel_name = "query_result" in
-    let* stream =
-      NT.execute_query plan ~rel_name
-      |> Result.map_error (fun e -> NtError e)
+    let* stream = NT.execute_query plan ~rel_name
     in
     let rec drain acc count =
       if count >= page_limit then (List.rev acc, true)

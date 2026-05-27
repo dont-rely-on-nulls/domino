@@ -12,38 +12,37 @@ module type BACKEND = sig
   include Configuration.CONFIGURABLE
 
   type connection
-  type error
 
-  val connect : configuration -> (connection, error) result
+  val connect : configuration -> (connection, Condition.t) result
   (** Connect to the storage backend *)
 
   val disconnect : connection -> unit
   (** Disconnect from the backend *)
 
-  val get : connection -> Conventions.Hash.t -> (bytes option, error) result
+  val get : connection -> Conventions.Hash.t -> (bytes option, Condition.t) result
   (** Get a value by its hash. Returns None if not found. *)
 
-  val put : connection -> Conventions.Hash.t -> bytes -> (unit, error) result
+  val put : connection -> Conventions.Hash.t -> bytes -> (unit, Condition.t) result
   (** Store a value at its hash *)
 
-  val exists : connection -> Conventions.Hash.t -> (bool, error) result
+  val exists : connection -> Conventions.Hash.t -> (bool, Condition.t) result
   (** Check if a hash exists *)
 
-  val begin_transaction : connection -> (unit, error) result
+  val begin_transaction : connection -> (unit, Condition.t) result
   (** Begin a transaction *)
 
-  val commit : connection -> (unit, error) result
+  val commit : connection -> (unit, Condition.t) result
   (** Commit a transaction *)
 
-  val rollback : connection -> (unit, error) result
+  val rollback : connection -> (unit, Condition.t) result
   (** Rollback a transaction *)
 
   val get_many :
-    connection -> Conventions.Hash.t list -> (bytes option list, error) result
+    connection -> Conventions.Hash.t list -> (bytes option list, Condition.t) result
   (** Batch get multiple values *)
 
   val put_many :
-    connection -> (Conventions.Hash.t * bytes) list -> (unit, error) result
+    connection -> (Conventions.Hash.t * bytes) list -> (unit, Condition.t) result
   (** Batch put multiple values *)
 end
 
@@ -52,43 +51,41 @@ module type S = sig
   include Configuration.CONFIGURABLE
 
   type t
-  type error
 
-  val create : configuration -> (t, error) result
+  val create : configuration -> (t, Condition.t) result
   (** Create a storage instance from a backend connection *)
 
   val close : t -> unit
   (** Close the storage *)
 
   val store_attribute :
-    t -> Conventions.AbstractValue.t -> (Conventions.Hash.t, error) result
+    t -> Conventions.AbstractValue.t -> (Conventions.Hash.t, Condition.t) result
   (** Store an attribute value, returns its hash *)
 
   val load_attribute :
     t ->
     Conventions.Hash.t ->
-    (Conventions.AbstractValue.t option, error) result
+    (Conventions.AbstractValue.t option, Condition.t) result
   (** Load an attribute value by hash *)
 
-  val store_raw : t -> Conventions.Hash.t -> bytes -> (unit, error) result
+  val store_raw : t -> Conventions.Hash.t -> bytes -> (unit, Condition.t) result
   (** Store raw bytes at a hash *)
 
-  val load_raw : t -> Conventions.Hash.t -> (bytes option, error) result
+  val load_raw : t -> Conventions.Hash.t -> (bytes option, Condition.t) result
   (** Load raw bytes by hash *)
 
-  val exists : t -> Conventions.Hash.t -> (bool, error) result
+  val exists : t -> Conventions.Hash.t -> (bool, Condition.t) result
   (** Check if a hash exists *)
 
-  val with_transaction : t -> (unit -> ('a, error) result) -> ('a, error) result
+  val with_transaction : t -> (unit -> ('a, Condition.t) result) -> ('a, Condition.t) result
   (** Execute a function within a transaction *)
 end
 
 (** Functor to create storage operations from a backend *)
 module Make (B : BACKEND) :
-  S with type error = B.error and type configuration = B.configuration = struct
+  S with type configuration = B.configuration = struct
   type configuration = B.configuration
   type t = B.connection
-  type error = B.error
 
   let parse = B.parse
   let create config = B.connect config
@@ -123,7 +120,7 @@ end
 
 (** In-memory backend for testing and development *)
 module MemoryBackend :
-  BACKEND with type error = string and type configuration = unit = struct
+  BACKEND with type configuration = unit = struct
   type configuration = unit
 
   type connection = {
@@ -132,15 +129,22 @@ module MemoryBackend :
     mutable transaction_buffer : (string * bytes) list;
   }
 
-  type error = string
+  module Error = struct
+    open Condition
+    (* TODO: more structure *)
+    let parse_error msg = condition "parse-error" msg empty
+    let already_in_transaction = condition "already-in-transaction" "Already inside a transaction" empty
+    let not_in_transaction = condition "not-in-transaction" "Not inside a transaction" empty
+  end
 
   let parse sexp =
     match sexp with
     | Sexplib.Sexp.List [] -> Ok ()
     | _ ->
         Error
-          (Printf.sprintf "memory backend takes no configuration, got: %s"
-             (Sexplib.Sexp.to_string sexp))
+          (Error.parse_error
+             (Printf.sprintf "memory backend takes no configuration, got: %s"
+                (Sexplib.Sexp.to_string sexp)))
 
   let connect () =
     Ok
@@ -166,7 +170,7 @@ module MemoryBackend :
   let exists conn hash = Ok (Hashtbl.mem conn.data hash)
 
   let begin_transaction conn =
-    if conn.in_transaction then Error "Already in transaction"
+    if conn.in_transaction then Error Error.already_in_transaction
     else begin
       conn.in_transaction <- true;
       conn.transaction_buffer <- [];
@@ -174,7 +178,7 @@ module MemoryBackend :
     end
 
   let commit conn =
-    if not conn.in_transaction then Error "Not in transaction"
+    if not conn.in_transaction then Error Error.not_in_transaction
     else begin
       List.iter
         (fun (hash, value) -> Hashtbl.replace conn.data hash value)
@@ -185,7 +189,7 @@ module MemoryBackend :
     end
 
   let rollback conn =
-    if not conn.in_transaction then Error "Not in transaction"
+    if not conn.in_transaction then Error Error.not_in_transaction
     else begin
       conn.in_transaction <- false;
       conn.transaction_buffer <- [];

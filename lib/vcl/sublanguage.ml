@@ -1,9 +1,13 @@
 module Make (NT : Nt.S) = struct
+  module Error = struct
+    open Condition
+    let unrecognized_command expr = condition "unrecognized-command" "Unrecognized command" ("expression" |=| (of_sexp expr))
+  end
+
   module Exec = Executor.Make (NT)
 
   type configuration = unit
   type ast = Ast.statement
-  type error = Exec.error
 
   let name = "vcl"
   let parse _ = Ok ()
@@ -11,9 +15,7 @@ module Make (NT : Nt.S) = struct
   let parse_sexp = function
     | Sexplib.Sexp.(List [ Atom "use"; Atom branch ]) -> Ok (Ast.Use branch)
     | sexp ->
-        Error (Exec.ParseError ("unrecognized vcl command: " ^ Sexplib.Sexp.to_string sexp))
+        Error (Error.unrecognized_command sexp)
 
   let execute = Exec.execute
-
-  let sexp_of_error = Exec.sexp_of_error
 end

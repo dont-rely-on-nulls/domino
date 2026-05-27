@@ -9,13 +9,20 @@ type transport_parcel =
       (module Transport.TRANSPORT with type t = 't) * 't
       -> transport_parcel
 
-type nt_provider        = Sexplib.Sexp.t -> (nt_parcel, string) result
-type transport_provider = Sexplib.Sexp.t -> (transport_parcel, string) result
+type nt_provider        = Sexplib.Sexp.t -> (nt_parcel, Condition.t) result
+type transport_provider = Sexplib.Sexp.t -> (transport_parcel, Condition.t) result
 
 type registry = {
   nt        : nt_provider        Utilities.StringMap.t;
   transport : transport_provider Utilities.StringMap.t;
 }
+
+module Error = struct
+  open Condition
+  let unknown_backend component tag = condition "unknown-backend" "Unknown backend for component"
+                                        ("component" |=| (of_string component) &
+                                         "tag" |=| (of_string tag))
+end
 
 let registry : registry =
   let open Utilities.StringMap in
@@ -44,7 +51,7 @@ let registry : registry =
           Ok (TransportParcel ((module Transport.TCP), transport)));
   }
 
-let assemble (config : Configuration.t) : (unit -> unit, string) result =
+let assemble (config : Configuration.t) : (unit -> unit, Condition.t) result =
   let open Utilities.Result in
   let* nt_tag, nt_body =
     Configuration.require_section ~name:"nt"
@@ -54,7 +61,7 @@ let assemble (config : Configuration.t) : (unit -> unit, string) result =
   let* nt_provider =
     Utilities.StringMap.find_opt nt_tag registry.nt
     |> Option.to_result
-         ~none:(Printf.sprintf "Unknown NT backend: %s" nt_tag)
+         ~none:(Error.unknown_backend "nt" nt_tag)
   in
   let* packed_nt = nt_provider nt_body in
   let* transport_tag, transport_body =
@@ -66,16 +73,16 @@ let assemble (config : Configuration.t) : (unit -> unit, string) result =
   let* transport_provider =
     Utilities.StringMap.find_opt transport_tag registry.transport
     |> Option.to_result
-         ~none:(Printf.sprintf "Unknown transport backend: %s" transport_tag)
+         ~none:(Error.unknown_backend "transport" transport_tag)
   in
   let* packed_transport = transport_provider transport_body in
   let (NtParcel (module NT)) = packed_nt in
   let (TransportParcel ((module T), transport)) = packed_transport in
-  let* () = NT.initialize () |> Result.map_error Nt.string_of_error in
+  let* () = NT.initialize () in
   let module L = Listener.Make (T) (NT) in
   Ok (fun () -> L.run transport)
 
-let run_from_config (path : string) : (unit -> unit, string) result =
+let run_from_config (path : string) : (unit -> unit, Condition.t) result =
   let ( let* ) = Result.bind in
   let* config =
     Configuration.load ~expected_keys:[ "nt"; "transport" ] path

@@ -9,6 +9,21 @@ functor
     module Sess = Session.Make (NT)
     module B    = Branch.Make (NT)
 
+    module Error = struct
+      open Condition
+
+      let syntax_error msg =
+        condition "syntax-error" msg empty
+
+      let unrecognized_sublanguage tag =
+        condition "unrecognized-sublanguage" "Unrecognized sublanguage"
+          ("tag" |=| (of_string tag))
+
+      let malformed_expression expr =
+        condition "malformed-expression" "Malformed expression"
+          ("expression" |=| (of_sexp expr))
+    end
+
     (** Per-connection state: session owns the active branch. The
         branch's [relation_path] becomes the context resolver, so all
         sublanguages address the full RNT namespace rather than a
@@ -50,7 +65,7 @@ functor
     let read_command input =
       try Ok (Sexplib.Sexp.input_sexp input)
       with Sexplib.Sexp.Parse_error { err_msg; _ } ->
-        Error (Error.SyntaxError err_msg)
+        Error (Error.syntax_error err_msg)
 
     let sublanguages =
       List.fold_right
@@ -69,18 +84,16 @@ functor
 
     let find_language tag =
       Utilities.StringMap.find_opt tag sublanguages
-      |> Option.to_result ~none:(Error.UnrecognizedSublanguage tag)
+      |> Option.to_result ~none:(Error.unrecognized_sublanguage tag)
 
     let execute_sublanguage ctx expr (module Language : SubS) =
       Language.parse_sexp expr
       |> Utilities.Result.fmap (Language.execute ctx)
-      |> Result.map_error (fun e ->
-          Error.SublanguageError (Language.sexp_of_error e))
 
     let execute_command ctx = function
       | Sexplib.Sexp.(List [ Atom tag; expr ]) ->
           find_language tag |> Utilities.Result.fmap (execute_sublanguage ctx expr)
-      | s -> Error (Error.MalformedExpression s)
+      | s -> Error (Error.malformed_expression s)
 
     let tuple_to_sexp (t : Tuple.materialized) =
       let open Sexplib.Sexp in
@@ -98,14 +111,14 @@ functor
 
     let send_error out_ch e =
       output_response out_ch
-        Sexplib.Sexp.(List [ Atom "error"; Error.sexp_of_error e ])
+        Sexplib.Sexp.(List [ Atom "error"; Condition.to_sexp e ])
 
     (* Serializes a sublanguage result.  [branch] is the write target whose
        tip and name surface in Cursor / Transition responses. *)
     let serialize (branch : B.branch) =
       let open Sexplib.Sexp in
       function
-      | Error e -> List [ Atom "error"; Error.sexp_of_error e ]
+      | Error e -> List [ Atom "error"; Condition.to_sexp e ]
       | Ok (Sublanguage_types.Cursor { cursor_id; rows; has_more }) ->
           let row_sexps = List.map tuple_to_sexp rows in
           List
@@ -152,11 +165,12 @@ functor
       let output = T.output connection in
       match NT.authenticate Nt.PlainText with
       | Error e ->
-          send_error output (Error.SyntaxError (Nt.string_of_error e))
+          (* FIXME: why is this a syntax error? *)
+          send_error output e
       | Ok claims ->
           (match Sess.open_session claims ~branch_name:"master" with
            | Error e ->
-               send_error output (Error.SyntaxError (Nt.string_of_error e))
+               send_error output e
            | Ok sess ->
                let state = ref { claims; session = sess } in
                (try
