@@ -4,18 +4,7 @@
 open Ctypes
 open Foreign
 
-(* Load the shared library.  Set RNT_LIBRARY_PATH to the full path of
-   libRNT.dylib / libRNT.so when the library is not on the default search
-   path. *)
-let lib =
-  let path =
-    match Sys.getenv_opt "RNT_LIBRARY_PATH" with
-    | Some p -> p
-    | None   -> "libRNT.dylib"
-  in
-  Dl.(dlopen ~filename:path ~flags:[ RTLD_NOW; RTLD_GLOBAL ])
-
-let fn name typ = foreign ~from:lib name typ
+let fn name typ = foreign name typ
 
 (* Runtime ----------------------------------------------------------------- *)
 let rnt_init =

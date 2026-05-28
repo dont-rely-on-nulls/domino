@@ -17,4 +17,5 @@
   ctypes
   ctypes.foreign)
  (preprocess
-  (pps ppx_deriving.show ppx_sexp_conv ppx_protocol_conv)))
+  (pps ppx_deriving.show ppx_sexp_conv ppx_protocol_conv))
+ (flags :standard -cclib -lRNT))
