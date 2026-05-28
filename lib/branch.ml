@@ -96,7 +96,7 @@ module Make (NT : Nt.S) = struct
       let* mg_val = self#get_mg "create_relation" mg in
       let* (bh', mg') =
         NT.create_relation bh mg_val
-          ~branch_name:name ~mg_name:mg ~name:rel_name ~schema
+          ~branch_name:name ~name:rel_name ~schema
       in
       bh <- bh'; Hashtbl.replace mgs mg mg'; self#sync_tip (); Ok ()
 

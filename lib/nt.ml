@@ -395,9 +395,9 @@ module Make (B : Backend) = struct
     open_branch claims name
 
   let create_relation (bh : branch_handle) (mg : Management.Multigroup.multigroup)
-      ~(branch_name : string) ~(mg_name : string) ~(name : string)
-      ~(schema : Schema.t) :
+      ~(branch_name : string) ~(name : string) ~(schema : Schema.t) :
       (branch_handle * Management.Multigroup.multigroup, Condition.t) result =
+    let mg_name = mg#name in
     let path = relation_path ~branch_name ~mg_name ~rel_name:name in
     let rc   = Nt_ffi.rnt_register_relation path in
     if rc <> 0 then Error (Error.handle_error ("register_relation failed: " ^ name))
@@ -551,7 +551,7 @@ module Make (B : Backend) = struct
         (fun acc (name, schema) ->
           let* (branch_handle, multigroup) = acc in
           create_relation branch_handle multigroup
-            ~branch_name ~mg_name ~name ~schema)
+            ~branch_name ~name ~schema)
         (Ok (branch_handle, multigroup))
         Prelude.Catalog.catalog_definitions
     in
@@ -598,9 +598,8 @@ module Make (B : Backend) = struct
               new Management.Multigroup.multigroup
                 ~name:Prelude.Catalog.prelude_mg
             in
-            (match seed_prelude ~branch_name:"master" bh mg with
-             | Ok _    -> Ok ()
-             | Error e -> Error e)
+            seed_prelude ~branch_name:"master" bh mg
+            |> Result.map ignore
           else Ok ()
         in
         ignore (Nt_ffi.rnt_close_handle (Nt_ffi.nint_to_ptr bh));
@@ -666,7 +665,7 @@ module type S = sig
   val get_relation : Management.Multigroup.multigroup -> string -> Relation.ephemeral option
 
   val create_multigroup : claims -> string -> (branch_handle * Management.Multigroup.multigroup, Condition.t) result
-  val create_relation   : branch_handle -> Management.Multigroup.multigroup -> branch_name:string -> mg_name:string -> name:string -> schema:Schema.t -> (branch_handle * Management.Multigroup.multigroup, Condition.t) result
+  val create_relation   : branch_handle -> Management.Multigroup.multigroup -> branch_name:string -> name:string -> schema:Schema.t -> (branch_handle * Management.Multigroup.multigroup, Condition.t) result
   val retract_relation  : branch_handle -> Management.Multigroup.multigroup -> name:string -> (branch_handle * Management.Multigroup.multigroup, Condition.t) result
   val clear_relation    : branch_handle -> Management.Multigroup.multigroup -> branch_name:string -> mg_name:string -> Relation.relation -> (branch_handle * Management.Multigroup.multigroup, Condition.t) result
   val register_domain   : branch_handle -> Management.Multigroup.multigroup -> Relation.domain -> (branch_handle * Management.Multigroup.multigroup, Condition.t) result

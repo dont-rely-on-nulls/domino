@@ -46,8 +46,7 @@ module Make (NT : Nt.S) = struct
             Schema.empty schema_pairs
         in
         let* _bh, new_mg =
-          NT.create_relation bh mg
-            ~branch_name ~mg_name:fqn.mg ~name:fqn.name ~schema
+          NT.create_relation bh mg ~branch_name ~name:fqn.name ~schema
         in
         ctx.branch#set_mg ~name:fqn.mg new_mg;
         Ok ([ (fqn.mg, new_mg) ], "Relation created: " ^ name)
