@@ -16,11 +16,13 @@ let of_list (f : 'a -> serializable) (l : 'a list) : serializable =
 
 type t = { name : string;
            message : string;
+           backtrace : Printexc.raw_backtrace;
            properties : (string, serializable) BatMap.t }
 
 let condition name message ?parent props =
   { name;
     message;
+    backtrace = Printexc.get_callstack 64;
     properties =
       parent
       |> Option.map (fun { properties; _ } -> properties)
@@ -31,7 +33,7 @@ let ( |=| ) name value = (fun p -> BatMap.add name value p)
 let ( & ) l r = (fun p -> r (l p))
 let empty = (fun p -> p)
 
-let to_sexp { name; message; properties } =
+let to_sexp { name; message; properties; _ } =
   let open Sexplib.Sexp in
   let properties' =
     properties
@@ -40,10 +42,11 @@ let to_sexp { name; message; properties } =
     |> BatList.of_seq in
   List (Atom name :: Atom message :: properties')
 
-let to_string { name; message; properties } =
+let to_string { name; message; properties; backtrace } =
   let properties' =
     properties
     |> BatMap.to_seq
     |> BatSeq.to_string ~sep:"\n" (fun (k, v) -> "\t" ^ k ^ ": " ^ v#as_string)
   in
-  name ^ ": " ^ message ^ properties'
+  let backtrace' = Printexc.raw_backtrace_to_string backtrace in
+  name ^ ": " ^ message ^ "\n" ^ properties' ^ "\n\nBacktrace:\n" ^ backtrace'
