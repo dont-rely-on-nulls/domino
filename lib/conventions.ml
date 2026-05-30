@@ -49,7 +49,7 @@ module AbstractValue = struct
        else Atom (string_of_float f)
     | Opaque -> Atom "<opaque>"
 
-  let equals a b =
+  let equal a b =
     match (type_of a, type_of b) with
     | (Int, Int) -> (Obj.obj a : int) = (Obj.obj b : int)
     | (String, String) -> (Obj.obj a : string) = (Obj.obj b : string)
