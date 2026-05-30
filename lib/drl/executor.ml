@@ -28,10 +28,14 @@ module Make (NT : Nt.S) = struct
         Ok (Nt.Take { limit = n; source = p })
     | Ast.Const _ ->
         Error (Error.unsupported_operator
-          "Const: literal relations not yet reachable by VM; use Base")
+                 "Const: literal relations not yet reachable by VM; use Base")
+    | Ast.Project (attrs, query) ->
+       let* source = compile resolve query in
+       Ok (Nt.Project { attrs; source })
+    | Ast.Rename _ -> Error (Error.unsupported_operator "TODO")
     | _ ->
         Error (Error.unsupported_operator
-          "Select/Project/Rename/Union/Diff/Cartesian require VM operators not yet implemented")
+          "Select/Union/Diff/Cartesian require VM operators not yet implemented")
 
   let page_limit = 16
 
