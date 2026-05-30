@@ -36,6 +36,17 @@ let seed_fixture
           [("name", Obj.magic "peach"); ("flavour", Obj.magic "sweet")];
           [("name", Obj.magic "grape"); ("flavour", Obj.magic "sweet")];
           [("name", Obj.magic "lemon"); ("flavour", Obj.magic "sour")]
+        ];
+
+      relation
+        ~name:"drink"
+        ~schema:(Schema.empty
+                 |> Schema.add "name" "string"
+                 |> Schema.add "fruit" "string")
+        ~tuples:[
+          [("name", Obj.magic "lemonade");    ("fruit", Obj.magic "lemon")];
+          [("name", Obj.magic "wine");        ("fruit", Obj.magic "grape")];
+          [("name", Obj.magic "grape juice"); ("fruit", Obj.magic "grape")]
         ]
     ]
   in
@@ -70,8 +81,10 @@ module Error = struct
   open Condition
 
   let invalid_argument msg = condition "invalid-argument" msg empty
-  let expected_tuple tuple_expr = condition "expected-tuple" "An expected tuple is missing from the result"
-                                    ("tuple" |=| (of_sexp tuple_expr))
+  let expected_tuple tuple_expr relation_expr =
+    condition "expected-tuple" "An expected tuple is missing from the result"
+      ("tuple" |=| (of_sexp tuple_expr) &
+       "relation" |=| (of_sexp relation_expr))
 end
 
 let assert_ok = function
@@ -88,7 +101,9 @@ let ensure_contains t ts =
   Result.bind ts (fun ts ->
       if contains tuple ts
       then Ok ts
-      else Error (Error.expected_tuple (Tuple.sexp_of_materialized tuple)))
+      else Error (Error.expected_tuple
+                    (Tuple.sexp_of_materialized tuple)
+                    (Sexplib.Sexp.List (List.map Tuple.sexp_of_materialized ts))))
 
 let with_cursor = function
   | Sublanguage_types.Cursor cursor -> Ok (drain cursor)
@@ -102,6 +117,17 @@ let%test_unit "Ensure that `base` translates to a scan over its argument" =
     |> ensure_contains [("name", Obj.magic "peach"); ("flavour", Obj.magic "sweet")]
     |> ensure_contains [("name", Obj.magic "grape"); ("flavour", Obj.magic "sweet")]
     |> ensure_contains [("name", Obj.magic "lemon"); ("flavour", Obj.magic "sour")]
+    |> Result.map ignore
+  end
+  |> assert_ok
+
+let%test_unit "Ensure that `project` returns a projection of it's argument" =
+  begin
+    let* ctx = make_fixture () in
+    let* result = Test_Drl.execute ctx (Drl.Ast.Project (["fruit"], Drl.Ast.Base "fixture:drink")) in
+    with_cursor result
+    |> ensure_contains [("fruit", Obj.magic "grape")]
+    |> ensure_contains [("fruit", Obj.magic "lemon")]
     |> Result.map ignore
   end
   |> assert_ok

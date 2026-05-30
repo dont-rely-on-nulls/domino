@@ -151,6 +151,9 @@ let rnt_plan_take source limit =
   setf (plan &-> pa_take) pat_limit limit;
   rnt_plan_assemble plan
 
+let rnt_plan_project =
+  fn "rnt_plan_project" (ptr void @-> ptr (ptr char) @-> returning (ptr void))
+
 let rnt_plan_free =
   fn "rnt_plan_free" (ptr void @-> returning void)
 
@@ -191,6 +194,23 @@ let with_out_string (f : char ptr ptr -> int) : int * string option =
   let p  = !@ pp in
   if is_null p then (rc, None)
   else (rc, Some (consume_cstring p))
+
+let with_strings_as_char_array
+      (strings : string list)
+      (body : char ptr ptr -> 'a)
+    : 'a =
+  let arr =
+    CArray.make
+      ~initial:(from_voidp char null)
+      (ptr char)
+      (1 + List.length strings)
+  in
+  List.iteri
+    (fun i s -> CArray.set arr i (Ctypes_std_views.char_ptr_of_string s))
+    strings;
+  body (CArray.start arr)
+  (* let pp = allocate (ptr (ptr char)) (from_voidp (ptr char) null) in *)
+
 
 (* Converts a void* (returned from open_handle / cursor_open) to nativeint.
    Returns None when the pointer is NULL (failure). *)

@@ -33,6 +33,7 @@ type plan_node =
      concrete join algorithm (e.g. HashJoin, NestedLoop, LeapFrog, &c) *)
   | Join of { left : plan_node; right : plan_node; on_attrs : string list }
   | Take of { limit : int; source : plan_node }
+  | Project of { source : plan_node; attrs : string list }
 
 module Error = struct
   open Condition
@@ -326,6 +327,12 @@ module Make (B : Backend) = struct
         (match Nt_ffi.ptr_to_opt raw with
          | None   -> Error (Error.cursor_error "plan_take failed")
          | Some p -> Ok p)
+    | Project { source; attrs } ->
+       Nt_ffi.with_strings_as_char_array attrs (fun attrs ->
+           let* sp = build_plan source in
+           let raw = Nt_ffi.rnt_plan_project (Nt_ffi.nint_to_ptr sp) attrs in
+           Nt_ffi.ptr_to_opt raw
+           |> Option.to_result ~none:(Error.cursor_error "plan_project failed"))
 
   let execute_query (plan : plan_node) ~(rel_name : string) :
       (tuple_stream, Condition.t) result =
