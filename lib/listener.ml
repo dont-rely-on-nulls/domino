@@ -8,6 +8,7 @@ functor
 
     module Sess = Session.Make (NT)
     module B    = Branch.Make (NT)
+    module SC   = Sublanguage_context.Make (NT)
 
     module Error = struct
       open Condition
@@ -37,30 +38,8 @@ functor
         state. Called at the top of every handle_sublanguage so it
         always reflects the live branch after any prior VCL
         switch. **)
-    let make_ctx (state : conn_state) : Sublanguage_context.t =
-      let br      = state.session#branch in
-      let claims  = state.claims in
-      let session = state.session in
-      {
-        Sublanguage_context.write_handle  = br#branch_handle;
-        branch                            = (br :> Sublanguage_context.branch_view);
-        resolve                           = br#path;
-        switch_branch = fun name ->
-          match br#close () with
-          | Error e -> Error e
-          | Ok () ->
-              begin match B.open_branch claims name with
-               | Error e ->
-                  begin match B.open_branch claims "master" with
-                  | Ok mbr -> session#set_branch mbr
-                  | Error _ -> ()
-                  end;
-                  Error e
-               | Ok new_br ->
-                   session#set_branch new_br;
-                   Ok new_br#multigroups
-              end
-      }
+    let make_ctx ({ session; claims } : conn_state) : Sublanguage_context.t =
+      SC.make_ctx session claims
 
     let read_command input =
       try Ok (Sexplib.Sexp.input_sexp input)
