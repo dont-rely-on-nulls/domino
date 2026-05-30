@@ -38,7 +38,10 @@ module Error = struct
   open Condition
   (* TODO: better error structure *)
   let auth_failed msg = condition "auth-failed" msg empty
-  let handle_error msg = condition "handle-error" msg empty
+  let handle_error rc msg = condition "handle-error" msg ("return-code" |=| (of_int rc))
+  let object_not_found kind id = condition "object-not-found" "Object not found"
+                                   ("kind" |=| (of_string kind) &
+                                    "identifier" |=| (of_string id))
   let cursor_error msg = condition "cursor-error" msg empty
   let not_supported msg = condition "not-supported" msg empty
   let initialization_error = condition "initialization-error" "Couldn't initialize" empty
@@ -118,7 +121,7 @@ module Make (B : Backend) = struct
     match (rc, target_opt) with
     | (0, Some s) -> Ok s
     | (0, None)   -> Ok ""
-    | _           -> Error (Error.handle_error "branch_target read failed")
+    | _           -> Error (Error.handle_error rc "branch_target read failed")
 
   let list_relations ~(branch_name : string) ~(mg_name : string) :
       ((string * string) list, Condition.t) result =
@@ -137,7 +140,7 @@ module Make (B : Backend) = struct
         in
         Ok pairs
     | (0, None)   -> Ok []
-    | _           -> Error (Error.handle_error
+    | _           -> Error (Error.handle_error rc
                               ("list_relations failed: " ^ branch_name
                                ^ "/" ^ mg_name))
 
@@ -159,7 +162,7 @@ module Make (B : Backend) = struct
         in
         Ok pairs
     | (0, None)   -> Ok []
-    | _           -> Error (Error.handle_error
+    | _           -> Error (Error.handle_error rc
                               ("list_branch_multigroups failed: " ^ branch_name))
 
   let session_open () : (string, Condition.t) result =
@@ -169,16 +172,16 @@ module Make (B : Backend) = struct
     in
     match (rc, id_opt) with
     | (0, Some id) -> Ok id
-    | _            -> Error (Error.handle_error "session_open failed")
+    | _            -> Error (Error.handle_error rc "session_open failed")
 
   let session_close (sid : string) : (unit, Condition.t) result =
     let rc = Nt_ffi.rnt_session_close sid in
-    if rc = 0 then Ok () else Error (Error.handle_error "session_close failed")
+    if rc = 0 then Ok () else Error (Error.handle_error rc "session_close failed")
 
   let session_set_branch (sid : string) (branch_name : string)
       (target_hash : string) : (unit, Condition.t) result =
     let rc = Nt_ffi.rnt_session_set_branch sid branch_name target_hash in
-    if rc = 0 then Ok () else Error (Error.handle_error "session_set_branch failed")
+    if rc = 0 then Ok () else Error (Error.handle_error rc "session_set_branch failed")
 
   let open_branch (_claims : claims) (name : string) :
       (branch_handle * Management.Multigroup.multigroup, Condition.t) result =
@@ -186,7 +189,7 @@ module Make (B : Backend) = struct
     ensure_branch path;
     let raw = Nt_ffi.rnt_open_handle path (from_voidp void null) in
     match Nt_ffi.ptr_to_opt raw with
-    | None -> Error (Error.handle_error ("branch not found: " ^ name))
+    | None -> Error (Error.object_not_found "branch" name)
     | Some bh ->
         let* _tip          = branch_target_of_handle bh in
         let* rel_entries   = list_relations ~branch_name:name ~mg_name:name in
@@ -216,7 +219,7 @@ module Make (B : Backend) = struct
 
   let close_branch (bh : branch_handle) : (unit, Condition.t) result =
     let rc = Nt_ffi.rnt_close_handle (Nt_ffi.nint_to_ptr bh) in
-    if rc = 0 then Ok () else Error (Error.handle_error "close_branch failed")
+    if rc = 0 then Ok () else Error (Error.handle_error rc "close_branch failed")
 
   let list_snapshot_relations (snapshot_hash : string) :
       ((string * string) list, Condition.t) result =
@@ -235,7 +238,7 @@ module Make (B : Backend) = struct
         in
         Ok pairs
     | (0, None)   -> Ok []
-    | _           -> Error (Error.handle_error ("list_snapshot_relations failed: " ^ snapshot_hash))
+    | _           -> Error (Error.handle_error rc ("list_snapshot_relations failed: " ^ snapshot_hash))
 
   (* Opens a read-only view pinned to a specific snapshot hash.
      Returns (bh, mg) where bh is a handle on the snapshot object and mg
@@ -247,7 +250,7 @@ module Make (B : Backend) = struct
     let snap_path = "/system/snapshots/" ^ snapshot_hash in
     let raw = Nt_ffi.rnt_open_handle snap_path (from_voidp void null) in
     match Nt_ffi.ptr_to_opt raw with
-    | None -> Error (Error.handle_error ("snapshot not found: " ^ snapshot_hash))
+    | None -> Error (Error.object_not_found "snapshot" snapshot_hash)
     | Some bh ->
         let* rel_entries = list_snapshot_relations snapshot_hash in
         let mg =
@@ -281,12 +284,12 @@ module Make (B : Backend) = struct
     ignore (Nt_ffi.rnt_register_relation path);
     let raw = Nt_ffi.rnt_open_handle path (from_voidp void null) in
     match Nt_ffi.ptr_to_opt raw with
-    | None -> Error (Error.handle_error ("relation not found: " ^ rel_name))
+    | None -> Error (Error.object_not_found "relation" rel_name)
     | Some rh -> Ok rh
 
   let close_relation (rh : relation_handle) : (unit, Condition.t) result =
     let rc = Nt_ffi.rnt_close_handle (Nt_ffi.nint_to_ptr rh) in
-    if rc = 0 then Ok () else Error (Error.handle_error "close_relation failed")
+    if rc = 0 then Ok () else Error (Error.handle_error rc "close_relation failed")
 
   (* --------------------------------------------------------------------------
      Query execution via the Tarski VM plan builder
@@ -395,12 +398,12 @@ module Make (B : Backend) = struct
     open_branch claims name
 
   let create_relation (bh : branch_handle) (mg : Management.Multigroup.multigroup)
-      ~(branch_name : string) ~(mg_name : string) ~(name : string)
-      ~(schema : Schema.t) :
+      ~(branch_name : string) ~(name : string) ~(schema : Schema.t) :
       (branch_handle * Management.Multigroup.multigroup, Condition.t) result =
+    let mg_name = mg#name in
     let path = relation_path ~branch_name ~mg_name ~rel_name:name in
     let rc   = Nt_ffi.rnt_register_relation path in
-    if rc <> 0 then Error (Error.handle_error ("register_relation failed: " ^ name))
+    if rc <> 0 then Error (Error.handle_error rc ("register_relation failed: " ^ name))
     else
       let rel_root =
         let (rc, opt) =
@@ -437,7 +440,7 @@ module Make (B : Backend) = struct
       (branch_handle * Management.Multigroup.multigroup, Condition.t) result =
     let path = relation_path ~branch_name ~mg_name ~rel_name:rel#name in
     let rc = Nt_ffi.rnt_clear_relation path in
-    if rc <> 0 then Error (Error.handle_error ("clear_relation failed: " ^ rel#name))
+    if rc <> 0 then Error (Error.handle_error rc ("clear_relation failed: " ^ rel#name))
     else
       let* _tip = branch_target_of_handle bh in
       Ok (bh, mg)
@@ -470,7 +473,7 @@ module Make (B : Backend) = struct
       ~(body : Constraint.t) :
       (branch_handle * Management.Multigroup.multigroup, Condition.t) result =
     match mg#get_relation relation_name with
-    | None -> Error (Error.handle_error ("relation not found: " ^ relation_name))
+    | None -> Error (Error.object_not_found "relation" relation_name)
     | Some rel ->
         let existing =
           match rel#constraints with Some cs -> cs | None -> []
@@ -501,7 +504,7 @@ module Make (B : Backend) = struct
     in
     match (rc, hash_opt) with
     | (0, Some h) -> Ok h
-    | _           -> Error (Error.handle_error "insert_tuple failed")
+    | _           -> Error (Error.handle_error rc "insert_tuple failed")
 
   let create_tuple ~branch_name ~mg_name ~rel_name (tuple : Tuple.materialized) :
       (string, Condition.t) result =
@@ -520,7 +523,7 @@ module Make (B : Backend) = struct
       (unit, Condition.t) result =
     let path = relation_path ~branch_name ~mg_name ~rel_name in
     let rc = Nt_ffi.rnt_unlink_tuple path hash in
-    if rc = 0 then Ok () else Error (Error.handle_error "retract_tuple failed")
+    if rc = 0 then Ok () else Error (Error.handle_error rc "retract_tuple failed")
 
   let relation_root ~(branch_name : string) ~(mg_name : string)
       ~(rel_name : string) : (string, Condition.t) result =
@@ -531,7 +534,7 @@ module Make (B : Backend) = struct
     match (rc, root_opt) with
     | (0, Some r) -> Ok r
     | (0, None)   -> Ok ""
-    | _           -> Error (Error.handle_error "relation_root query failed")
+    | _           -> Error (Error.handle_error rc "relation_root query failed")
 
   (* --------------------------------------------------------------------------
      Prelude / catalog bootstrap
@@ -551,7 +554,7 @@ module Make (B : Backend) = struct
         (fun acc (name, schema) ->
           let* (branch_handle, multigroup) = acc in
           create_relation branch_handle multigroup
-            ~branch_name ~mg_name ~name ~schema)
+            ~branch_name ~name ~schema)
         (Ok (branch_handle, multigroup))
         Prelude.Catalog.catalog_definitions
     in
@@ -589,7 +592,7 @@ module Make (B : Backend) = struct
     ensure_branch path;
     let raw = Nt_ffi.rnt_open_handle path (from_voidp void null) in
     match Nt_ffi.ptr_to_opt raw with
-    | None -> Error (Error.handle_error "init: could not open master branch")
+    | None -> Error (Error.object_not_found "branch" "master")
     | Some bh ->
         let* target = branch_target_of_handle bh in
         let result =
@@ -598,9 +601,8 @@ module Make (B : Backend) = struct
               new Management.Multigroup.multigroup
                 ~name:Prelude.Catalog.prelude_mg
             in
-            (match seed_prelude ~branch_name:"master" bh mg with
-             | Ok _    -> Ok ()
-             | Error e -> Error e)
+            seed_prelude ~branch_name:"master" bh mg
+            |> Result.map ignore
           else Ok ()
         in
         ignore (Nt_ffi.rnt_close_handle (Nt_ffi.nint_to_ptr bh));
@@ -666,7 +668,7 @@ module type S = sig
   val get_relation : Management.Multigroup.multigroup -> string -> Relation.ephemeral option
 
   val create_multigroup : claims -> string -> (branch_handle * Management.Multigroup.multigroup, Condition.t) result
-  val create_relation   : branch_handle -> Management.Multigroup.multigroup -> branch_name:string -> mg_name:string -> name:string -> schema:Schema.t -> (branch_handle * Management.Multigroup.multigroup, Condition.t) result
+  val create_relation   : branch_handle -> Management.Multigroup.multigroup -> branch_name:string -> name:string -> schema:Schema.t -> (branch_handle * Management.Multigroup.multigroup, Condition.t) result
   val retract_relation  : branch_handle -> Management.Multigroup.multigroup -> name:string -> (branch_handle * Management.Multigroup.multigroup, Condition.t) result
   val clear_relation    : branch_handle -> Management.Multigroup.multigroup -> branch_name:string -> mg_name:string -> Relation.relation -> (branch_handle * Management.Multigroup.multigroup, Condition.t) result
   val register_domain   : branch_handle -> Management.Multigroup.multigroup -> Relation.domain -> (branch_handle * Management.Multigroup.multigroup, Condition.t) result

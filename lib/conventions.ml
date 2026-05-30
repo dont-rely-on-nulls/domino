@@ -25,19 +25,35 @@ end
 
 module AbstractValue = struct
   type t = Obj.t
+  type value_type = Int | String | Float | Opaque
 
   let hash (elem : t) =
     Sha256.to_hex (Sha256.string (Bytes.to_string (Marshal.to_bytes elem [])))
 
+  let type_of (elem : t) : value_type =
+    let tag = Obj.tag elem in
+    if Obj.is_int elem then Int
+    else if tag = Obj.string_tag then String
+    else if tag = Obj.double_tag then Float
+    else Opaque
+
   let sexp_of_t (v : t) =
     let open Sexplib.Sexp in
-    if Obj.is_int v then Atom (string_of_int (Obj.obj v : int))
-    else
-      let tag = Obj.tag v in
-      if tag = Obj.string_tag then Atom (Obj.obj v : string)
-      else if tag = Obj.double_tag then
-        let f = (Obj.obj v : float) in
-        if Float.is_nan f || Float.is_infinite f then Atom "nan"
-        else Atom (string_of_float f)
-      else Atom "<opaque>"
+    match type_of v with
+    | Int -> Atom (string_of_int (Obj.obj v : int))
+    | String -> Atom (Obj.obj v : string)
+    | Float ->
+       let f = (Obj.obj v : float) in
+       if Float.is_nan f || Float.is_infinite f
+       then Atom "nan"
+       else Atom (string_of_float f)
+    | Opaque -> Atom "<opaque>"
+
+  let equal a b =
+    match (type_of a, type_of b) with
+    | (Int, Int) -> (Obj.obj a : int) = (Obj.obj b : int)
+    | (String, String) -> (Obj.obj a : string) = (Obj.obj b : string)
+    | (Float, Float) -> (Obj.obj a : float) = (Obj.obj b : float)
+    | (Opaque, Opaque) -> false
+    | (_, _) -> false
 end

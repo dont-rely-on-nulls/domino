@@ -37,3 +37,34 @@ type t = {
   switch_branch : string ->
                   (Sublanguage_types.transition_delta, Condition.t) result;
 }
+
+module Make (NT : Nt.S) = struct
+  module Session = Session.Make (NT)
+  module Branch = Branch.Make (NT)
+
+  let make_ctx
+        (session : Session.session)
+        (claims : string)
+      : t =
+    let br = session#branch in
+    {
+      write_handle  = br#branch_handle;
+      branch                            = (br :> branch_view);
+      resolve                           = br#path;
+      switch_branch = fun name ->
+                      match br#close () with
+                      | Error e -> Error e
+                      | Ok () ->
+                         begin match Branch.open_branch claims name with
+                         | Error e ->
+                            begin match Branch.open_branch claims "master" with
+                            | Ok mbr -> session#set_branch mbr
+                            | Error _ -> ()
+                            end;
+                            Error e
+                         | Ok new_br ->
+                            session#set_branch new_br;
+                            Ok new_br#multigroups
+                         end
+    }
+end

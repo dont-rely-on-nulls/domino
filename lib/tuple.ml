@@ -32,3 +32,6 @@ let make_materialized ~relation ~attributes =
       attributes;
       (* lineage = None *)
     }
+
+let materialized_equal a b =
+  AttributeMap.equal Attribute.materialized_equal a.attributes b.attributes

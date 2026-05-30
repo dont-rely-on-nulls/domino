@@ -9,3 +9,5 @@ let make_referenced ~value =
   Referenced { value_hash }
 
 let make_materialized ~value = Materialized { value }
+
+let materialized_equal a b = Conventions.AbstractValue.equal a.value b.value
