@@ -11,6 +11,7 @@ end
 
 let of_sexp (expr : Sexplib.Sexp.t) = new literal expr
 let of_string (s : string) = new literal (Sexplib.Sexp.Atom s)
+let of_int (n : int) = of_string (Int.to_string n)
 let of_list (f : 'a -> serializable) (l : 'a list) : serializable =
   new literal (Sexplib.Sexp.List (List.map (fun e -> (f e)#as_sexp) l))
 
@@ -46,7 +47,9 @@ let to_string { name; message; properties; backtrace } =
   let properties' =
     properties
     |> BatMap.to_seq
-    |> BatSeq.to_string ~sep:"\n" (fun (k, v) -> "\t" ^ k ^ ": " ^ v#as_string)
+    |> BatSeq.to_string
+         ~first:"" ~last:"" ~sep:"\n"
+         (fun (k, v) -> "\t" ^ k ^ ": " ^ v#as_string)
   in
   let backtrace' = Printexc.raw_backtrace_to_string backtrace in
   name ^ ": " ^ message ^ "\n" ^ properties' ^ "\n\nBacktrace:\n" ^ backtrace'
