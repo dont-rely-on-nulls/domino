@@ -8,7 +8,7 @@
       type = "github";
       owner = "mmagueta";
       repo = "RNT";
-      ref = "branching";
+      ref = "project-c-interface";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -188,7 +188,7 @@
               legacyPackages.coqPackages.stdlib
               legacyPackages.z3
             ];
-            
+
             shellHook = ''
               export CAML_LD_LIBRARY_PATH="''${CAML_LD_LIBRARY_PATH:+$CAML_LD_LIBRARY_PATH:}$(ocamlfind query num)"
               export RNT_ROOT="${rnt}"
