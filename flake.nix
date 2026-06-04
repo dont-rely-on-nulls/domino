@@ -4,11 +4,12 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     nix-filter.url = "github:numtide/nix-filter";
+    # RNT.url = "path:/home/tevo/var/src/RNT";
     RNT = {
       type = "github";
-      owner = "mmagueta";
+      owner = "dont-rely-on-nulls";
       repo = "RNT";
-      ref = "5174fc2";
+      ref = "5a01445";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

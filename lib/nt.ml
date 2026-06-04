@@ -305,19 +305,23 @@ module Make (B : Backend) = struct
         (match Nt_ffi.ptr_to_opt raw with
          | None   -> Error (Error.cursor_error ("plan_scan failed for path: " ^ path))
          | Some p -> Ok p)
-    | Join { left; right; _ } ->
+    | Join { left; right; on_attrs } ->
         let* lp = build_plan left in
         (match build_plan right with
          | Error e ->
              Nt_ffi.rnt_plan_free (Nt_ffi.nint_to_ptr lp);
              Error e
          | Ok rp ->
-             let raw = Nt_ffi.rnt_plan_join
-                         (Nt_ffi.nint_to_ptr lp) (Nt_ffi.nint_to_ptr rp) in
-             (* join takes ownership of both children — no manual free needed *)
-             (match Nt_ffi.ptr_to_opt raw with
-              | None   -> Error (Error.cursor_error "plan_join failed")
-              | Some p -> Ok p))
+            Nt_ffi.with_strings_as_char_array on_attrs (fun on_attrs' ->
+                let raw = Nt_ffi.rnt_plan_join
+                            (Nt_ffi.nint_to_ptr lp)
+                            (Nt_ffi.nint_to_ptr rp)
+                            on_attrs'
+                in
+                (* join takes ownership of both children — no manual free needed *)
+                (match Nt_ffi.ptr_to_opt raw with
+                | None   -> Error (Error.cursor_error "plan_join failed")
+                | Some p -> Ok p)))
     | Take { limit; source } ->
         let* sp = build_plan source in
         let raw = Nt_ffi.rnt_plan_take

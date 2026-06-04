@@ -104,6 +104,7 @@ type plan_args_join
 let plan_args_join : plan_args_join structure typ = structure "plan_args_join"
 let paj_left = field plan_args_join "paj_left" (ptr void)
 let paj_right = field plan_args_join "paj_right" (ptr void)
+let paj_attrs = field plan_args_join "paj_attrs" (ptr (ptr char))
 let () = seal plan_args_join
 
 type plan_args_take
@@ -137,11 +138,12 @@ let rnt_plan_scan str =
   setf (plan &-> pa_scan) pas_relation_path str;
   rnt_plan_assemble plan
 
-let rnt_plan_join left right =
+let rnt_plan_join left right attrs =
   let plan = make plan_action in
   setf plan pa_operation Join;
   setf (plan &-> pa_join) paj_left left;
   setf (plan &-> pa_join) paj_right right;
+  setf (plan &-> pa_join) paj_attrs attrs;
   rnt_plan_assemble plan
 
 let rnt_plan_take source limit =
@@ -151,8 +153,12 @@ let rnt_plan_take source limit =
   setf (plan &-> pa_take) pat_limit limit;
   rnt_plan_assemble plan
 
-let rnt_plan_project =
-  fn "rnt_plan_project" (ptr void @-> ptr (ptr char) @-> returning (ptr void))
+let rnt_plan_project source attrs =
+  let plan = make plan_action in
+  setf plan pa_operation Project;
+  setf (plan &-> pa_project) pap_source source;
+  setf (plan &-> pa_project) pap_attrs attrs;
+  rnt_plan_assemble plan
 
 let rnt_plan_free =
   fn "rnt_plan_free" (ptr void @-> returning void)
