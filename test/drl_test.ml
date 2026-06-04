@@ -8,6 +8,8 @@ module Test_Ctx = Sublanguage_context.Make (Test_Nt)
 
 let ( let* ) = Result.bind
 
+(* TODO: move fixture somewhere else *)
+
 let with_proper_attrs tuples =
   List.map (fun (name, value) -> (name, { Attribute.value = value })) tuples
 
@@ -30,23 +32,23 @@ let seed_fixture
       relation
         ~name:"fruit"
         ~schema:(Schema.empty
-                 |> Schema.add "name" "string"
+                 |> Schema.add "fruit" "string"
                  |> Schema.add "flavour" "string")
         ~tuples:[
-          [("name", Obj.magic "peach"); ("flavour", Obj.magic "sweet")];
-          [("name", Obj.magic "grape"); ("flavour", Obj.magic "sweet")];
-          [("name", Obj.magic "lemon"); ("flavour", Obj.magic "sour")]
+          [("fruit", Obj.magic "peach"); ("flavour", Obj.magic "sweet")];
+          [("fruit", Obj.magic "grape"); ("flavour", Obj.magic "sweet")];
+          [("fruit", Obj.magic "lemon"); ("flavour", Obj.magic "sour")]
         ];
 
       relation
         ~name:"drink"
         ~schema:(Schema.empty
-                 |> Schema.add "name" "string"
+                 |> Schema.add "drink" "string"
                  |> Schema.add "fruit" "string")
         ~tuples:[
-          [("name", Obj.magic "lemonade");    ("fruit", Obj.magic "lemon")];
-          [("name", Obj.magic "wine");        ("fruit", Obj.magic "grape")];
-          [("name", Obj.magic "grape juice"); ("fruit", Obj.magic "grape")]
+          [("drink", Obj.magic "lemonade");    ("fruit", Obj.magic "lemon")];
+          [("drink", Obj.magic "wine");        ("fruit", Obj.magic "grape")];
+          [("drink", Obj.magic "grape juice"); ("fruit", Obj.magic "grape")]
         ]
     ]
   in
@@ -81,8 +83,14 @@ module Error = struct
   open Condition
 
   let invalid_argument msg = condition "invalid-argument" msg empty
+
   let expected_tuple tuple_expr relation_expr =
     condition "expected-tuple" "An expected tuple is missing from the result"
+      ("tuple" |=| (of_sexp tuple_expr) &
+       "relation" |=| (of_sexp relation_expr))
+
+  let unexpected_tuple tuple_expr relation_expr =
+    condition "unexpected-tuple" "A tuple expected to be missing was present on the result"
       ("tuple" |=| (of_sexp tuple_expr) &
        "relation" |=| (of_sexp relation_expr))
 end
@@ -96,14 +104,17 @@ let drain { Sublanguage_types.rows; _ } = rows         (* TODO *)
 let contains tuple ts =
   List.find_opt (Tuple.materialized_equal tuple) ts |> Option.is_some
 
-let ensure_contains t ts =
+let ensuring f error t ts =
   let tuple = tuple_from_attrs "" t in
   Result.bind ts (fun ts ->
-      if contains tuple ts
+      if f tuple ts
       then Ok ts
-      else Error (Error.expected_tuple
+      else Error (error
                     (Tuple.sexp_of_materialized tuple)
                     (Sexplib.Sexp.List (List.map Tuple.sexp_of_materialized ts))))
+
+let ensure_contains = ensuring contains Error.expected_tuple
+let ensure_missing = ensuring (fun t ts -> not (contains t ts)) Error.unexpected_tuple
 
 let with_cursor = function
   | Sublanguage_types.Cursor cursor -> Ok (drain cursor)
@@ -111,23 +122,38 @@ let with_cursor = function
 
 let%test_unit "Ensure that `base` translates to a scan over its argument" =
   begin
+    let open Drl.Ast in
     let* ctx = make_fixture () in
-    let* result = Test_Drl.execute ctx (Drl.Ast.Base "fixture:fruit") in
+    let* result = Test_Drl.execute ctx (Base "fixture:fruit") in
     with_cursor result
-    |> ensure_contains [("name", Obj.magic "peach"); ("flavour", Obj.magic "sweet")]
-    |> ensure_contains [("name", Obj.magic "grape"); ("flavour", Obj.magic "sweet")]
-    |> ensure_contains [("name", Obj.magic "lemon"); ("flavour", Obj.magic "sour")]
+    |> ensure_contains [("fruit", Obj.magic "peach"); ("flavour", Obj.magic "sweet")]
+    |> ensure_contains [("fruit", Obj.magic "grape"); ("flavour", Obj.magic "sweet")]
+    |> ensure_contains [("fruit", Obj.magic "lemon"); ("flavour", Obj.magic "sour")]
     |> Result.map ignore
   end
   |> assert_ok
 
 let%test_unit "Ensure that `project` returns a projection of it's argument" =
   begin
+    let open Drl.Ast in
     let* ctx = make_fixture () in
-    let* result = Test_Drl.execute ctx (Drl.Ast.Project (["fruit"], Drl.Ast.Base "fixture:drink")) in
+    let* result = Test_Drl.execute ctx (Project (["fruit"], Base "fixture:drink")) in
     with_cursor result
     |> ensure_contains [("fruit", Obj.magic "grape")]
     |> ensure_contains [("fruit", Obj.magic "lemon")]
+    |> Result.map ignore
+  end
+  |> assert_ok
+
+let%test_unit "Ensure that `join` returns an inner join of it's arguments" =
+  begin
+    let open Drl.Ast in
+    let* ctx = make_fixture () in
+    let* result = Test_Drl.execute ctx (Join (["fruit"], Base "fixture:drink", Base "fixture:fruit")) in
+    with_cursor result
+    |> ensure_contains [("drink", Obj.magic "wine"); ("fruit", Obj.magic "grape"); ("flavour", Obj.magic "sweet")]
+    |> ensure_missing [("drink", Obj.magic "wine"); ("fruit", Obj.magic "lemon"); ("flavour", Obj.magic "sour")]
+    |> ensure_missing [("drink", Obj.magic "wine"); ("fruit", Obj.magic "grape"); ("flavour", Obj.magic "sour")]
     |> Result.map ignore
   end
   |> assert_ok
