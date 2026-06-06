@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NIX_CONFIG: "experimental-features = nix-command flakes"
+
+jobs:
+  build:
+    name: Build
+    runs-on: [self-hosted, nixos]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: nix build .#default -L
+
+  format:
+    name: Check formatting
+    runs-on: [self-hosted, nixos]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check formatting
+        run: nix build .#checks.x86_64-linux.dune-fmt -L
+
+  test:
+    name: Run tests
+    runs-on: [self-hosted, nixos]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: nix build .#checks.x86_64-linux.relational_engine -L
