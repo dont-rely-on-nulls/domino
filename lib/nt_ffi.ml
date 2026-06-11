@@ -83,14 +83,73 @@ let rnt_cursor_close =
   fn "rnt_cursor_close" (ptr void @-> returning int)
 
 (* VM plan builder --------------------------------------------------------- *)
-let rnt_plan_scan =
-  fn "rnt_plan_scan" (string @-> returning (ptr void))
 
-let rnt_plan_join =
-  fn "rnt_plan_join" (ptr void @-> ptr void @-> returning (ptr void))
+type operation = Scan | Join | Take | Project
 
-let rnt_plan_take =
-  fn "rnt_plan_take" (ptr void @-> size_t @-> returning (ptr void))
+let int_of_operation = function
+  | Scan -> 1 | Join -> 2 | Take -> 3 | Project -> 4
+
+let operation_of_int = function
+  | 1 -> Scan | 2 -> Join | 3 -> Take | 4 -> Project
+  | _ -> failwith "Bad operation" (* FIXME *)
+
+let operation = view ~read:operation_of_int ~write:int_of_operation int
+
+type plan_args_scan
+let plan_args_scan : plan_args_scan structure typ = structure "plan_args_scan"
+let pas_relation_path = field plan_args_scan "pas_relation_path" string
+let () = seal plan_args_scan
+
+type plan_args_join
+let plan_args_join : plan_args_join structure typ = structure "plan_args_join"
+let paj_left = field plan_args_join "paj_left" (ptr void)
+let paj_right = field plan_args_join "paj_right" (ptr void)
+let () = seal plan_args_join
+
+type plan_args_take
+let plan_args_take : plan_args_take structure typ = structure "plan_args_take"
+let pat_source = field plan_args_take "pat_source" (ptr void)
+let pat_limit = field plan_args_take "pat_limit" size_t
+let () = seal plan_args_take
+
+type plan_args_project
+let plan_args_project : plan_args_project structure typ = structure "plan_args_project"
+let pap_source = field plan_args_project "pap_source" (ptr void)
+let pap_attrs = field plan_args_project "pap_attrs" (ptr (ptr char))
+let () = seal plan_args_project
+
+type plan_action
+let plan_action : plan_action structure typ = structure "plan_action"
+let pa_operation = field plan_action "pa_operation" operation
+let pa_scan = field plan_action "pa_scan" plan_args_scan
+let pa_join = field plan_action "pa_join" plan_args_join
+let pa_take = field plan_action "pa_take" plan_args_take
+let pa_project = field plan_action "pa_project" plan_args_project
+let () = seal plan_action
+
+let rnt_plan_assemble = fn "rnt_plan_assemble" (plan_action @-> returning (ptr void))
+
+let ( &-> ) = getf
+
+let rnt_plan_scan str =
+  let plan = make plan_action in
+  setf plan pa_operation Scan;
+  setf (plan &-> pa_scan) pas_relation_path str;
+  rnt_plan_assemble plan
+
+let rnt_plan_join left right =
+  let plan = make plan_action in
+  setf plan pa_operation Join;
+  setf (plan &-> pa_join) paj_left left;
+  setf (plan &-> pa_join) paj_right right;
+  rnt_plan_assemble plan
+
+let rnt_plan_take source limit =
+  let plan = make plan_action in
+  setf plan pa_operation Take;
+  setf (plan &-> pa_take) pat_source source;
+  setf (plan &-> pa_take) pat_limit limit;
+  rnt_plan_assemble plan
 
 let rnt_plan_free =
   fn "rnt_plan_free" (ptr void @-> returning void)

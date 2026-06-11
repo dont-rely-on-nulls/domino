@@ -8,16 +8,16 @@
         "picosha2": "picosha2"
       },
       "locked": {
-        "lastModified": 1779079590,
-        "narHash": "sha256-AYny1AQxSudDaqq2XrHyuDJgyHAd58vW5i+GsEfdcpU=",
+        "lastModified": 1780706444,
+        "narHash": "sha256-POVEukSjJOs/oud/HiQZEOR5M6ZMlrhsXIteKAS2bCw=",
         "owner": "mmagueta",
         "repo": "RNT",
-        "rev": "fdcc42675289ae69068dd02421ba6282c59301df",
+        "rev": "5174fc25698cff33b03b5746bf1742e417988f7d",
         "type": "github"
       },
       "original": {
         "owner": "mmagueta",
-        "ref": "branching",
+        "ref": "5174fc2",
         "repo": "RNT",
         "type": "github"
       }
