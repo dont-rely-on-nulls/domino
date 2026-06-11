@@ -40,7 +40,6 @@
               (nix-filter.lib.inDirectory "bplustree")
               (nix-filter.lib.inDirectory "bin")
               (nix-filter.lib.inDirectory "lib")
-              (nix-filter.lib.inDirectory "prl_api")
               (nix-filter.lib.inDirectory "shared")
               (nix-filter.lib.inDirectory "test")
             ];
@@ -98,11 +97,6 @@
             buildPhase = patchDuneCommand oldAttrs.buildPhase;
             checkPhase = patchDuneCommand oldAttrs.checkPhase;
             installPhase = "touch $out";
-            preCheck = ''
-              export CAML_LD_LIBRARY_PATH="${rnt}/lib''${CAML_LD_LIBRARY_PATH:+:$CAML_LD_LIBRARY_PATH}"
-              export LD_LIBRARY_PATH="${rnt}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-              export DYLD_LIBRARY_PATH="${rnt}/lib''${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
-            '';
           });
 
           dune-fmt = legacyPackages.runCommand "check-dune-fmt" {
