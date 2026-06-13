@@ -84,13 +84,20 @@ let rnt_cursor_close =
 
 (* VM plan builder --------------------------------------------------------- *)
 
-type operation = Scan | Join | Take | Project
+type operation =
+  | Scan
+  | Join
+  | Take
+  | Project
+  | Materialize
+  | Rename
+  | Union
 
 let int_of_operation = function
-  | Scan -> 1 | Join -> 2 | Take -> 3 | Project -> 4
+  | Scan -> 1 | Join -> 2 | Take -> 3 | Project -> 4 | Materialize -> 5 | Rename -> 6 | Union -> 7
 
 let operation_of_int = function
-  | 1 -> Scan | 2 -> Join | 3 -> Take | 4 -> Project
+  | 1 -> Scan | 2 -> Join | 3 -> Take | 4 -> Project | 5 -> Materialize | 6 -> Rename | 7 -> Union
   | _ -> failwith "Bad operation" (* FIXME *)
 
 let operation = view ~read:operation_of_int ~write:int_of_operation int
@@ -119,6 +126,22 @@ let pap_source = field plan_args_project "pap_source" (ptr void)
 let pap_attrs = field plan_args_project "pap_attrs" (ptr (ptr char))
 let () = seal plan_args_project
 
+type plan_args_materialize
+let plan_args_materialize : plan_args_materialize structure typ = structure "plan_args_materialize"
+let pam_source = field plan_args_materialize "pam_source" (ptr void)
+let () = seal plan_args_materialize
+
+type plan_args_rename
+let plan_args_rename : plan_args_rename structure typ = structure "plan_args_rename"
+let par_source = field plan_args_rename "par_rename" (ptr void)
+let par_pairs = field plan_args_rename "par_pairs" (ptr (ptr char))
+let () = seal plan_args_rename
+
+type plan_args_union
+let plan_args_union : plan_args_union structure typ = structure "plan_args_union"
+let pau_sources = field plan_args_union "pau_sources" (ptr (ptr void))
+let () = seal plan_args_union
+
 type plan_action
 let plan_action : plan_action structure typ = structure "plan_action"
 let pa_operation = field plan_action "pa_operation" operation
@@ -126,6 +149,9 @@ let pa_scan = field plan_action "pa_scan" plan_args_scan
 let pa_join = field plan_action "pa_join" plan_args_join
 let pa_take = field plan_action "pa_take" plan_args_take
 let pa_project = field plan_action "pa_project" plan_args_project
+let pa_materialize = field plan_action "pa_materialize" plan_args_materialize
+let pa_rename = field plan_action "pa_rename" plan_args_rename
+let pa_union = field plan_action "pa_union" plan_args_union
 let () = seal plan_action
 
 let rnt_plan_assemble = fn "rnt_plan_assemble" (plan_action @-> returning (ptr void))
