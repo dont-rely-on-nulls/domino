@@ -32,6 +32,10 @@ module Make (NT : Nt.S) = struct
     | Ast.Project (attrs, query) ->
        let* source = compile resolve query in
        Ok (Nt.Project { attrs; source })
+    | Ast.Cartesian (q1, q2) ->
+       let* p1 = compile resolve q1 in
+       let* p2 = compile resolve q2 in
+       Ok (Nt.Join { left = p1; right = p2; []})
     | Ast.Rename _ -> Error (Error.unsupported_operator "TODO")
     | _ ->
         Error (Error.unsupported_operator
