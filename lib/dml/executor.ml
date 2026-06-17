@@ -43,7 +43,7 @@ module Make (NT : Nt.S) = struct
   (* Drain all tuples from a DRL query using ctx.resolve for path resolution.
      Cross-multigroup reads work transparently here. *)
   let drain_query (ctx : Sublanguage_context.t) query =
-    let* plan = DrlExec.compile ctx.resolve query in
+    let* plan = DrlExec.compile ctx query in
     let* stream =
       NT.execute_query plan ~rel_name:"dml_drain"
     in
@@ -56,6 +56,58 @@ module Make (NT : Nt.S) = struct
     let tuples = drain [] in
     ignore (NT.stream_close stream);
     Ok tuples
+
+  (* Stored-relation paths referenced by a query, for ephemeral dependency
+     pinning. A qualified leaf resolves through ctx; an unqualified one is a
+     previously Defined session ephemeral (views compose). *)
+  let rec base_dep_paths (ctx : Sublanguage_context.t) (q : Drl.Ast.query) :
+      string list =
+    match q with
+    | Drl.Ast.Base name ->
+        (match Qualified_name.try_parse name with
+         | Ok fqn  -> [ ctx.resolve fqn ]
+         | Error _ -> [ Sublanguage_context.ephemeral_path ctx name ])
+    | Drl.Ast.Const _ -> []
+    | Drl.Ast.Select (a, b)
+    | Drl.Ast.Join (_, a, b)
+    | Drl.Ast.Cartesian (a, b)
+    | Drl.Ast.Union (a, b)
+    | Drl.Ast.Diff (a, b) -> base_dep_paths ctx a @ base_dep_paths ctx b
+    | Drl.Ast.Project (_, s)
+    | Drl.Ast.Rename (_, s)
+    | Drl.Ast.Take (_, s) -> base_dep_paths ctx s
+
+  (* Schema of a query result, walked structurally from the base relations'
+     schemas. Mirrors the operator semantics in docs/relational-algebra.org. *)
+  let rec infer_schema (ctx : Sublanguage_context.t) (q : Drl.Ast.query) :
+      (Schema.t, Condition.t) result =
+    match q with
+    | Drl.Ast.Base name ->
+        (match Qualified_name.try_parse name with
+         | Error _ ->
+             (* Session ephemeral: RNT owns its schema; nothing to derive
+                on the OCaml-side, so treated as contributing no attributes. *)
+             Ok []
+         | Ok fqn ->
+             let* rel = get_rel ctx fqn in
+             Ok rel#schema)
+    | Drl.Ast.Const attrs -> Ok (List.map (fun (n, _) -> (n, "abstract")) attrs)
+    | Drl.Ast.Select (_, src) -> infer_schema ctx src
+    | Drl.Ast.Join (_, l, r) | Drl.Ast.Cartesian (l, r) ->
+        let* ls = infer_schema ctx l in
+        let* rs = infer_schema ctx r in
+        Ok (ls @ List.filter (fun (n, _) -> not (List.mem_assoc n ls)) rs)
+    | Drl.Ast.Project (attrs, src) ->
+        let* s = infer_schema ctx src in
+        Ok (List.filter (fun (n, _) -> List.mem n attrs) s)
+    | Drl.Ast.Rename (renames, src) ->
+        let* s = infer_schema ctx src in
+        Ok (List.map (fun (n, d) ->
+              match List.assoc_opt n renames with
+              | Some n' -> (n', d)
+              | None    -> (n, d)) s)
+    | Drl.Ast.Union (l, _) | Drl.Ast.Diff (l, _) -> infer_schema ctx l
+    | Drl.Ast.Take (_, src) -> infer_schema ctx src
 
   let attr_val_eq a b =
     Stdlib.( = ) a.Attribute.value b.Attribute.value
@@ -136,6 +188,33 @@ module Make (NT : Nt.S) = struct
             (List.map (retarget rel#name) tuples)
         in
         after fqn
+    | Ast.Define { target; body } ->
+        let* () =
+          if String.contains target ':' then
+            Error (Error.parse_error
+              ("Define target must be unqualified (session-scoped): " ^ target))
+          else Ok ()
+        in
+        let* schema = infer_schema ctx body in
+        let generator ~offset ~limit =
+          match drain_query ctx body with
+          | Error _    -> []
+          | Ok tuples  ->
+              List.filteri (fun i _ -> i >= offset && i < offset + limit) tuples
+        in
+        let* _path =
+          NT.register_ephemeral ~session:ctx.session_hash ~named:true
+            ~name:target ~generator
+            ~cardinality:Conventions.Cardinality.ConstrainedFinite
+            ~identity:(Drl.Parser.to_string body) ~schema
+            ~deps:(base_dep_paths ctx body)
+        in
+        Ok []
+    | Ast.DropDefine { target } ->
+        let* () =
+          NT.drop_ephemeral ~session:ctx.session_hash ~name:target
+        in
+        Ok []
     | Ast.DeleteWhere { target; predicate } ->
         let* fqn = parse_fqn target in
         let* rel = get_rel ctx fqn in

@@ -36,7 +36,17 @@ type t = {
   resolve       : ?branch:string -> Qualified_name.t -> string;
   switch_branch : string ->
                   (Sublanguage_types.transition_delta, Condition.t) result;
+  session_hash  : string;
+  (** RNT session hash owning this connection. Session-scoped ephemeral
+      relations (with DML [Define]) register under
+      /system/sessions/<session_hash>/ephemeral/<name>. *)
 }
+
+(** Absolute RNT path of a session-scoped ephemeral relation. An unqualified
+    name in a DRL [Base] resolves here: named bindings shadow nothing since
+    stored relations always carry an [mg:] qualifier. *)
+let ephemeral_path (ctx : t) (name : string) : string =
+  "/system/sessions/" ^ ctx.session_hash ^ "/ephemeral/" ^ name
 
 module Make (NT : Nt.S) = struct
   module Session = Session.Make (NT)
@@ -51,6 +61,7 @@ module Make (NT : Nt.S) = struct
       write_handle  = br#branch_handle;
       branch                            = (br :> branch_view);
       resolve                           = br#path;
+      session_hash                      = session#id;
       switch_branch = fun name ->
                       match br#close () with
                       | Error e -> Error e

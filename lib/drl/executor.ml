@@ -10,34 +10,42 @@ module Make (NT : Nt.S) = struct
   let ( let* ) = Result.bind
 
   (* Compile a DRL AST query to a Tarski VM plan node tree.
-     Every base relation reference must be fully qualified ([<mg>:<rel>]);
-     [resolve] maps an FQN to its absolute RNT path. *)
+     A qualified base reference ([<mg>:<rel>]) resolves through [ctx.resolve]
+     to its stored-relation path; an unqualified name resolves to the
+     session-scoped ephemeral binding created by DML [Define]. *)
   let rec compile
-      (resolve : ?branch:string -> Qualified_name.t -> string)
+      (ctx : Sublanguage_context.t)
       (q : Ast.query) : (Nt.plan_node, Condition.t) result =
     match q with
     | Ast.Base name ->
-       let* fqn = Qualified_name.try_parse name in
-       Ok (Nt.Scan { path = resolve fqn; args = [] })
+        (match Qualified_name.try_parse name with
+         | Error _ ->
+             Ok (Nt.Scan
+                   { path = Sublanguage_context.ephemeral_path ctx name;
+                     args = [] })
+         | Ok fqn  -> Ok (Nt.Scan { path = ctx.resolve fqn; args = [] }))
     | Ast.Join (on_attrs, q1, q2) ->
-        let* p1 = compile resolve q1 in
-        let* p2 = compile resolve q2 in
+        let* p1 = compile ctx q1 in
+        let* p2 = compile ctx q2 in
         Ok (Nt.Join { left = p1; right = p2; on_attrs })
     | Ast.Take (n, q) ->
-        let* p = compile resolve q in
+        let* p = compile ctx q in
         Ok (Nt.Take { limit = n; source = p })
+    | Ast.Project (attrs, q) ->
+        let* p = compile ctx q in
+        Ok (Nt.Project { attrs; source = p })
     | Ast.Const _ ->
         Error (Error.unsupported_operator
           "Const: literal relations not yet reachable by VM; use Base")
     | _ ->
         Error (Error.unsupported_operator
-          "Select/Project/Rename/Union/Diff/Cartesian require VM operators not yet implemented")
+          "Select/Rename/Union/Diff/Cartesian require VM operators not yet implemented")
 
   let page_limit = 16
 
   let execute (ctx : Sublanguage_context.t) (q : Ast.query) :
       (Sublanguage_types.result, Condition.t) result =
-    let* plan = compile ctx.resolve q in
+    let* plan = compile ctx q in
     let rel_name = "query_result" in
     let* stream = NT.execute_query plan ~rel_name
     in

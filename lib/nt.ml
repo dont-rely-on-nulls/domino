@@ -33,6 +33,7 @@ type plan_node =
      concrete join algorithm (e.g. HashJoin, NestedLoop, LeapFrog, &c) *)
   | Join of { left : plan_node; right : plan_node; on_attrs : string list }
   | Take of { limit : int; source : plan_node }
+  | Project of { attrs : string list; source : plan_node }
 
 module Error = struct
   open Condition
@@ -295,12 +296,25 @@ module Make (B : Backend) = struct
      Query execution via the Tarski VM plan builder
      -------------------------------------------------------------------------- *)
 
-  (* Recursively builds a C-side PlanWrapper from an OCaml plan_node tree.
-     On partial failure the partially-built plan is freed before returning Error. *)
+  (* Recursively builds a C side plan tree via rnt_plan_assemble.
+     On partial failure the partially built plan is freed before returning
+     Error (assemble itself frees child plans it took ownership of when it
+     fails, hopefully). *)
+  let make_action (op : int) : Nt_ffi.plan_action structure =
+    let act = Ctypes.make Nt_ffi.plan_action in
+    setf act Nt_ffi.action_operation op;
+    act
+
   let rec build_plan (plan : plan_node) : (nativeint, Condition.t) result =
     match plan with
     | Scan { path; _ } ->
-        let raw = Nt_ffi.rnt_plan_scan path in
+        let act = make_action Nt_ffi.fol_operation_scan in
+        let cpath = Nt_ffi.cstring path in
+        let scan = getf act Nt_ffi.action_scan in
+        setf scan Nt_ffi.scan_relation_path (Ctypes.CArray.start cpath);
+        let raw = Nt_ffi.rnt_plan_assemble act in
+        (* keep the C string alive across the call above *)
+        ignore (Sys.opaque_identity cpath);
         (match Nt_ffi.ptr_to_opt raw with
          | None   -> Error (Error.cursor_error ("plan_scan failed for path: " ^ path))
          | Some p -> Ok p)
@@ -311,20 +325,42 @@ module Make (B : Backend) = struct
              Nt_ffi.rnt_plan_free (Nt_ffi.nint_to_ptr lp);
              Error e
          | Ok rp ->
-             let raw = Nt_ffi.rnt_plan_join
-                         (Nt_ffi.nint_to_ptr lp) (Nt_ffi.nint_to_ptr rp) in
-             (* join takes ownership of both children — no manual free needed *)
-             (match Nt_ffi.ptr_to_opt raw with
+             let act = make_action Nt_ffi.fol_operation_join in
+             let join = getf act Nt_ffi.action_join in
+             setf join Nt_ffi.join_left (Nt_ffi.nint_to_ptr lp);
+             setf join Nt_ffi.join_right (Nt_ffi.nint_to_ptr rp);
+             (* assemble takes ownership of both children *)
+             (match Nt_ffi.ptr_to_opt (Nt_ffi.rnt_plan_assemble act) with
               | None   -> Error (Error.cursor_error "plan_join failed")
               | Some p -> Ok p))
     | Take { limit; source } ->
         let* sp = build_plan source in
-        let raw = Nt_ffi.rnt_plan_take
-                    (Nt_ffi.nint_to_ptr sp)
-                    (Unsigned.Size_t.of_int limit) in
-        (* take takes ownership of source — no manual free needed *)
-        (match Nt_ffi.ptr_to_opt raw with
+        let act = make_action Nt_ffi.fol_operation_take in
+        let take = getf act Nt_ffi.action_take in
+        setf take Nt_ffi.take_source (Nt_ffi.nint_to_ptr sp);
+        setf take Nt_ffi.take_limit (Unsigned.Size_t.of_int limit);
+        (* assemble takes ownership of source *)
+        (match Nt_ffi.ptr_to_opt (Nt_ffi.rnt_plan_assemble act) with
          | None   -> Error (Error.cursor_error "plan_take failed")
+         | Some p -> Ok p)
+    | Project { attrs; source } ->
+        let* sp = build_plan source in
+        let act = make_action Nt_ffi.fol_operation_project in
+        let proj = getf act Nt_ffi.action_project in
+        setf proj Nt_ffi.project_source (Nt_ffi.nint_to_ptr sp);
+        (* NULL-terminated const char**; backing arrays stay reachable until
+           assemble returns *)
+        let cattrs = List.map Nt_ffi.cstring attrs in
+        let arr =
+          Ctypes.CArray.of_list (Ctypes.ptr Ctypes.char)
+            (List.map Ctypes.CArray.start cattrs
+             @ [ Nt_ffi.null_char_ptr ])
+        in
+        setf proj Nt_ffi.project_attrs (Ctypes.CArray.start arr);
+        let raw = Nt_ffi.rnt_plan_assemble act in
+        ignore (Sys.opaque_identity (cattrs, arr));
+        (match Nt_ffi.ptr_to_opt raw with
+         | None   -> Error (Error.cursor_error "plan_project failed")
          | Some p -> Ok p)
 
   let execute_query (plan : plan_node) ~(rel_name : string) :
@@ -383,6 +419,78 @@ module Make (B : Backend) = struct
     Tuple.AttributeMap.fold
       (fun k v acc -> (k, Obj.obj v.Attribute.value) :: acc)
       tuple.Tuple.attributes []
+
+  (* --------------------------------------------------------------------------
+     Ephemeral relations
+
+     RNT invokes a registered generator through a C function pointer for as
+     long as the registry entry is aive. ctypes does not root the closure, so
+     it is retained here keyed by registered path; reregistration replaces
+     the previous retention. (A dropped view's closure is released on the
+     next replacement, leaking one closure per named view until then is an
+     accepted cost of this slice)
+     -------------------------------------------------------------------------- *)
+
+  let retained_generators
+      : (string,
+         unit Ctypes.ptr -> string -> Unsigned.size_t -> Unsigned.size_t ->
+         unit Ctypes.ptr -> int)
+        Hashtbl.t =
+    Hashtbl.create 16
+
+  let register_ephemeral ~(session : string) ~(named : bool) ~(name : string)
+      ~(generator : offset:int -> limit:int -> Tuple.materialized list)
+      ~(cardinality : Conventions.Cardinality.t) ~(identity : string)
+      ~(schema : Schema.t) ~(deps : string list) : (string, Condition.t) result =
+    (* The callback re-enters the RNT API (the generator typically executes a
+       VM plan over the base relations); the runtime is single threaded, so
+       this is safe. Exceptions must not cross the FFI boundary! *)
+    let cb _ctx _args offset limit sink =
+      try
+        let tuples =
+          generator
+            ~offset:(Unsigned.Size_t.to_int offset)
+            ~limit:(Unsigned.Size_t.to_int limit)
+        in
+        List.iter
+          (fun t ->
+            let kv =
+              materialized_to_kv t
+              |> List.map (fun (k, v) -> k ^ "=" ^ v)
+              |> String.concat "\n"
+            in
+            ignore (Nt_ffi.rnt_sink_emit sink (kv ^ "\n")))
+          tuples;
+        0
+      with _ -> -1
+    in
+    let schema_kv =
+      schema |> List.map (fun (n, d) -> n ^ "=" ^ d) |> String.concat "\n"
+    in
+    let card =
+      match cardinality with
+      | Conventions.Cardinality.Finite _          -> 0
+      | Conventions.Cardinality.ConstrainedFinite -> 1
+      | Conventions.Cardinality.AlephZero         -> 2
+      | Conventions.Cardinality.Continuum         -> 3
+    in
+    let (rc, path_opt) =
+      Nt_ffi.with_out_string (fun pp ->
+        Nt_ffi.rnt_register_ephemeral_relation session
+          (if named then 1 else 0) name cb (from_voidp void null) card
+          identity schema_kv (String.concat "\n" deps) pp)
+    in
+    match (rc, path_opt) with
+    | (0, Some path) ->
+        Hashtbl.replace retained_generators path cb;
+        Ok path
+    | (rc, _) -> Error (Error.handle_error rc ("register_ephemeral failed: " ^ name))
+
+  let drop_ephemeral ~(session : string) ~(name : string) :
+      (unit, Condition.t) result =
+    let rc = Nt_ffi.rnt_drop_ephemeral_relation session name in
+    if rc = 0 then Ok ()
+    else Error (Error.handle_error rc ("drop_ephemeral failed: " ^ name))
 
   (* --------------------------------------------------------------------------
      Multigroup / branch mutations
@@ -660,6 +768,13 @@ module type S = sig
 
   val open_relation  : branch_name:string -> mg_name:string -> rel_name:string -> (relation_handle, Condition.t) result
   val close_relation : relation_handle -> (unit, Condition.t) result
+
+  val register_ephemeral :
+    session:string -> named:bool -> name:string ->
+    generator:(offset:int -> limit:int -> Tuple.materialized list) ->
+    cardinality:Conventions.Cardinality.t -> identity:string ->
+    schema:Schema.t -> deps:string list -> (string, Condition.t) result
+  val drop_ephemeral : session:string -> name:string -> (unit, Condition.t) result
 
   val execute_query : plan_node -> rel_name:string -> (tuple_stream, Condition.t) result
   val stream_next   : tuple_stream -> (Tuple.materialized option, Condition.t) result
