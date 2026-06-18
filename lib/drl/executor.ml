@@ -19,27 +19,28 @@ module Make (NT : Nt.S) = struct
     | Ast.Base name ->
        let* fqn = Qualified_name.try_parse name in
        Ok (Nt.Scan { path = resolve fqn; args = [] })
+    | Ast.Const _ ->
+       Error (Error.unsupported_operator
+                "Const: literal relations not yet reachable by VM; use Base")
+    | Ast.Select _ ->
+       Error (Error.unsupported_operator "Select unsupported")
     | Ast.Join (on_attrs, q1, q2) ->
         let* p1 = compile resolve q1 in
         let* p2 = compile resolve q2 in
         Ok (Nt.Join { left = p1; right = p2; on_attrs })
-    | Ast.Take (n, q) ->
-        let* p = compile resolve q in
-        Ok (Nt.Take { limit = n; source = p })
-    | Ast.Const _ ->
-        Error (Error.unsupported_operator
-                 "Const: literal relations not yet reachable by VM; use Base")
-    | Ast.Project (attrs, query) ->
-       let* source = compile resolve query in
-       Ok (Nt.Project { attrs; source })
     | Ast.Cartesian (q1, q2) ->
        let* p1 = compile resolve q1 in
        let* p2 = compile resolve q2 in
-       Ok (Nt.Join { left = p1; right = p2; []})
-    | Ast.Rename _ -> Error (Error.unsupported_operator "TODO")
-    | _ ->
-        Error (Error.unsupported_operator
-          "Select/Union/Diff/Cartesian require VM operators not yet implemented")
+       Ok (Nt.Join { left = p1; right = p2; on_attrs = [] })
+    | Ast.Project (attrs, query) ->
+       let* source = compile resolve query in
+       Ok (Nt.Project { attrs; source })
+    | Ast.Rename _ -> Error (Error.unsupported_operator "Rename unsupported")
+    | Ast.Union _ -> Error (Error.unsupported_operator "Union unsupported")
+    | Ast.Diff _ -> Error (Error.unsupported_operator "Diff unsupported")
+    | Ast.Take (n, q) ->
+        let* p = compile resolve q in
+        Ok (Nt.Take { limit = n; source = p })
 
   let page_limit = 16
 
