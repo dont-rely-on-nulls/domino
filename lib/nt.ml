@@ -488,6 +488,10 @@ module Make (B : Backend) = struct
 
   let drop_ephemeral ~(session : string) ~(name : string) :
       (unit, Condition.t) result =
+    (* TODO: we leak the retained closure here. We can rebuild the path from
+       session + name (same formula as Sublanguage_context.ephemeral_path) and
+       Hashtbl.remove it, instead of holding onto one closure per dropped view
+       until a later re-registration overwrites it. *)
     let rc = Nt_ffi.rnt_drop_ephemeral_relation session name in
     if rc = 0 then Ok ()
     else Error (Error.handle_error rc ("drop_ephemeral failed: " ^ name))

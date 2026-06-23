@@ -195,7 +195,13 @@ module Make (NT : Nt.S) = struct
               ("Define target must be unqualified (session-scoped): " ^ target))
           else Ok ()
         in
+        (* TODO: redefining an existing name isn't guarded. Right now we lean on
+           Hashtbl.replace and whatever RNT does on collision. Pick replace or
+           error and enforce it here. *)
         let* schema = infer_schema ctx body in
+        (* TODO: every page drains the whole query and then filters down to the
+           window, so paging costs O(total * pages) and reruns the VM plan each
+           time. Push the offset/limit down or cache the result. *)
         let generator ~offset ~limit =
           match drain_query ctx body with
           | Error _    -> []
