@@ -8,7 +8,7 @@
       type = "github";
       owner = "mmagueta";
       repo = "RNT";
-      ref = "5174fc2";
+      ref = "663586b";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
