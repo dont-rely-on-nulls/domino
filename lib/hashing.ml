@@ -15,11 +15,9 @@ let bytes_to_hex bytes =
     let c = Bytes.get_uint8 bytes i in
     let hi = c lsr 4 in
     let lo = c land 0xf in
-    Bytes.set hex (i * 2) (Char.chr (if hi < 10 then hi + 48 else hi + 87));
-    Bytes.set hex
-      ((i * 2) + 1)
-      (Char.chr (if lo < 10 then lo + 48 else lo + 87))
-  done;
+    Bytes.set hex (i * 2) (Char.chr (if hi < 10 then hi + 48 else hi + 87)) ;
+    Bytes.set hex ((i * 2) + 1) (Char.chr (if lo < 10 then lo + 48 else lo + 87))
+  done ;
   Bytes.to_string hex
 
 (** Compute hash for a tuple. The hash is computed from:
@@ -35,11 +33,9 @@ let hash_tuple (tuple : Tuple.materialized) : Conventions.Hash.t =
     List.fold_left
       (fun acc (name, attr) ->
         (* Marshal the value and hex-encode to avoid null bytes *)
-        let value_bytes =
-          Marshal.to_bytes attr.Attribute.value [ Marshal.Closures ]
-        in
+        let value_bytes = Marshal.to_bytes attr.Attribute.value [Marshal.Closures] in
         let value_hex = bytes_to_hex value_bytes in
-        acc ^ name ^ ":" ^ value_hex ^ ";")
+        acc ^ name ^ ":" ^ value_hex ^ ";" )
       (tuple.relation ^ "|") sorted_attrs
   in
   Conventions.Hash.hash_text content

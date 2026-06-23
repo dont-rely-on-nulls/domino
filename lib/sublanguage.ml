@@ -1,4 +1,3 @@
-include Sublanguage_types
 (** Effect classification for sublanguage operations.
 
     Categorically:
@@ -15,6 +14,7 @@ include Sublanguage_types
       (Turing-complete; breaks the termination guarantee of DRL)
     - ACL -> a functor restriction: narrows the admissible natural
       transformations based on authorization context *)
+include Sublanguage_types
 
 module type S = sig
   include Configuration.CONFIGURABLE
@@ -22,6 +22,7 @@ module type S = sig
   type ast
 
   val name : string
+
   val parse_sexp : Sexplib.Sexp.t -> (ast, Condition.t) Result.t
 
   val execute : Sublanguage_context.t -> ast -> (result, Condition.t) Result.t

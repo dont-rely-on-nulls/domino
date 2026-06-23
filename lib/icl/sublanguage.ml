@@ -2,15 +2,19 @@ module Make (NT : Nt.S) = struct
   module Exec = Executor.Make (NT)
 
   type configuration = unit
+
   type ast = Ast.statement
 
   let name = "icl"
+
   let parse _ = Ok ()
 
   let parse_sexp sexp = Parser.of_sexp sexp
 
   let execute ctx ast =
     match Exec.execute ctx ast with
-    | Ok (delta, _msg) -> Ok (Sublanguage_types.Transition delta)
-    | Error e -> Error e
+    | Ok (delta, _msg) ->
+        Ok (Sublanguage_types.Transition delta)
+    | Error e ->
+        Error e
 end
