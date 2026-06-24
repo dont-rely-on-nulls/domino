@@ -20,27 +20,16 @@ let sexp_of_error e =
   let ( <+> ) key value = List [Atom key; value] in
   match e with
   (* TODO: think of a subset of common attributes that every error should have (message, etc)? *)
-  | RelationNotFound s ->
-      error "relation-not-found" ["relation" <+> Atom s]
-  | RelationAlreadyExists s ->
-      error "relation-already-exists" ["relation" <+> Atom s]
-  | TupleNotFound h ->
-      error "tuple-not-found" ["hash" <+> Atom h]
-  | DuplicateTuple h ->
-      error "duplicate-tuple" ["hash" <+> Atom h]
-  | ConstraintViolation s ->
-      error "constraint-violation" ["message" <+> Atom s]
-  | StorageError s ->
-      error "storage-error" ["message" <+> Atom s]
-  | UnrecognizedSublanguage s ->
-      error "unrecognized-sublanguage" ["tag" <+> Atom s]
-  | MalformedExpression s ->
-      error "malformed-expression" ["expression" <+> s]
-  | SublanguageError s ->
-      error "sublanguage-error" ["error" <+> s]
-  | SyntaxError s ->
-      error "syntax-error" ["message" <+> Atom s]
-  | MultigroupNotFound s ->
-      error "multigroup-not-found" ["name" <+> Atom s]
+  | RelationNotFound s -> error "relation-not-found" ["relation" <+> Atom s]
+  | RelationAlreadyExists s -> error "relation-already-exists" ["relation" <+> Atom s]
+  | TupleNotFound h -> error "tuple-not-found" ["hash" <+> Atom h]
+  | DuplicateTuple h -> error "duplicate-tuple" ["hash" <+> Atom h]
+  | ConstraintViolation s -> error "constraint-violation" ["message" <+> Atom s]
+  | StorageError s -> error "storage-error" ["message" <+> Atom s]
+  | UnrecognizedSublanguage s -> error "unrecognized-sublanguage" ["tag" <+> Atom s]
+  | MalformedExpression s -> error "malformed-expression" ["expression" <+> s]
+  | SublanguageError s -> error "sublanguage-error" ["error" <+> s]
+  | SyntaxError s -> error "syntax-error" ["message" <+> Atom s]
+  | MultigroupNotFound s -> error "multigroup-not-found" ["name" <+> Atom s]
   | Conflict {old_db; new_db} ->
       error "conflict" ["old" <+> Atom old_db#name; "new" <+> Atom new_db#name]

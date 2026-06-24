@@ -5,22 +5,15 @@
 class multigroup ~name:(init_name : Conventions.Name.t) =
   object (_self)
     val name : Conventions.Name.t = init_name
-
     val relations : Relation.relation BatMap.String.t = BatMap.String.empty
-
     val timestamp : float = Unix.gettimeofday ()
-
     method name = name
-
     method relations = relations
-
     method timestamp = timestamp
 
     (* TODO: a variant returning (Relation.relation, Condition.t) result *)
     method get_relation rel_name = BatMap.String.find_opt rel_name relations
-
     method get_relation_names = BatMap.String.fold (fun n _ acc -> n :: acc) relations []
-
     method has_relation rel_name = BatMap.String.mem rel_name relations
 
     method add_relation (rel : Relation.relation) =

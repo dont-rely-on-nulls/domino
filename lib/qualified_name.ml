@@ -25,8 +25,7 @@ exception Unqualified of string
 
 let parse (s : string) : t =
   match String.index_opt s ':' with
-  | None ->
-      raise (Unqualified s)
+  | None -> raise (Unqualified s)
   | Some i ->
       let mg = String.sub s 0 i in
       let name = String.sub s (i + 1) (String.length s - i - 1) in
@@ -36,5 +35,4 @@ let try_parse (s : string) : (t, Condition.t) result =
   try Ok (parse s) with Unqualified s -> Error (Error.unqualified_name s)
 
 let make ~mg ~name = {mg; name}
-
 let to_string {mg; name} = mg ^ ":" ^ name

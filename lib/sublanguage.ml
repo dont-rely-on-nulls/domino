@@ -22,8 +22,6 @@ module type S = sig
   type ast
 
   val name : string
-
   val parse_sexp : Sexplib.Sexp.t -> (ast, Condition.t) Result.t
-
   val execute : Sublanguage_context.t -> ast -> (result, Condition.t) Result.t
 end

@@ -7,12 +7,10 @@ type t = {mg: string; name: string}
 
 exception Unqualified of string
 
-val parse : string -> t
 (** Splits on the first [:]. Raises [Unqualified] when no mg segment is present
     (i.e. no colon, or empty mg / empty name). *)
+val parse : string -> t
 
 val try_parse : string -> (t, Condition.t) result
-
 val make : mg:string -> name:string -> t
-
 val to_string : t -> string

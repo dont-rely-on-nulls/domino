@@ -1,45 +1,40 @@
 module Wire = struct
   let split_once ch value =
     match String.index_opt value ch with
-    | None ->
-        None
+    | None -> None
     | Some index ->
         Some
           (String.sub value 0 index, String.sub value (index + 1) (String.length value - index - 1))
 
   let lines bytes =
-    bytes |> Bytes.to_string |> String.split_on_char '\n'
+    bytes
+    |> Bytes.to_string
+    |> String.split_on_char '\n'
     |> List.filter (fun line -> String.trim line <> "")
 
   let fields bytes =
     lines bytes
     |> List.filter_map (fun line -> split_once '=' line)
-    |> List.map (fun (key, value) -> (String.trim key, String.trim value))
+    |> List.map (fun (key, value) -> String.trim key, String.trim value)
 
   let require_type expected fields =
     match List.assoc_opt "type" fields with
-    | Some actual when actual = expected ->
-        ()
+    | Some actual when actual = expected -> ()
     | Some actual ->
         invalid_arg (Printf.sprintf "expected storable type %S, got %S" expected actual)
-    | None ->
-        invalid_arg "missing storable type"
+    | None -> invalid_arg "missing storable type"
 
   let values key fields = List.filter_map (fun (k, v) -> if k = key then Some v else None) fields
 
   let required key fields =
     match List.assoc_opt key fields with
-    | Some value ->
-        value
-    | None ->
-        invalid_arg ("missing storable field: " ^ key)
+    | Some value -> value
+    | None -> invalid_arg ("missing storable field: " ^ key)
 
   let attribute value =
     match split_once ':' value with
-    | Some pair ->
-        pair
-    | None ->
-        invalid_arg ("invalid attribute field: " ^ value)
+    | Some pair -> pair
+    | None -> invalid_arg ("invalid attribute field: " ^ value)
 
   let encode fields =
     fields
@@ -53,12 +48,12 @@ module Tuple = struct
 
   let to_bytes tuple =
     Wire.encode
-      ( [("type", "tuple"); ("relation", tuple.relation)]
-      @ List.map (fun (name, value) -> ("attribute", name ^ ":" ^ value)) tuple.attributes )
+      ( ["type", "tuple"; "relation", tuple.relation]
+      @ List.map (fun (name, value) -> "attribute", name ^ ":" ^ value) tuple.attributes )
 
   let of_bytes bytes =
     let fields = Wire.fields bytes in
-    Wire.require_type "tuple" fields ;
+    Wire.require_type "tuple" fields;
     { relation= Wire.required "relation" fields;
       attributes= List.map Wire.attribute (Wire.values "attribute" fields) }
 end
@@ -73,13 +68,15 @@ module Relation = struct
 
   let to_bytes relation =
     Wire.encode
-      ( [ ("type", "relation"); ("name", relation.name); ("kind", "stored");
-          ("tree_pointer", relation.tree_pointer) ]
-      @ List.map (fun (name, domain) -> ("attribute", name ^ ":" ^ domain)) relation.schema )
+      ( [ "type", "relation";
+          "name", relation.name;
+          "kind", "stored";
+          "tree_pointer", relation.tree_pointer ]
+      @ List.map (fun (name, domain) -> "attribute", name ^ ":" ^ domain) relation.schema )
 
   let of_bytes bytes =
     let fields = Wire.fields bytes in
-    Wire.require_type "relation" fields ;
+    Wire.require_type "relation" fields;
     { name= Wire.required "name" fields;
       schema= List.map Wire.attribute (Wire.values "attribute" fields);
       tree_pointer= Option.value (List.assoc_opt "tree_pointer" fields) ~default:"" }
@@ -104,11 +101,10 @@ module Multigroup = struct
 
   let parse_relation value =
     match Wire.split_once '|' value with
-    | None ->
-        {Relation.name= value; schema= []; tree_pointer= ""}
+    | None -> {Relation.name= value; schema= []; tree_pointer= ""}
     | Some (name, rest) ->
         let attrs_str, tree_pointer =
-          match Wire.split_once '|' rest with None -> (rest, "") | Some (a, tp) -> (a, tp)
+          match Wire.split_once '|' rest with None -> rest, "" | Some (a, tp) -> a, tp
         in
         let schema =
           if attrs_str = "" then []
@@ -118,12 +114,12 @@ module Multigroup = struct
 
   let to_bytes multigroup =
     Wire.encode
-      ( [("type", "multigroup"); ("name", multigroup.name)]
-      @ List.map (fun relation -> ("relation", relation_value relation)) multigroup.relations )
+      ( ["type", "multigroup"; "name", multigroup.name]
+      @ List.map (fun relation -> "relation", relation_value relation) multigroup.relations )
 
   let of_bytes bytes =
     let fields = Wire.fields bytes in
-    Wire.require_type "multigroup" fields ;
+    Wire.require_type "multigroup" fields;
     { name= Wire.required "name" fields;
       relations= List.map parse_relation (Wire.values "relation" fields) }
 end

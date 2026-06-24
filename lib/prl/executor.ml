@@ -4,7 +4,6 @@ module Make (NT : Nt.S) = struct
 
     (* TODO: more structure *)
     let parse_error msg = condition "parse-error" msg empty
-
     let runtime_error msg = condition "runtime-error" msg empty
 
     let unknown_plugin_symbol name =

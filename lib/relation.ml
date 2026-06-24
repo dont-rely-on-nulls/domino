@@ -11,7 +11,6 @@
 
 module RelationConstraint = struct
   type name = string
-
   type t = (name * Constraint.t) list
 end
 
@@ -46,36 +45,24 @@ module Provenance = struct
          BatMap.String.empty attributes )
 
   let empty : t = Sources BatMap.String.empty
-
   let undefined : t = Undefined
 end
 
 type producer = (string * Conventions.AbstractValue.t) list -> Generator.t
-
 type kind = [`Stored | `Ephemeral | `Pseudo | `Domain]
 
 class virtual relation =
   object (_self)
     method virtual kind : kind
-
     method virtual name : Conventions.Name.t
-
     method virtual schema : Schema.t
-
     method virtual hash : Conventions.Hash.t
-
     method virtual constraints : RelationConstraint.t option
-
     method virtual cardinality : Conventions.Cardinality.t
-
     method virtual lineage : Lineage.t
-
     method virtual provenance : Provenance.t
-
     method virtual membership_criteria : Tuple.t -> bool
-
     method virtual timestamp : float
-
     method virtual serialize : unit -> Storable.Relation.t
   end
 
@@ -86,21 +73,13 @@ class stored ~name:(init_name : Conventions.Name.t) ~schema:(init_schema : Schem
   ~lineage:(init_lineage : Lineage.t option) ~provenance:(init_provenance : Provenance.t option) =
   object
     inherit relation
-
     val name = init_name
-
     val schema = init_schema
-
     val tree_pointer : Conventions.Hash.t option = None
-
     val constraints = init_constraints
-
     val cardinality = init_cardinality
-
     val membership_criteria = init_membership
-
     val timestamp = Unix.gettimeofday ()
-
     val lineage = Option.value init_lineage ~default:(Lineage.Base init_name)
 
     val provenance =
@@ -108,31 +87,18 @@ class stored ~name:(init_name : Conventions.Name.t) ~schema:(init_schema : Schem
         ~default:(Provenance.base ~relation:init_name ~attributes:(Schema.attributes init_schema))
 
     method name = name
-
     method kind = `Stored
-
     method hash = Option.value tree_pointer ~default:""
-
     method schema = schema
-
     method tree_pointer = tree_pointer
-
     method constraints = constraints
-
     method cardinality = cardinality
-
     method membership_criteria = membership_criteria
-
     method timestamp = timestamp
-
     method lineage = lineage
-
     method provenance = provenance
-
     method set_tree_pointer tp = {<tree_pointer = tp; timestamp = Unix.gettimeofday ()>}
-
     method set_cardinality c = {<cardinality = c>}
-
     method set_constraints c = {<constraints = c>}
 
     method serialize () =
@@ -143,47 +109,26 @@ class ephemeral ~name:(init_name : Conventions.Name.t) ~schema ~constraints ~car
   ~membership_criteria ~lineage ~provenance ~generator:(init_generator : Generator.t) =
   object
     inherit relation
-
     val name : Conventions.Name.t = init_name
-
     val schema : Schema.t = schema
-
     val generator : Generator.t = init_generator
-
     val constraints = constraints
-
     val cardinality = cardinality
-
     val membership_criteria = membership_criteria
-
     val lineage = Option.value lineage ~default:(Lineage.Base init_name)
-
     val provenance = Option.value provenance ~default:(Provenance.Base init_name)
-
     val timestamp = Unix.gettimeofday ()
-
     method name = name
-
     method kind = `Ephemeral
-
     method schema = schema
-
     method generator = generator
-
     method hash = Conventions.Hash.hash_text (name ^ "ephemeral")
-
     method constraints = constraints
-
     method cardinality = cardinality
-
     method membership_criteria = membership_criteria
-
     method lineage = lineage
-
     method provenance = provenance
-
     method timestamp = timestamp
-
     method serialize () = failwith "Ephemeral relations cannot be serialized directly"
   end
 
@@ -191,48 +136,29 @@ class pseudo ~name:(init_name : Conventions.Name.t) ~schema ~constraints ~cardin
   ~membership_criteria ~lineage ~provenance ~producer:(init_producer : producer) =
   object
     inherit relation
-
     val name = init_name
-
     val schema = schema
-
     val producer = init_producer
-
     val constraints = constraints
-
     val cardinality = cardinality
-
     val membership_criteria = membership_criteria
-
     val lineage = Option.value lineage ~default:(Lineage.Base init_name)
-
     val provenance = provenance
-
     val timestamp = Unix.gettimeofday ()
-
     method name = name
-
     method kind = `Pseudo
-
     method schema = schema
-
     method producer = producer
 
     method as_generator (bindings : (string * Conventions.AbstractValue.t) list) : Generator.t =
       producer bindings
 
     method hash = Conventions.Hash.hash_text (name ^ "pseudo")
-
     method constraints = constraints
-
     method cardinality = cardinality
-
     method membership_criteria = membership_criteria
-
     method lineage = lineage
-
     method provenance = provenance
-
     method timestamp = timestamp
 
     (* TODO: Remove this from the virtual definition *)

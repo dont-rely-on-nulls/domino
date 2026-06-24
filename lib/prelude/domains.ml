@@ -14,7 +14,7 @@ let cantor_unpair n =
   let t = w * (w + 1) / 2 in
   let b = n - t in
   let a = w - b in
-  (a, b)
+  a, b
 
 (** Integer domain: all integers, enumerated via a bijection from the naturals.
     Schema: [value: integer]. *)
@@ -23,16 +23,13 @@ let integer : Relation.domain =
     match position with
     | Some n ->
         let v = nat_to_int n in
-        let attributes = Tuple.AttributeMap.of_list [("value", Obj.magic v)] in
+        let attributes = Tuple.AttributeMap.of_list ["value", Obj.magic v] in
         Generator.Value (Tuple.make_materialized ~relation:"integer" ~attributes, generator)
-    | None ->
-        Generator.Error "Cannot produce a randomly enumerated value for the integer domain."
+    | None -> Generator.Error "Cannot produce a randomly enumerated value for the integer domain."
   in
   let membership_criteria : Tuple.t -> bool = function
-    | Tuple.Materialized _ ->
-        true
-    | Tuple.NonMaterialized _ ->
-        false
+    | Tuple.Materialized _ -> true
+    | Tuple.NonMaterialized _ -> false
   in
   let schema = Schema.empty |> Schema.add "value" "integer" in
   new Relation.domain
@@ -45,20 +42,16 @@ let natural : Relation.domain =
   let rec generator (position : int option) : Generator.result =
     match position with
     | Some n ->
-        let attributes = Tuple.AttributeMap.of_list [("value", Obj.magic n)] in
+        let attributes = Tuple.AttributeMap.of_list ["value", Obj.magic n] in
         Generator.Value (Tuple.make_materialized ~relation:"natural" ~attributes, generator)
-    | None ->
-        Generator.Error "Cannot produce a randomly enumerated value for the natural domain."
+    | None -> Generator.Error "Cannot produce a randomly enumerated value for the natural domain."
   in
   let membership_criteria : Tuple.t -> bool = function
     | Tuple.Materialized m -> (
       match Tuple.AttributeMap.find_opt "value" m.attributes with
-      | Some attr ->
-          (Obj.magic attr : int) >= 0
-      | None ->
-          false )
-    | Tuple.NonMaterialized _ ->
-        false
+      | Some attr -> (Obj.magic attr : int) >= 0
+      | None -> false )
+    | Tuple.NonMaterialized _ -> false
   in
   let schema = Schema.empty |> Schema.add "value" "natural" in
   new Relation.domain
@@ -78,21 +71,17 @@ let rational : Relation.domain =
         (* Map b -> non-zero integer: 0->1, 1->-1, 2->2, 3->-2, … *)
         let den = if b mod 2 = 0 then (b / 2) + 1 else -((b + 1) / 2) in
         let attributes =
-          Tuple.AttributeMap.of_list [("numerator", Obj.magic num); ("denominator", Obj.magic den)]
+          Tuple.AttributeMap.of_list ["numerator", Obj.magic num; "denominator", Obj.magic den]
         in
         Generator.Value (Tuple.make_materialized ~relation:"rational" ~attributes, generator)
-    | None ->
-        Generator.Error "Cannot produce a randomly enumerated value for the rational domain."
+    | None -> Generator.Error "Cannot produce a randomly enumerated value for the rational domain."
   in
   let membership_criteria : Tuple.t -> bool = function
     | Tuple.Materialized m -> (
       match Tuple.AttributeMap.find_opt "denominator" m.attributes with
-      | Some attr ->
-          (Obj.magic attr : int) <> 0
-      | None ->
-          false )
-    | Tuple.NonMaterialized _ ->
-        false
+      | Some attr -> (Obj.magic attr : int) <> 0
+      | None -> false )
+    | Tuple.NonMaterialized _ -> false
   in
   (* Note: Additionally to the membership criteria, we add the constraint here as this relation
      can be further dismembered, rendering the denominator into a lone integer, that should
@@ -118,10 +107,8 @@ let string : Relation.domain =
     Generator.Error "Strings are not enumerable."
   in
   let membership_criteria : Tuple.t -> bool = function
-    | Tuple.Materialized _ ->
-        true
-    | Tuple.NonMaterialized _ ->
-        false
+    | Tuple.Materialized _ -> true
+    | Tuple.NonMaterialized _ -> false
   in
   let schema = Schema.empty |> Schema.add "value" "string" in
   new Relation.domain

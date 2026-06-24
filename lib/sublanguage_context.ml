@@ -55,19 +55,15 @@ module Make (NT : Nt.S) = struct
       switch_branch=
         (fun name ->
           match br#close () with
-          | Error e ->
-              Error e
+          | Error e -> Error e
           | Ok () ->
             begin match Branch.open_branch claims name with
             | Error e ->
                 begin match Branch.open_branch claims "master" with
-                | Ok mbr ->
-                    session#set_branch mbr
-                | Error _ ->
-                    ()
-                end ;
+                | Ok mbr -> session#set_branch mbr
+                | Error _ -> ()
+                end;
                 Error e
-            | Ok new_br ->
-                session#set_branch new_br ; Ok new_br#multigroups
+            | Ok new_br -> session#set_branch new_br; Ok new_br#multigroups
             end ) }
 end

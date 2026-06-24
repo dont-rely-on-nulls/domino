@@ -64,12 +64,9 @@ let insert_section ~expected acc key body =
     if Utilities.StringMap.mem key acc then Error (Error.duplicate_section key) else Ok ()
   in
   match body with
-  | [subtree] ->
-      Ok (Utilities.StringMap.add key subtree acc)
-  | [] ->
-      Error (Error.empty_section key)
-  | _ ->
-      Error (Error.multiple_values_in_section key)
+  | [subtree] -> Ok (Utilities.StringMap.add key subtree acc)
+  | [] -> Error (Error.empty_section key)
+  | _ -> Error (Error.multiple_values_in_section key)
 
 (** [(server ...)] sexp -> section map. Rejects unknown/duplicate keys. *)
 let parse_server ~expected_keys (sexp : Sexplib.Sexp.t) : (t, Condition.t) result =
@@ -80,35 +77,27 @@ let parse_server ~expected_keys (sexp : Sexplib.Sexp.t) : (t, Condition.t) resul
         List.fold_right Utilities.StringSet.add expected_keys Utilities.StringSet.empty
       in
       let rec go acc = function
-        | [] ->
-            Ok acc
+        | [] -> Ok acc
         | List (Atom key :: body) :: rest ->
             Result.bind (insert_section ~expected acc key body) (fun acc -> go acc rest)
-        | bad :: _ ->
-            Error (Error.malformed_section bad)
+        | bad :: _ -> Error (Error.malformed_section bad)
       in
       go Utilities.StringMap.empty sections
-  | _ ->
-      Error (Error.invalid_toplevel sexp)
+  | _ -> Error (Error.invalid_toplevel sexp)
 
 (** Read a file from disk and run [parse_server] on it. *)
 let load ~expected_keys (path : string) : (t, Condition.t) result =
   match Sexplib.Sexp.load_sexp path with
-  | sexp ->
-      parse_server ~expected_keys sexp
-  | exception Sys_error msg ->
-      Error (Error.failed_to_load_file path msg)
-  | exception Failure msg ->
-      Error (Error.syntax_error path msg)
+  | sexp -> parse_server ~expected_keys sexp
+  | exception Sys_error msg -> Error (Error.failed_to_load_file path msg)
+  | exception Failure msg -> Error (Error.syntax_error path msg)
 
 (** [(tag field1 ...)] -> [(tag, List [field1; ...])]. *)
 let extract_tagged_section (sexp : Sexplib.Sexp.t) : (string * Sexplib.Sexp.t, Condition.t) result =
   let open Sexplib.Sexp in
   match sexp with
-  | List (Atom tag :: body) ->
-      Ok (tag, List body)
-  | _ ->
-      Error (Error.malformed_section sexp)
+  | List (Atom tag :: body) -> Ok (tag, List body)
+  | _ -> Error (Error.malformed_section sexp)
 
 (** Look up a section by name, extract its tag, and check the tag is allowed. *)
 let require_section ~(name : string) ~(valid_tags : string list) (config : t) :

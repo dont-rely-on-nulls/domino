@@ -5,14 +5,10 @@ type value = Int of int | Float of float | Str of string | Bool of bool [@@deriv
 
 (** Convert an AST value to an AbstractValue.t (Obj.t) via Obj.repr *)
 let value_to_abstract : value -> Conventions.AbstractValue.t = function
-  | Int n ->
-      Obj.repr n
-  | Float f ->
-      Obj.repr f
-  | Str s ->
-      Obj.repr s
-  | Bool b ->
-      Obj.repr b
+  | Int n -> Obj.repr n
+  | Float f -> Obj.repr f
+  | Str s -> Obj.repr s
+  | Bool b -> Obj.repr b
 
 type direction = Asc | Desc [@@deriving sexp]
 

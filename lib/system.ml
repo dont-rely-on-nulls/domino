@@ -8,7 +8,6 @@ type transport_parcel =
   | TransportParcel : (module Transport.TRANSPORT with type t = 't) * 't -> transport_parcel
 
 type nt_provider = Sexplib.Sexp.t -> (nt_parcel, Condition.t) result
-
 type transport_provider = Sexplib.Sexp.t -> (transport_parcel, Condition.t) result
 
 type registry =
@@ -32,7 +31,6 @@ let registry : registry =
           let path = match sexp with Sexplib.Sexp.(List [Atom p]) -> p | _ -> ":memory:" in
           let module M = Nt.Make (struct
             let driver = "sqlite"
-
             let init_arg = path
           end) in
           Ok (NtParcel (module M : Nt.S)) );

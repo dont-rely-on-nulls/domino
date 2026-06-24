@@ -11,13 +11,9 @@ module Make (NT : Nt.S) = struct
   class session ~(sid : string) ~(branch : B.branch) =
     object
       val mutable br : B.branch = branch
-
       method id = sid
-
       method branch = br
-
       method snapshot = br#tip
-
       method tip = br#tip
 
       (* Switch to a different branch within the same session. *)

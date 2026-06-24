@@ -6,8 +6,7 @@ module Test_Session = Session.Make (Test_Nt)
 module Test_Ctx = Sublanguage_context.Make (Test_Nt)
 
 let ( let* ) = Result.bind
-
-let with_proper_attrs tuples = List.map (fun (name, value) -> (name, {Attribute.value})) tuples
+let with_proper_attrs tuples = List.map (fun (name, value) -> name, {Attribute.value}) tuples
 
 let tuple_from_attrs name attrs =
   {Tuple.relation= name; attributes= Tuple.AttributeMap.of_list (with_proper_attrs attrs)}
@@ -17,14 +16,14 @@ let seed_fixture (branch : Test_Branch.branch) (multigroup : Management.Multigro
   let branch_handle = branch#branch_handle in
   let branch_name = branch#name in
   let mg_name = multigroup#name in
-  let relation ~name ~schema ~tuples = (name, schema, List.map (tuple_from_attrs name) tuples) in
+  let relation ~name ~schema ~tuples = name, schema, List.map (tuple_from_attrs name) tuples in
   let fixture =
     [ relation ~name:"fruit"
         ~schema:(Schema.empty |> Schema.add "name" "string" |> Schema.add "flavour" "string")
         ~tuples:
-          [ [("name", Obj.magic "peach"); ("flavour", Obj.magic "sweet")];
-            [("name", Obj.magic "grape"); ("flavour", Obj.magic "sweet")];
-            [("name", Obj.magic "lemon"); ("flavour", Obj.magic "sour")] ] ]
+          [ ["name", Obj.magic "peach"; "flavour", Obj.magic "sweet"];
+            ["name", Obj.magic "grape"; "flavour", Obj.magic "sweet"];
+            ["name", Obj.magic "lemon"; "flavour", Obj.magic "sour"] ] ]
   in
   let create (name, schema, tuples) =
     let* _ = Test_Nt.create_relation branch_handle multigroup ~branch_name ~name ~schema in
@@ -44,7 +43,7 @@ let make_fixture () =
   let branch = session#branch in
   let multigroup =
     begin
-      branch#add_multigroup ~name:multigroup_name ;
+      branch#add_multigroup ~name:multigroup_name;
       branch#mg_of multigroup_name |> Option.get
     end
   in
@@ -63,13 +62,10 @@ module Error = struct
 end
 
 let assert_ok = function
-  | Ok x ->
-      x
-  | Error condition ->
-      raise (Invalid_argument (Condition.to_string condition))
+  | Ok x -> x
+  | Error condition -> raise (Invalid_argument (Condition.to_string condition))
 
 let drain {Sublanguage_types.rows; _} = rows (* TODO *)
-
 let contains tuple ts = List.find_opt (Tuple.materialized_equal tuple) ts |> Option.is_some
 
 let ensure_contains t ts =
@@ -79,19 +75,17 @@ let ensure_contains t ts =
       else Error (Error.expected_tuple (Tuple.sexp_of_materialized tuple)) )
 
 let with_cursor = function
-  | Sublanguage_types.Cursor cursor ->
-      Ok (drain cursor)
-  | _ ->
-      Error (Error.invalid_argument "Expected cursor")
+  | Sublanguage_types.Cursor cursor -> Ok (drain cursor)
+  | _ -> Error (Error.invalid_argument "Expected cursor")
 
 let%test_unit "Ensure that `base` translates to a scan over its argument" =
   begin
     let* ctx = make_fixture () in
     let* result = Test_Drl.execute ctx (Drl.Ast.Base "fixture:fruit") in
     with_cursor result
-    |> ensure_contains [("name", Obj.magic "peach"); ("flavour", Obj.magic "sweet")]
-    |> ensure_contains [("name", Obj.magic "grape"); ("flavour", Obj.magic "sweet")]
-    |> ensure_contains [("name", Obj.magic "lemon"); ("flavour", Obj.magic "sour")]
+    |> ensure_contains ["name", Obj.magic "peach"; "flavour", Obj.magic "sweet"]
+    |> ensure_contains ["name", Obj.magic "grape"; "flavour", Obj.magic "sweet"]
+    |> ensure_contains ["name", Obj.magic "lemon"; "flavour", Obj.magic "sour"]
     |> Result.map ignore
   end
   |> assert_ok

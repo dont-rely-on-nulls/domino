@@ -15,9 +15,9 @@ let bytes_to_hex bytes =
     let c = Bytes.get_uint8 bytes i in
     let hi = c lsr 4 in
     let lo = c land 0xf in
-    Bytes.set hex (i * 2) (Char.chr (if hi < 10 then hi + 48 else hi + 87)) ;
+    Bytes.set hex (i * 2) (Char.chr (if hi < 10 then hi + 48 else hi + 87));
     Bytes.set hex ((i * 2) + 1) (Char.chr (if lo < 10 then lo + 48 else lo + 87))
-  done ;
+  done;
   Bytes.to_string hex
 
 (** Compute hash for a tuple. The hash is computed from:

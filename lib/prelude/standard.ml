@@ -19,12 +19,9 @@ let make_comparison ~name ~domain_name ~pred ~cardinality ~generator =
         ( Tuple.AttributeMap.find_opt "left" m.attributes,
           Tuple.AttributeMap.find_opt "right" m.attributes )
       with
-      | Some l, Some r ->
-          pred (Stdlib.compare l.Attribute.value r.Attribute.value)
-      | _ ->
-          false )
-    | Tuple.NonMaterialized _ ->
-        false
+      | Some l, Some r -> pred (Stdlib.compare l.Attribute.value r.Attribute.value)
+      | _ -> false )
+    | Tuple.NonMaterialized _ -> false
   in
   new Relation.ephemeral
     ~name ~schema ~constraints:None ~cardinality ~generator ~membership_criteria ~provenance:None
@@ -36,7 +33,7 @@ let pair_of_nat_lt n =
   let r = int_of_float (floor ((1. +. sqrt (1. +. (8. *. nf))) /. 2.)) in
   let t_prev = r * (r - 1) / 2 in
   let left = n - t_prev in
-  (left, r)
+  left, r
 
 (** Enumerate all pairs (a, b) via Cantor pairing. *)
 let cantor_pair_of_nat n =
@@ -44,7 +41,7 @@ let cantor_pair_of_nat n =
   let t = w * (w + 1) / 2 in
   let b = n - t in
   let a = w - b in
-  (a, b)
+  a, b
 
 let less_than_natural : Relation.ephemeral =
   let rec generator (position : int option) : Generator.result =
@@ -52,11 +49,10 @@ let less_than_natural : Relation.ephemeral =
     | Some position ->
         let left, right = pair_of_nat_lt position in
         let attributes : Attribute.materialized Tuple.AttributeMap.t =
-          Tuple.AttributeMap.of_list [("left", mk left); ("right", mk right)]
+          Tuple.AttributeMap.of_list ["left", mk left; "right", mk right]
         in
         Generator.Value (Tuple.make_materialized ~relation:"less_than" ~attributes, generator)
-    | None ->
-        Error "Cannot produce a randomly enumerated value for less_than over naturals."
+    | None -> Error "Cannot produce a randomly enumerated value for less_than over naturals."
   in
   make_comparison ~name:"natural_natural_less_than" ~domain_name:"natural"
     ~pred:(fun c -> c < 0)
@@ -70,11 +66,10 @@ let less_than_or_equal_natural : Relation.ephemeral =
         (* a <= b is always true when a <= b; we enumerate all (a, b) with a <= b *)
         let left = min a b in
         let right = max a b in
-        let attributes = Tuple.AttributeMap.of_list [("left", mk left); ("right", mk right)] in
+        let attributes = Tuple.AttributeMap.of_list ["left", mk left; "right", mk right] in
         Generator.Value
           (Tuple.make_materialized ~relation:"less_than_or_equal" ~attributes, generator)
-    | None ->
-        Error "Cannot enumerate less_than_or_equal randomly."
+    | None -> Error "Cannot enumerate less_than_or_equal randomly."
   in
   make_comparison ~name:"natural_natural_less_than_or_equal" ~domain_name:"natural"
     ~pred:(fun c -> c <= 0)
@@ -86,10 +81,9 @@ let greater_than_natural : Relation.ephemeral =
     | Some n ->
         let left, right = pair_of_nat_lt n in
         (* Swap: right > left *)
-        let attributes = Tuple.AttributeMap.of_list [("left", mk right); ("right", mk left)] in
+        let attributes = Tuple.AttributeMap.of_list ["left", mk right; "right", mk left] in
         Generator.Value (Tuple.make_materialized ~relation:"greater_than" ~attributes, generator)
-    | None ->
-        Error "Cannot enumerate greater_than randomly."
+    | None -> Error "Cannot enumerate greater_than randomly."
   in
   make_comparison ~name:"natural_natural_greater_than" ~domain_name:"natural"
     ~pred:(fun c -> c > 0)
@@ -102,11 +96,10 @@ let greater_than_or_equal_natural : Relation.ephemeral =
         let a, b = cantor_pair_of_nat n in
         let left = max a b in
         let right = min a b in
-        let attributes = Tuple.AttributeMap.of_list [("left", mk left); ("right", mk right)] in
+        let attributes = Tuple.AttributeMap.of_list ["left", mk left; "right", mk right] in
         Generator.Value
           (Tuple.make_materialized ~relation:"greater_than_or_equal" ~attributes, generator)
-    | None ->
-        Error "Cannot enumerate greater_than_or_equal randomly."
+    | None -> Error "Cannot enumerate greater_than_or_equal randomly."
   in
   make_comparison ~name:"natural_natural_greater_than_or_equal" ~domain_name:"natural"
     ~pred:(fun c -> c >= 0)
@@ -116,10 +109,9 @@ let equal_natural : Relation.ephemeral =
   let rec generator (position : int option) : Generator.result =
     match position with
     | Some n ->
-        let attributes = Tuple.AttributeMap.of_list [("left", mk n); ("right", mk n)] in
+        let attributes = Tuple.AttributeMap.of_list ["left", mk n; "right", mk n] in
         Generator.Value (Tuple.make_materialized ~relation:"equal" ~attributes, generator)
-    | None ->
-        Error "Cannot enumerate equal randomly."
+    | None -> Error "Cannot enumerate equal randomly."
   in
   make_comparison ~name:"natural_natural_equal" ~domain_name:"natural"
     ~pred:(fun c -> c = 0)
@@ -130,11 +122,10 @@ let not_equal_natural : Relation.ephemeral =
     match position with
     | Some n ->
         let a, b = cantor_pair_of_nat n in
-        let left, right = if a = b then (a, b + 1) else (a, b) in
-        let attributes = Tuple.AttributeMap.of_list [("left", mk left); ("right", mk right)] in
+        let left, right = if a = b then a, b + 1 else a, b in
+        let attributes = Tuple.AttributeMap.of_list ["left", mk left; "right", mk right] in
         Generator.Value (Tuple.make_materialized ~relation:"not_equal" ~attributes, generator)
-    | None ->
-        Error "Cannot enumerate not_equal randomly."
+    | None -> Error "Cannot enumerate not_equal randomly."
   in
   make_comparison ~name:"natural_natural_not_equal" ~domain_name:"natural"
     ~pred:(fun c -> c <> 0)
@@ -142,7 +133,9 @@ let not_equal_natural : Relation.ephemeral =
 
 let plus_natural : Relation.ephemeral =
   let schema =
-    Schema.empty |> Schema.add "a" "natural" |> Schema.add "b" "natural"
+    Schema.empty
+    |> Schema.add "a" "natural"
+    |> Schema.add "b" "natural"
     |> Schema.add "sum" "natural"
   in
   let rec generator (position : int option) : Generator.result =
@@ -150,10 +143,9 @@ let plus_natural : Relation.ephemeral =
     | Some n ->
         let a, b = cantor_pair_of_nat n in
         let s = a + b in
-        let attributes = Tuple.AttributeMap.of_list [("a", mk a); ("b", mk b); ("sum", mk s)] in
+        let attributes = Tuple.AttributeMap.of_list ["a", mk a; "b", mk b; "sum", mk s] in
         Generator.Value (Tuple.make_materialized ~relation:"plus" ~attributes, generator)
-    | None ->
-        Error "Cannot enumerate plus randomly."
+    | None -> Error "Cannot enumerate plus randomly."
   in
   let membership_criteria : Tuple.t -> bool =
     (* fun _tree_of ->  *)
@@ -167,10 +159,8 @@ let plus_natural : Relation.ephemeral =
       | Some a, Some b, Some s ->
           (Obj.magic a.Attribute.value : int) + (Obj.magic b.Attribute.value : int)
           = (Obj.magic s.Attribute.value : int)
-      | _ ->
-          false )
-    | Tuple.NonMaterialized _ ->
-        false
+      | _ -> false )
+    | Tuple.NonMaterialized _ -> false
   in
   new Relation.ephemeral
     ~name:"natural_plus" ~schema ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
@@ -178,7 +168,9 @@ let plus_natural : Relation.ephemeral =
 
 let times_natural : Relation.ephemeral =
   let schema =
-    Schema.empty |> Schema.add "a" "natural" |> Schema.add "b" "natural"
+    Schema.empty
+    |> Schema.add "a" "natural"
+    |> Schema.add "b" "natural"
     |> Schema.add "product" "natural"
   in
   let rec generator (position : int option) : Generator.result =
@@ -186,10 +178,9 @@ let times_natural : Relation.ephemeral =
     | Some n ->
         let a, b = cantor_pair_of_nat n in
         let p = a * b in
-        let attributes = Tuple.AttributeMap.of_list [("a", mk a); ("b", mk b); ("product", mk p)] in
+        let attributes = Tuple.AttributeMap.of_list ["a", mk a; "b", mk b; "product", mk p] in
         Generator.Value (Tuple.make_materialized ~relation:"times" ~attributes, generator)
-    | None ->
-        Error "Cannot enumerate times randomly."
+    | None -> Error "Cannot enumerate times randomly."
   in
   let membership_criteria : Tuple.t -> bool =
     (* fun _tree_of -> *)
@@ -203,10 +194,8 @@ let times_natural : Relation.ephemeral =
       | Some a, Some b, Some p ->
           (Obj.magic a.Attribute.value : int) * (Obj.magic b.Attribute.value : int)
           = (Obj.magic p.Attribute.value : int)
-      | _ ->
-          false )
-    | Tuple.NonMaterialized _ ->
-        false
+      | _ -> false )
+    | Tuple.NonMaterialized _ -> false
   in
   new Relation.ephemeral
     ~name:"natural_times" ~schema ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
@@ -214,7 +203,9 @@ let times_natural : Relation.ephemeral =
 
 let minus_natural : Relation.ephemeral =
   let schema =
-    Schema.empty |> Schema.add "a" "natural" |> Schema.add "b" "natural"
+    Schema.empty
+    |> Schema.add "a" "natural"
+    |> Schema.add "b" "natural"
     |> Schema.add "difference" "natural"
   in
   let rec generator (position : int option) : Generator.result =
@@ -223,12 +214,9 @@ let minus_natural : Relation.ephemeral =
         (* Enumerate pairs where a >= b, so difference >= 0 *)
         let b, diff = cantor_pair_of_nat n in
         let a = b + diff in
-        let attributes =
-          Tuple.AttributeMap.of_list [("a", mk a); ("b", mk b); ("difference", mk diff)]
-        in
+        let attributes = Tuple.AttributeMap.of_list ["a", mk a; "b", mk b; "difference", mk diff] in
         Generator.Value (Tuple.make_materialized ~relation:"minus" ~attributes, generator)
-    | None ->
-        Error "Cannot enumerate minus randomly."
+    | None -> Error "Cannot enumerate minus randomly."
   in
   let membership_criteria : Tuple.t -> bool =
     (* fun _tree_of ->  *)
@@ -244,11 +232,9 @@ let minus_natural : Relation.ephemeral =
           let bv = (Obj.magic b.Attribute.value : int) in
           let dv = (Obj.magic d.Attribute.value : int) in
           av - bv = dv && dv >= 0
-      | _ ->
-          false
+      | _ -> false
       end
-    | Tuple.NonMaterialized _ ->
-        false
+    | Tuple.NonMaterialized _ -> false
   in
   new Relation.ephemeral
     ~name:"natural_minus" ~schema ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
@@ -256,8 +242,11 @@ let minus_natural : Relation.ephemeral =
 
 let divide_natural : Relation.ephemeral =
   let schema =
-    Schema.empty |> Schema.add "a" "natural" |> Schema.add "b" "natural"
-    |> Schema.add "quotient" "natural" |> Schema.add "remainder" "natural"
+    Schema.empty
+    |> Schema.add "a" "natural"
+    |> Schema.add "b" "natural"
+    |> Schema.add "quotient" "natural"
+    |> Schema.add "remainder" "natural"
   in
   let rec generator (position : int option) : Generator.result =
     match position with
@@ -271,12 +260,10 @@ let divide_natural : Relation.ephemeral =
         let r = r_raw mod b in
         let a = (b * q) + r in
         let attributes =
-          Tuple.AttributeMap.of_list
-            [("a", mk a); ("b", mk b); ("quotient", mk q); ("remainder", mk r)]
+          Tuple.AttributeMap.of_list ["a", mk a; "b", mk b; "quotient", mk q; "remainder", mk r]
         in
         Generator.Value (Tuple.make_materialized ~relation:"divide" ~attributes, generator)
-    | None ->
-        Error "Cannot enumerate divide randomly."
+    | None -> Error "Cannot enumerate divide randomly."
   in
   let membership_criteria : Tuple.t -> bool =
     (* fun _tree_of ->  *)
@@ -294,16 +281,21 @@ let divide_natural : Relation.ephemeral =
           let qv = (Obj.magic q.Attribute.value : int) in
           let rv = (Obj.magic r.Attribute.value : int) in
           bv > 0 && av = (bv * qv) + rv && rv >= 0 && rv < bv
-      | _ ->
-          false )
-    | Tuple.NonMaterialized _ ->
-        false
+      | _ -> false )
+    | Tuple.NonMaterialized _ -> false
   in
   new Relation.ephemeral
     ~name:"natural_divide" ~schema ~constraints:None ~cardinality:Conventions.Cardinality.AlephZero
     ~generator ~membership_criteria ~provenance:None ~lineage:None
 
 let prelude_relations =
-  [ less_than_natural; less_than_or_equal_natural; greater_than_natural;
-    greater_than_or_equal_natural; equal_natural; not_equal_natural; plus_natural; times_natural;
-    minus_natural; divide_natural ]
+  [ less_than_natural;
+    less_than_or_equal_natural;
+    greater_than_natural;
+    greater_than_or_equal_natural;
+    equal_natural;
+    not_equal_natural;
+    plus_natural;
+    times_natural;
+    minus_natural;
+    divide_natural ]

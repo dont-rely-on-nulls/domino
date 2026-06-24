@@ -11,26 +11,19 @@ module Make (NT : Nt.S) = struct
   end
 
   let ( let* ) = Result.bind
-
   let parse_fqn (s : string) : (Qualified_name.t, Condition.t) result = Qualified_name.try_parse s
 
   let lookup_mg (ctx : Sublanguage_context.t) (mg_name : string) :
       (Management.Multigroup.multigroup, Condition.t) result =
     match ctx.branch#mg_of mg_name with
-    | Some mg ->
-        Ok mg
-    | None ->
-        Error (Error.multigroup_not_found mg_name)
+    | Some mg -> Ok mg
+    | None -> Error (Error.multigroup_not_found mg_name)
 
   let convert_cardinality : Ast.cardinality_spec -> Conventions.Cardinality.t = function
-    | Ast.Finite n ->
-        Conventions.Cardinality.Finite n
-    | Ast.AlephZero ->
-        Conventions.Cardinality.AlephZero
-    | Ast.Continuum ->
-        Conventions.Cardinality.Continuum
-    | Ast.ConstrainedFinite ->
-        Conventions.Cardinality.ConstrainedFinite
+    | Ast.Finite n -> Conventions.Cardinality.Finite n
+    | Ast.AlephZero -> Conventions.Cardinality.AlephZero
+    | Ast.Continuum -> Conventions.Cardinality.Continuum
+    | Ast.ConstrainedFinite -> Conventions.Cardinality.ConstrainedFinite
 
   (* Every relation-touching statement names exactly one mg via its FQN
      prefix.  The executor parses the FQN, resolves the mg in the branch
@@ -41,12 +34,10 @@ module Make (NT : Nt.S) = struct
     let branch_name = ctx.branch#name in
     match stmt with
     | Ast.CreateMultigroup name -> (
-        ctx.branch#add_multigroup ~name ;
+        ctx.branch#add_multigroup ~name;
         match ctx.branch#mg_of name with
-        | Some mg ->
-            Ok ([(name, mg)], "Multigroup created: " ^ name)
-        | None ->
-            Error (Error.multigroup_not_found name) )
+        | Some mg -> Ok ([name, mg], "Multigroup created: " ^ name)
+        | None -> Error (Error.multigroup_not_found name) )
     | Ast.CreateRelation {name; schema= schema_pairs} ->
         let* fqn = parse_fqn name in
         let* mg = lookup_mg ctx fqn.mg in
@@ -54,26 +45,25 @@ module Make (NT : Nt.S) = struct
           List.fold_left (fun s (attr, dom) -> Schema.add attr dom s) Schema.empty schema_pairs
         in
         let* _bh, new_mg = NT.create_relation bh mg ~branch_name ~name:fqn.name ~schema in
-        ctx.branch#set_mg ~name:fqn.mg new_mg ;
-        Ok ([(fqn.mg, new_mg)], "Relation created: " ^ name)
+        ctx.branch#set_mg ~name:fqn.mg new_mg;
+        Ok ([fqn.mg, new_mg], "Relation created: " ^ name)
     | Ast.RetractRelation name ->
         let* fqn = parse_fqn name in
         let* mg = lookup_mg ctx fqn.mg in
         let* _bh, new_mg = NT.retract_relation bh mg ~name:fqn.name in
-        ctx.branch#set_mg ~name:fqn.mg new_mg ;
-        Ok ([(fqn.mg, new_mg)], "Relation retracted: " ^ name)
+        ctx.branch#set_mg ~name:fqn.mg new_mg;
+        Ok ([fqn.mg, new_mg], "Relation retracted: " ^ name)
     | Ast.ClearRelation name -> (
         let* fqn = parse_fqn name in
         let* mg = lookup_mg ctx fqn.mg in
         match mg#get_relation fqn.name with
-        | None ->
-            Error (Error.relation_not_found name)
+        | None -> Error (Error.relation_not_found name)
         | Some rel ->
             let* _bh, new_mg =
               NT.clear_relation bh mg ~branch_name ~mg_name:fqn.mg (rel :> Relation.relation)
             in
-            ctx.branch#set_mg ~name:fqn.mg new_mg ;
-            Ok ([(fqn.mg, new_mg)], "Relation cleared: " ^ name) )
+            ctx.branch#set_mg ~name:fqn.mg new_mg;
+            Ok ([fqn.mg, new_mg], "Relation cleared: " ^ name) )
     | Ast.RegisterDomain {name; cardinality} ->
         let* fqn = parse_fqn name in
         let* mg = lookup_mg ctx fqn.mg in
@@ -86,6 +76,6 @@ module Make (NT : Nt.S) = struct
             ~lineage:None ~constraints:None
         in
         let* _bh, new_mg = NT.register_domain bh mg domain in
-        ctx.branch#set_mg ~name:fqn.mg new_mg ;
-        Ok ([(fqn.mg, new_mg)], "Domain registered: " ^ name)
+        ctx.branch#set_mg ~name:fqn.mg new_mg;
+        Ok ([fqn.mg, new_mg], "Domain registered: " ^ name)
 end

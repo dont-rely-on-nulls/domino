@@ -15,24 +15,19 @@ module Make (NT : Nt.S) = struct
   end
 
   let ( let* ) = Result.bind
-
   let parse_fqn (s : string) : (Qualified_name.t, Condition.t) result = Qualified_name.try_parse s
 
   let lookup_mg (ctx : Sublanguage_context.t) (mg_name : string) :
       (Management.Multigroup.multigroup, Condition.t) result =
     match ctx.branch#mg_of mg_name with
-    | Some mg ->
-        Ok mg
-    | None ->
-        Error (Error.multigroup_not_found mg_name)
+    | Some mg -> Ok mg
+    | None -> Error (Error.multigroup_not_found mg_name)
 
   let get_rel (ctx : Sublanguage_context.t) (fqn : Qualified_name.t) =
     let* mg = lookup_mg ctx fqn.mg in
     match NT.get_relation mg fqn.name with
-    | Some r ->
-        Ok r
-    | None ->
-        Error (Error.relation_not_found (Qualified_name.to_string fqn))
+    | Some r -> Ok r
+    | None -> Error (Error.relation_not_found (Qualified_name.to_string fqn))
 
   let retarget target (t : Tuple.materialized) = {t with Tuple.relation= target}
 
@@ -52,15 +47,12 @@ module Make (NT : Nt.S) = struct
     let* stream = NT.execute_query plan ~rel_name:"dml_drain" in
     let rec drain acc =
       match NT.stream_next stream with
-      | Error _ ->
-          List.rev acc
-      | Ok None ->
-          List.rev acc
-      | Ok (Some t) ->
-          drain (t :: acc)
+      | Error _ -> List.rev acc
+      | Ok None -> List.rev acc
+      | Ok (Some t) -> drain (t :: acc)
     in
     let tuples = drain [] in
-    ignore (NT.stream_close stream) ;
+    ignore (NT.stream_close stream);
     Ok tuples
 
   (* Stored-relation paths referenced by a query, for ephemeral dependency
@@ -70,20 +62,16 @@ module Make (NT : Nt.S) = struct
     match q with
     | Drl.Ast.Base name -> (
       match Qualified_name.try_parse name with
-      | Ok fqn ->
-          [ctx.resolve fqn]
-      | Error _ ->
-          [Sublanguage_context.ephemeral_path ctx name] )
-    | Drl.Ast.Const _ ->
-        []
+      | Ok fqn -> [ctx.resolve fqn]
+      | Error _ -> [Sublanguage_context.ephemeral_path ctx name] )
+    | Drl.Ast.Const _ -> []
     | Drl.Ast.Select (a, b)
-    | Drl.Ast.Join (_, a, b)
-    | Drl.Ast.Cartesian (a, b)
-    | Drl.Ast.Union (a, b)
-    | Drl.Ast.Diff (a, b) ->
+     |Drl.Ast.Join (_, a, b)
+     |Drl.Ast.Cartesian (a, b)
+     |Drl.Ast.Union (a, b)
+     |Drl.Ast.Diff (a, b) ->
         base_dep_paths ctx a @ base_dep_paths ctx b
-    | Drl.Ast.Project (_, s) | Drl.Ast.Rename (_, s) | Drl.Ast.Take (_, s) ->
-        base_dep_paths ctx s
+    | Drl.Ast.Project (_, s) | Drl.Ast.Rename (_, s) | Drl.Ast.Take (_, s) -> base_dep_paths ctx s
 
   (* Schema of a query result, walked structurally from the base relations'
      schemas. Mirrors the operator semantics in docs/relational-algebra.org. *)
@@ -99,10 +87,8 @@ module Make (NT : Nt.S) = struct
       | Ok fqn ->
           let* rel = get_rel ctx fqn in
           Ok rel#schema )
-    | Drl.Ast.Const attrs ->
-        Ok (List.map (fun (n, _) -> (n, "abstract")) attrs)
-    | Drl.Ast.Select (_, src) ->
-        infer_schema ctx src
+    | Drl.Ast.Const attrs -> Ok (List.map (fun (n, _) -> n, "abstract") attrs)
+    | Drl.Ast.Select (_, src) -> infer_schema ctx src
     | Drl.Ast.Join (_, l, r) | Drl.Ast.Cartesian (l, r) ->
         let* ls = infer_schema ctx l in
         let* rs = infer_schema ctx r in
@@ -114,13 +100,10 @@ module Make (NT : Nt.S) = struct
         let* s = infer_schema ctx src in
         Ok
           (List.map
-             (fun (n, d) ->
-               match List.assoc_opt n renames with Some n' -> (n', d) | None -> (n, d) )
+             (fun (n, d) -> match List.assoc_opt n renames with Some n' -> n', d | None -> n, d)
              s )
-    | Drl.Ast.Union (l, _) | Drl.Ast.Diff (l, _) ->
-        infer_schema ctx l
-    | Drl.Ast.Take (_, src) ->
-        infer_schema ctx src
+    | Drl.Ast.Union (l, _) | Drl.Ast.Diff (l, _) -> infer_schema ctx l
+    | Drl.Ast.Take (_, src) -> infer_schema ctx src
 
   let attr_val_eq a b = Stdlib.( = ) a.Attribute.value b.Attribute.value
 
@@ -131,10 +114,8 @@ module Make (NT : Nt.S) = struct
           ( Tuple.AttributeMap.find_opt attr target_t.Tuple.attributes,
             Tuple.AttributeMap.find_opt attr pred_t.Tuple.attributes )
         with
-        | Some a, Some b ->
-            attr_val_eq a b
-        | _ ->
-            false )
+        | Some a, Some b -> attr_val_eq a b
+        | _ -> false )
       common
 
   let semijoin common target_tuples pred_tuples =
@@ -147,8 +128,7 @@ module Make (NT : Nt.S) = struct
     let bh = ctx.write_handle in
     let branch_name = ctx.branch#name in
     let after fqn =
-      Result.bind (lookup_mg ctx fqn.Qualified_name.mg) (fun mg ->
-          Ok [(fqn.Qualified_name.mg, mg)] )
+      Result.bind (lookup_mg ctx fqn.Qualified_name.mg) (fun mg -> Ok [fqn.Qualified_name.mg, mg])
     in
     match stmt with
     | Ast.InsertTuple {relation; attributes} ->
@@ -178,12 +158,12 @@ module Make (NT : Nt.S) = struct
         let* _bh, new_mg =
           NT.clear_relation bh mg ~branch_name ~mg_name:fqn.mg (rel :> Relation.relation)
         in
-        ctx.branch#set_mg ~name:fqn.mg new_mg ;
+        ctx.branch#set_mg ~name:fqn.mg new_mg;
         let* _ =
           NT.create_tuples ~branch_name ~mg_name:fqn.mg ~rel_name:rel#name
             (List.map (retarget rel#name) tuples)
         in
-        Ok [(fqn.mg, new_mg)]
+        Ok [fqn.mg, new_mg]
     | Ast.InsertFrom {target; source} ->
         let* fqn = parse_fqn target in
         let* rel = get_rel ctx fqn in
@@ -209,10 +189,8 @@ module Make (NT : Nt.S) = struct
            time. Push the offset/limit down or cache the result. *)
         let generator ~offset ~limit =
           match drain_query ctx body with
-          | Error _ ->
-              []
-          | Ok tuples ->
-              List.filteri (fun i _ -> i >= offset && i < offset + limit) tuples
+          | Error _ -> []
+          | Ok tuples -> List.filteri (fun i _ -> i >= offset && i < offset + limit) tuples
         in
         let* _path =
           NT.register_ephemeral ~session:ctx.session_hash ~named:true ~name:target ~generator
@@ -229,10 +207,8 @@ module Make (NT : Nt.S) = struct
         let* target_tuples = drain_query ctx (Drl.Ast.Base target) in
         let* pred_tuples = drain_query ctx predicate in
         let attr_names_of = function
-          | [] ->
-              []
-          | t :: _ ->
-              List.map fst (Tuple.AttributeMap.bindings t.Tuple.attributes)
+          | [] -> []
+          | t :: _ -> List.map fst (Tuple.AttributeMap.bindings t.Tuple.attributes)
         in
         let target_attrs = attr_names_of target_tuples in
         let pred_attrs = attr_names_of pred_tuples in

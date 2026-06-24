@@ -19,14 +19,12 @@ let const_relation (pairs : (string * Conventions.AbstractValue.t) list) : Relat
     in
     let tuple = Tuple.Materialized {Tuple.relation= "const"; attributes= attrs} in
     let gen = function
-      | None | Some 0 ->
-          Generator.Value (tuple, fun _ -> Generator.Done)
-      | _ ->
-          Generator.Done
+      | None | Some 0 -> Generator.Value (tuple, fun _ -> Generator.Done)
+      | _ -> Generator.Done
     in
     gen
   in
-  let schema = List.map (fun (k, _) -> (k, "abstract")) pairs in
+  let schema = List.map (fun (k, _) -> k, "abstract") pairs in
   new Relation.ephemeral
     ~name:"const" ~schema ~constraints:None ~cardinality:(Conventions.Cardinality.Finite 1)
     ~membership_criteria:(fun _ -> true)
