@@ -21,8 +21,7 @@ module Make (Storage : Management.Physical.S) = struct
     open Condition
 
     (* TODO: more specific errors *)
-    let storage_error message =
-      condition "storage-error" message empty
+    let storage_error message = condition "storage-error" message empty
   end
 
   let ( let* ) = Result.bind
@@ -30,27 +29,25 @@ module Make (Storage : Management.Physical.S) = struct
   (* State Persistence - Store relation and database states *)
 
   (** Store a relation state to storage *)
-  let store_relation (storage : storage) (relation : Relation.relation) :
-      (unit, error) Result.t =
-      match
-        Storage.store_raw storage relation#hash (Storable.Relation.to_bytes @@ relation#serialize ())
-      with
-      | Error _ -> Error (Error.storage_error "Failed to store relation")
-      | Ok () -> Ok ()
+  let store_relation (storage : storage) (relation : Relation.relation) : (unit, error) Result.t =
+    match
+      Storage.store_raw storage relation#hash (Storable.Relation.to_bytes @@ relation#serialize ())
+    with
+    | Error _ -> Error (Error.storage_error "Failed to store relation")
+    | Ok () -> Ok ()
 
-  (** Store a database state to storage.
-      Keyed by [db#name]; content-hashing of mgs is no longer maintained on the
-      Sakura side — the kernel owns mg content addressing. *)
+  (** Store a database state to storage. Keyed by [db#name]; content-hashing of
+      mgs is no longer maintained on the Sakura side — the kernel owns mg
+      content addressing. *)
   let store_multigroup (storage : storage) (db : Management.Multigroup.multigroup) :
       (unit, error) Result.t =
-      match
-        Storage.store_raw storage db#name (Storable.Multigroup.to_bytes @@ db#serialize ())
-      with
-      | Error _ -> Error (Error.storage_error "Failed to store multigroup")
-      | Ok () -> Ok ()
+    match Storage.store_raw storage db#name (Storable.Multigroup.to_bytes @@ db#serialize ()) with
+    | Error _ -> Error (Error.storage_error "Failed to store multigroup")
+    | Ok () -> Ok ()
 
   (** Load a relation state from storage by hash *)
-  let load_relation (storage : storage) (rel_hash : Conventions.Hash.t) : (Relation.stored option, error) Result.t =
+  let load_relation (storage : storage) (rel_hash : Conventions.Hash.t) :
+      (Relation.stored option, error) Result.t =
     match Storage.load_raw storage rel_hash with
     | Error _ -> Error (Error.storage_error "Failed to load relation")
     | Ok None -> Ok None
@@ -63,12 +60,7 @@ module Make (Storage : Management.Physical.S) = struct
         let membership_criteria = Constraint.build_membership_criteria ~_name:name ~schema in
         let relation =
           new Relation.stored
-            ~name
-            ~schema
-            ~constraints
-            ~cardinality
-            ~membership_criteria
-            ~provenance:None
+            ~name ~schema ~constraints ~cardinality ~membership_criteria ~provenance:None
             ~lineage:None
         in
         Ok (Some relation)
@@ -89,7 +81,8 @@ module Make (Storage : Management.Physical.S) = struct
 
   (** Store each attribute value and return map of attr_name -> attr_hash *)
   let store_attributes (_storage : storage) (_tuple : Tuple.materialized) :
-      ((string * Conventions.Hash.t) list, error) Result.t = failwith "NOT IMPLEMENTED"
+      ((string * Conventions.Hash.t) list, error) Result.t =
+    failwith "NOT IMPLEMENTED"
 
   (** Load a tuple from storage by its hash *)
   let load_tuple (storage : storage) (tuple_hash : Conventions.Hash.t) :
@@ -104,22 +97,18 @@ module Make (Storage : Management.Physical.S) = struct
         let rec load_attrs acc = function
           | [] -> Ok (List.rev acc)
           | (name, attr_hash) :: rest -> (
-              match Storage.load_raw storage attr_hash with
-              | Error _ ->
-                  Error
-                    (Error.storage_error ("Failed to load attribute: " ^ name))
-              | Ok None ->
-                  Error (Error.storage_error ("Attribute not found: " ^ name))
-              | Ok (Some value_bytes) ->
-                  let value : Conventions.AbstractValue.t =
-                    Marshal.from_bytes value_bytes 0
-                  in
-                  let attr : Attribute.materialized = { value } in
-                  load_attrs ((name, attr) :: acc) rest)
+            match Storage.load_raw storage attr_hash with
+            | Error _ -> Error (Error.storage_error ("Failed to load attribute: " ^ name))
+            | Ok None -> Error (Error.storage_error ("Attribute not found: " ^ name))
+            | Ok (Some value_bytes) ->
+                let value : Conventions.AbstractValue.t = Marshal.from_bytes value_bytes 0 in
+                let attr : Attribute.materialized = {value} in
+                load_attrs ((name, attr) :: acc) rest )
         in
         load_attrs [] attributes
-        |> Result.map (List.fold_left
-                         (fun m (k, v) -> Tuple.AttributeMap.add k v m)
-                         Tuple.AttributeMap.empty)
-        |> Result.map (fun attributes -> Some { Tuple.relation = relation; attributes })
+        |> Result.map
+             (List.fold_left
+                (fun m (k, v) -> Tuple.AttributeMap.add k v m)
+                Tuple.AttributeMap.empty )
+        |> Result.map (fun attributes -> Some {Tuple.relation; attributes})
 end

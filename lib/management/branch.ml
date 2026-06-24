@@ -4,7 +4,7 @@
     - "branch_names"  -> serialized string list (index for enumeration)
     - "head"          -> branch name as raw bytes *)
 
-type t = { name : string; tip : Conventions.Hash.t }
+type t = {name: string; tip: Conventions.Hash.t}
 type head = string
 type error = string
 
@@ -15,7 +15,9 @@ let names_key = "branch_names"
 module Make (Storage : Physical.S) = struct
   module Error = struct
     open Condition
-    let branch_not_found name = condition "branch-not-found" "Branch not found" ("name" |=| (of_string name))
+
+    let branch_not_found name =
+      condition "branch-not-found" "Branch not found" ("name" |=| of_string name)
   end
 
   let load_names storage =
@@ -28,7 +30,7 @@ module Make (Storage : Physical.S) = struct
     ignore (Storage.store_raw storage names_key bytes)
 
   let create storage ~name ~tip =
-    let record = { name; tip } in
+    let record = {name; tip} in
     let bytes = Marshal.to_bytes record [] in
     match Storage.store_raw storage (branch_key name) bytes with
     | Error e -> Error e
@@ -58,7 +60,7 @@ module Make (Storage : Physical.S) = struct
   let update_tip storage ~name ~tip =
     match Storage.load_raw storage (branch_key name) with
     | Ok (Some _) ->
-        let record = { name; tip } in
+        let record = {name; tip} in
         let bytes = Marshal.to_bytes record [] in
         Storage.store_raw storage (branch_key name) bytes
     | Ok None -> Error (Error.branch_not_found name)
@@ -68,14 +70,11 @@ module Make (Storage : Physical.S) = struct
     let names = load_names storage in
     let branches =
       List.filter_map
-        (fun name ->
-          match get_tip storage name with
-          | Ok (Some tip) -> Some (name, tip)
-          | _ -> None)
+        (fun name -> match get_tip storage name with Ok (Some tip) -> Some (name, tip) | _ -> None)
         names
     in
     Ok branches
-(*
+  (*
   let branch_relation storage : Relation.t =
     let schema =
       Schema.empty |> Schema.add "name" "string" |> Schema.add "hash" "string"

@@ -1,12 +1,11 @@
 module Error = struct
   open Condition
+
   let parse_error msg = condition "parse-error" msg empty
 end
 
 let of_sexp sexp =
-  let sexp =
-    match sexp with Sexplib.Sexp.List [ atom ] -> atom | other -> other
-  in
+  let sexp = match sexp with Sexplib.Sexp.List [atom] -> atom | other -> other in
   match Ast.statement_of_sexp sexp with
   | stmt -> Ok stmt
   | exception exn -> Error (Error.parse_error (Printexc.to_string exn))

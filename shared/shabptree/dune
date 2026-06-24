@@ -2,4 +2,13 @@
  (target sakura_shabptree.dll)
  (deps shabptree.c)
  (action
-  (run %{cc} -std=c99 -Wall -Wextra -DSAKURA_BPTREE_BUILDING_DLL -shared -o %{target} %{deps})))
+  (run
+   %{cc}
+   -std=c99
+   -Wall
+   -Wextra
+   -DSAKURA_BPTREE_BUILDING_DLL
+   -shared
+   -o
+   %{target}
+   %{deps})))

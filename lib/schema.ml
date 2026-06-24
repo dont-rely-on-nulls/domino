@@ -11,6 +11,4 @@ type t = (string * string) list
 let empty : t = []
 let add name domain_name (schema : t) : t = (name, domain_name) :: schema
 let attributes (schema : t) = List.map fst schema
-
-let to_string schema =
-  List.map (fun (n, t) -> n ^ ":" ^ t) schema |> String.concat ","
+let to_string schema = List.map (fun (n, t) -> n ^ ":" ^ t) schema |> String.concat ","

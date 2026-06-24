@@ -1,11 +1,11 @@
 module Error = struct
   open Condition
+
   let parse_error msg = condition "parse-error" msg empty
 end
 
 let validate = function
-  | (Ast.Begin { limit = Some limit; _ } | Ast.Fetch { limit = Some limit; _ })
-    when limit <= 0 ->
+  | (Ast.Begin {limit= Some limit; _} | Ast.Fetch {limit= Some limit; _}) when limit <= 0 ->
       Error (Error.parse_error "The provision of `limit` is expected to be positive.")
   | stmt -> Ok stmt
 

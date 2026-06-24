@@ -6,8 +6,6 @@ module Make (NT : Nt.S) = struct
 
   let name = "prl"
   let parse _ = Ok ()
-
   let parse_sexp sexp = Parser.of_sexp sexp
-
   let execute = Exec.execute
 end

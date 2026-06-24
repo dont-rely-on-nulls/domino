@@ -6,8 +6,6 @@ module Make (NT : Nt.S) = struct
 
   let name = "drl"
   let parse _ = Ok ()
-
   let parse_sexp sexp = Parser.of_sexp sexp
-
   let execute ctx ast = Exec.execute ctx ast
 end
