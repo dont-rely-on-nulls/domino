@@ -98,6 +98,7 @@ type plan_args_join
 let plan_args_join : plan_args_join structure typ = structure "PlanArgsJoin"
 let join_left = field plan_args_join "left" (ptr void)
 let join_right = field plan_args_join "right" (ptr void)
+let join_attrs = field plan_args_join "attrs" (ptr (ptr char))
 let () = seal plan_args_join
 
 type plan_args_take

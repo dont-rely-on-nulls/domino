@@ -298,7 +298,7 @@ module Make (B : Backend) = struct
         match Nt_ffi.ptr_to_opt raw with
         | None -> Error (Error.cursor_error ("plan_scan failed for path: " ^ path))
         | Some p -> Ok p )
-    | Join {left; right; _} -> (
+    | Join {left; right; on_attrs} -> (
         let* lp = build_plan left in
         match build_plan right with
         | Error e ->
@@ -309,8 +309,18 @@ module Make (B : Backend) = struct
             let join = getf act Nt_ffi.action_join in
             setf join Nt_ffi.join_left (Nt_ffi.nint_to_ptr lp);
             setf join Nt_ffi.join_right (Nt_ffi.nint_to_ptr rp);
+            (* NULL-terminated const char**; backing arrays stay reachable until
+               assemble returns *)
+            let cattrs = List.map Nt_ffi.cstring on_attrs in
+            let arr =
+              Ctypes.CArray.of_list (Ctypes.ptr Ctypes.char)
+                (List.map Ctypes.CArray.start cattrs @ [Nt_ffi.null_char_ptr])
+            in
+            setf join Nt_ffi.join_attrs (Ctypes.CArray.start arr);
             (* assemble takes ownership of both children *)
-            match Nt_ffi.ptr_to_opt (Nt_ffi.rnt_plan_assemble act) with
+            let raw = Nt_ffi.rnt_plan_assemble act in
+            ignore (Sys.opaque_identity (cattrs, arr));
+            match Nt_ffi.ptr_to_opt raw with
             | None -> Error (Error.cursor_error "plan_join failed")
             | Some p -> Ok p ) )
     | Take {limit; source} -> (
